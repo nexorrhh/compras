@@ -1,0 +1,323 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Tablero de Compras — CIMOMET</title>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
+<link rel="stylesheet" href="css/styles.css">
+</head>
+<body>
+
+<div class="toast-c" id="TC"></div>
+
+<!-- ERROR DE CONEXIÓN (solo se muestra si falla la conexión automática a Supabase) -->
+<div id="app-error" style="display:none;align-items:center;justify-content:center;min-height:100vh;padding:20px">
+  <div class="cfg-box">
+    <div class="cfg-logo"><div class="cfg-logo-icon">⚠️</div>Tablero de Compras</div>
+    <div class="cfg-sub">No se pudo conectar a Supabase</div>
+    <div class="alert-box red" id="app-error-msg"></div>
+    <div style="margin-top:16px;font-size:12px;color:var(--muted)">
+      Verificá que las tablas <code>compras_*</code> existan en el proyecto (ver <code>sql/schema.sql</code>) y volvé a cargar la página.
+    </div>
+  </div>
+</div>
+
+<!-- APP -->
+<div id="app">
+
+<!-- ============ MODALES — FLOTA / VEHÍCULOS ============ -->
+<div class="modal-ov" id="mVC">
+<div class="modal">
+  <span class="mcls" onclick="cm('mVC')" id="mVC_close">×</span>
+  <div class="mtitle" id="mVC_t">Vehículo</div>
+  <form id="fVC">
+    <input type="hidden" id="vc_id">
+    <div class="fr">
+      <div class="fg"><label>Patente *</label><input id="vc_pat" required style="text-transform:uppercase" placeholder="AA000XY"></div>
+      <div class="fg"><label>Modelo *</label><input id="vc_mod" required placeholder="Ranger, Sprinter..."></div>
+    </div>
+    <div class="fr">
+      <div class="fg"><label>Marca</label><input id="vc_marca" placeholder="Ford, Mercedes-Benz..."></div>
+      <div class="fg"><label>Año</label><input type="number" id="vc_ano" placeholder="2020"></div>
+    </div>
+    <div class="fr">
+      <div class="fg"><label>Empresa</label><select id="vc_emp"><option>Cimomet S.A.</option><option>Co.mo.ing S.R.L.</option></select></div>
+      <div class="fg"><label>Tipo</label><select id="vc_tip"><option>Auto</option><option>Camioneta</option><option>Furgón</option><option>Camión</option><option>Moto</option><option>Otro</option></select></div>
+    </div>
+    <div class="fr">
+      <div class="fg"><label>Área / uso asignado</label><input id="vc_area" placeholder="Obra, Calidad, Logística..."></div>
+      <div class="fg"><label>Responsable</label><input id="vc_resp" placeholder="Nombre del responsable"></div>
+    </div>
+    <div class="fr">
+      <div class="fg"><label>KM actuales</label><input type="number" id="vc_km" placeholder="0"></div>
+      <div class="fg"><label>Estado</label><select id="vc_est"><option>LIBRE</option><option>EN USO</option><option>MANTENIMIENTO</option><option>FUERA DE SERVICIO</option></select></div>
+    </div>
+    <div class="fg"><label>Observaciones</label><textarea id="vc_obs" placeholder="Notas..."></textarea></div>
+    <div class="brow"><button type="button" class="btn" onclick="cm('mVC')">Cancelar</button><button type="submit" class="btn p">Guardar</button></div>
+  </form>
+</div></div>
+
+<!-- ============ MODAL — SOLICITUDES (aprobar/rechazar) ============ -->
+<div class="modal-ov" id="mAPRO">
+<div class="modal">
+  <span class="mcls" onclick="cm('mAPRO')">×</span>
+  <div class="mtitle">Gestionar Solicitud</div>
+  <input type="hidden" id="apro_id">
+  <div class="sol-detail" id="apro_detail"></div>
+  <div class="fg"><label>¿Qué vehículo asignás? *</label><select id="apro_vc"><option value="">Seleccionar vehículo...</option></select></div>
+  <div class="fg"><label>Motivo / Nota para el solicitante (opcional)</label><textarea id="apro_nota" placeholder="Ej: Se asigna Ranger porque el Oroch está en mantenimiento..."></textarea></div>
+  <div class="brow">
+    <button type="button" class="btn" id="btn-apro-cancelar">Cancelar</button>
+    <button type="button" class="btn d" id="btn-apro-rechazar">✗ Rechazar</button>
+    <button type="button" class="btn g" id="btn-apro-aprobar">✓ Aprobar</button>
+  </div>
+</div></div>
+
+<!-- ============ MODAL — NUEVA SOLICITUD (creada por Compras) ============ -->
+<div class="modal-ov" id="mNUEVASOL">
+<div class="modal">
+  <span class="mcls" onclick="cm('mNUEVASOL')">×</span>
+  <div class="mtitle">+ Nueva Solicitud</div>
+  <div class="psub" style="margin-bottom:16px">Para pedir un vehículo a nombre de otra persona, o para vos mismo</div>
+  <form id="fNUEVASOL">
+    <div class="fr">
+      <div class="fg"><label>Solicitante *</label><select id="ns_sol" required><option value="">Seleccionar...</option></select></div>
+      <div class="fg"><label>Sector *</label><input id="ns_sec" required readonly placeholder="Se completa solo al elegir el solicitante"></div>
+    </div>
+    <div class="fr">
+      <div class="fg"><label>Vehículo a asignar *</label><select id="ns_vc" required><option value="">Seleccionar...</option></select></div>
+      <div class="fg"><label>OT</label><input id="ns_ot" placeholder="Nro. de OT"></div>
+    </div>
+    <div class="fr">
+      <div class="fg"><label>Fecha de uso *</label><input type="date" id="ns_fuso" required></div>
+      <div class="fg"><label>Fecha de devolución</label><input type="date" id="ns_fdev"></div>
+    </div>
+    <div class="fg"><label>Destino / Motivo *</label><input id="ns_dest" required placeholder="¿A dónde va y para qué?"></div>
+    <div class="fg"><label>Observaciones</label><textarea id="ns_obs" placeholder="Notas..."></textarea></div>
+    <div class="brow"><button type="button" class="btn" onclick="cm('mNUEVASOL')">Cancelar</button><button type="submit" class="btn p">Crear y asignar</button></div>
+  </form>
+</div></div>
+
+<!-- ============ MODAL — MANTENIMIENTO ============ -->
+<div class="modal-ov" id="mMAN">
+<div class="modal">
+  <span class="mcls" onclick="cm('mMAN')">×</span>
+  <div class="mtitle">🔧 Registrar Mantenimiento</div>
+  <form id="fMAN">
+    <div class="fr">
+      <div class="fg"><label>Vehículo *</label><select id="ma_vc" required><option value="">Seleccionar...</option></select></div>
+      <div class="fg"><label>Tipo</label><select id="ma_tip"><option>Service</option><option>Reparación</option><option>Neumáticos</option><option>Frenos</option><option>Aceite</option><option>Limpieza</option><option>Otro</option></select></div>
+    </div>
+    <div class="fg"><label>Detalle</label><input id="ma_desc" placeholder="Detalle del trabajo"></div>
+    <div class="fr">
+      <div class="fg"><label>Fecha *</label><input type="date" id="ma_fecha" required></div>
+      <div class="fg"><label>KM</label><input type="number" id="ma_km" placeholder="0"></div>
+    </div>
+    <div class="fr">
+      <div class="fg"><label>Costo (ARS)</label><input type="number" id="ma_costo" placeholder="0"></div>
+      <div class="fg"><label>Taller</label><input id="ma_prov" placeholder="Taller..."></div>
+    </div>
+    <div class="fr">
+      <div class="fg"><label>Próxima fecha</label><input type="date" id="ma_pfecha"></div>
+      <div class="fg"><label>Próximo KM</label><input type="number" id="ma_pkm" placeholder="0"></div>
+    </div>
+    <div class="brow"><button type="button" class="btn" onclick="cm('mMAN')">Cancelar</button><button type="submit" class="btn p">Guardar</button></div>
+  </form>
+</div></div>
+
+<!-- ============ MODAL — VTV ============ -->
+<div class="modal-ov" id="mVTV">
+<div class="modal">
+  <span class="mcls" onclick="cm('mVTV')">×</span>
+  <div class="mtitle" id="mVTV_t">🔍 Registrar VTV</div>
+  <form id="fVTV">
+    <input type="hidden" id="vtv_id">
+    <div class="fg"><label>Vehículo *</label><select id="vtv_vc" required><option value="">Seleccionar...</option></select></div>
+    <div class="fr">
+      <div class="fg"><label>Fecha de trámite *</label><input type="date" id="vtv_fecha" required></div>
+      <div class="fg"><label>Resultado</label><select id="vtv_resultado"><option>Apto</option><option>Condicional</option><option>Rechazado</option></select></div>
+    </div>
+    <div class="fg"><label>Vencimiento</label><input type="date" id="vtv_venc"></div>
+    <div class="brow"><button type="button" class="btn" onclick="cm('mVTV')">Cancelar</button><button type="submit" class="btn p" id="vtv_submit">Guardar</button></div>
+  </form>
+</div></div>
+
+<!-- ============ MODAL — DOCUMENTACIÓN (Seguros + Permisos) ============ -->
+<div class="modal-ov" id="mDOC">
+<div class="modal">
+  <span class="mcls" onclick="cm('mDOC')">×</span>
+  <div class="mtitle" id="mDOC_t">🛡️ Registrar Documento</div>
+  <div class="psub" style="margin-bottom:16px">Subí el frente del documento (PDF o foto) — ahí están los datos completos. Acá solo se indica el vencimiento (y tipo/organismo si es un permiso). Si ya había uno cargado para este vehículo, lo estás editando: podés reemplazar el archivo y/o corregir el vencimiento sin crear uno nuevo.</div>
+  <form id="fDOC">
+    <input type="hidden" id="doc_id">
+    <input type="hidden" id="doc_old_url">
+    <div class="fr">
+      <div class="fg"><label>Categoría</label><select id="doc_categoria" disabled></select></div>
+      <div class="fg"><label>Vehículo</label><select id="doc_vc" disabled></select></div>
+    </div>
+    <div id="doc_permiso_fields" class="fr" style="display:none">
+      <div class="fg"><label>Tipo</label><input id="doc_tipo" placeholder="Certificado de Matriculación, habilitación de carga..."></div>
+      <div class="fg"><label>Organismo emisor</label><input id="doc_organismo" placeholder="Municipalidad, DNRPA..."></div>
+    </div>
+    <div class="fg"><label>Archivo (PDF o foto)</label><input type="file" id="doc_archivo" accept=".pdf,image/*"></div>
+    <div class="fg"><label>Vencimiento *</label><input type="date" id="doc_venc" required></div>
+    <div class="brow"><button type="button" class="btn" onclick="cm('mDOC')">Cancelar</button><button type="submit" class="btn p" id="doc_submit">Guardar</button></div>
+  </form>
+</div></div>
+
+<header>
+  <div class="logo"><div class="logo-icon">🛒</div><span>Tablero de Compras</span><span class="hbadge">CIMOMET</span></div>
+  <div style="display:flex;align-items:center;gap:8px">
+    <div class="live-dot"></div>
+    <span style="font-size:12px;color:var(--muted)">En vivo</span>
+    <span id="clk" style="font-size:12px;color:var(--muted);margin-left:6px"></span>
+  </div>
+</header>
+
+<div class="layout">
+<nav>
+  <div class="nav-group" id="nav-flota">
+    <div class="nav-parent"><span>🚗</span> Flota <span class="nav-chevron">▾</span></div>
+    <div class="nav-children">
+      <div class="nav-item" data-sec="dash"><span>📊</span> Dashboard</div>
+      <div class="nav-item" data-sec="vcs"><span>🚙</span> Vehículos</div>
+      <div class="nav-item" data-sec="sols"><span>📋</span> Solicitudes <span class="nav-badge" id="badge-pend" style="display:none">0</span></div>
+      <div class="nav-item" data-sec="movs"><span>📍</span> Movimientos</div>
+      <div class="nav-item" data-sec="gantt"><span>📅</span> Gantt</div>
+      <div class="nav-item" data-sec="mant"><span>🔧</span> Mantenimiento</div>
+      <div class="nav-item" data-sec="vtv"><span>🔍</span> VTV</div>
+      <div class="nav-item" data-sec="doc"><span>🛡️</span> Documentación</div>
+    </div>
+  </div>
+
+  <div class="nav-sec">Otros módulos (TBD)</div>
+  <div class="nav-item disabled" title="Todavía no desarrollado"><span>🏭</span> Proveedores</div>
+  <div class="nav-item disabled" title="Todavía no desarrollado"><span>🧾</span> Órdenes de compra</div>
+  <div class="nav-item disabled" title="Todavía no desarrollado"><span>💰</span> Presupuesto y gastos</div>
+  <div class="nav-item disabled" title="Todavía no desarrollado"><span>📦</span> Stock / insumos críticos</div>
+  <div class="nav-item disabled" title="Todavía no desarrollado"><span>📑</span> Contratos y vencimientos</div>
+  <div class="nav-item disabled" title="Todavía no desarrollado"><span>✅</span> Circuito de aprobaciones</div>
+</nav>
+<main>
+
+<!-- ============ DASHBOARD ============ -->
+<div class="sec on" id="s-dash">
+  <div class="ptitle">Panel de Control — Flota</div>
+  <div class="psub" id="d-fecha"></div>
+  <div class="kpi-grid">
+    <div class="kpi"><div class="kpi-val" id="k-tot">–</div><div class="kpi-lbl">Vehículos</div></div>
+    <div class="kpi"><div class="kpi-val text-green" id="k-lib">–</div><div class="kpi-lbl">Disponibles</div></div>
+    <div class="kpi"><div class="kpi-val text-red" id="k-uso">–</div><div class="kpi-lbl">En uso</div></div>
+    <div class="kpi"><div class="kpi-val text-orange" id="k-man">–</div><div class="kpi-lbl">Mantenimiento</div></div>
+    <div class="kpi"><div class="kpi-val text-yellow" id="k-pen">–</div><div class="kpi-lbl">Solicitudes pend.</div></div>
+    <div class="kpi"><div class="kpi-val text-accent" id="k-hoy">–</div><div class="kpi-lbl">Movimientos hoy</div></div>
+  </div>
+  <div id="d-alertas"></div>
+  <div class="sh"><h2>Estado de la flota</h2><button class="btn p" id="btn-ir-solicitudes">Ver solicitudes pendientes</button></div>
+  <div class="cards" id="d-cards"><div class="loading"><div class="spin"></div>Cargando...</div></div>
+</div>
+
+<!-- ============ VEHÍCULOS ============ -->
+<div class="sec" id="s-vcs">
+  <div class="ptitle">Vehículos</div>
+  <div class="psub">Administración completa de la flota</div>
+  <div class="sh">
+    <div class="filters">
+      <input placeholder="Buscar patente / modelo..." id="f-pat">
+      <select id="f-emp"><option value="">Todas las empresas</option><option>Cimomet S.A.</option><option>Co.mo.ing S.R.L.</option></select>
+      <select id="f-est"><option value="">Todos los estados</option><option>LIBRE</option><option>EN USO</option><option>MANTENIMIENTO</option></select>
+    </div>
+    <button class="btn p" id="btn-nuevo-vc">+ Agregar</button>
+  </div>
+  <div class="cards" id="vcs-grid"><div class="loading"><div class="spin"></div>Cargando...</div></div>
+</div>
+
+<!-- ============ SOLICITUDES ============ -->
+<div class="sec" id="s-sols">
+  <div class="ptitle">Solicitudes</div>
+  <div class="psub">Aprobá, rechazá y asigná vehículos a las solicitudes del personal (recibidas desde solicitud.html)</div>
+  <div class="sh">
+    <div class="filters">
+      <select id="f-sest"><option value="">Todos</option><option value="PENDIENTE">Pendientes</option><option value="APROBADO">Aprobadas</option><option value="RECHAZADO">Rechazadas</option></select>
+      <input type="date" id="f-sfecha">
+    </div>
+    <button class="btn p" id="btn-nueva-sol">+ Nueva solicitud</button>
+  </div>
+  <div class="tw"><table>
+    <thead><tr><th>Fecha</th><th>Solicitante</th><th>Sector</th><th>Vehículo sugerido</th><th>Vehículo asignado</th><th>OT</th><th>Estado</th><th>Acciones</th></tr></thead>
+    <tbody id="t-sols"></tbody>
+  </table></div>
+</div>
+
+<!-- ============ MOVIMIENTOS ============ -->
+<div class="sec" id="s-movs">
+  <div class="ptitle">Movimientos</div>
+  <div class="psub">Historial de salidas y retornos (registrados desde portería) — solo lectura</div>
+  <div class="filters">
+    <input type="date" id="f-mfecha">
+    <select id="f-mvc"><option value="">Todos los vehículos</option></select>
+    <select id="f-mtipo"><option value="">Todos</option><option value="SALIDA">Salidas</option><option value="RETORNO">Retornos</option></select>
+  </div>
+  <div class="tw"><table>
+    <thead><tr><th>Fecha/Hora</th><th>Tipo</th><th>Vehículo</th><th>Conductor</th><th>KM</th><th>Registrado por</th><th>Observaciones</th></tr></thead>
+    <tbody id="t-movs"></tbody>
+  </table></div>
+</div>
+
+<!-- ============ GANTT ============ -->
+<div class="sec" id="s-gantt">
+  <div class="ptitle">Planificación Gantt</div>
+  <div class="psub">Disponibilidad basada en solicitudes aprobadas</div>
+  <div class="filters">
+    <button class="btn" id="g-prev">← Anterior</button>
+    <span id="g-rng" style="color:var(--muted);font-size:13px;align-self:center;min-width:200px;text-align:center"></span>
+    <button class="btn" id="g-next">Siguiente →</button>
+    <button class="btn" id="g-hoy">Hoy</button>
+  </div>
+  <div class="gantt-w" style="margin-top:10px" id="g-cont"><div class="loading"><div class="spin"></div>Cargando...</div></div>
+</div>
+
+<!-- ============ MANTENIMIENTO ============ -->
+<div class="sec" id="s-mant">
+  <div class="ptitle">Mantenimiento</div>
+  <div class="psub">Registro de revisiones y reparaciones</div>
+  <div class="sh"><div></div><button class="btn p" id="btn-nuevo-man">+ Registrar</button></div>
+  <div class="tw"><table>
+    <thead><tr><th>Fecha</th><th>Vehículo</th><th>Tipo</th><th>Detalle</th><th>KM</th><th>Costo</th><th>Próximo</th></tr></thead>
+    <tbody id="t-mant"></tbody>
+  </table></div>
+</div>
+
+<!-- ============ VTV ============ -->
+<div class="sec" id="s-vtv">
+  <div class="ptitle">VTV</div>
+  <div class="psub">Historial de trámites de Verificación Técnica Vehicular</div>
+  <div class="sh"><div></div><button class="btn p" id="btn-nuevo-vtv">+ Registrar</button></div>
+  <div class="tw"><table>
+    <thead><tr><th>Vehículo</th><th>Fecha trámite</th><th>Resultado</th><th>Estado</th><th>Vencimiento</th><th>Acciones</th></tr></thead>
+    <tbody id="t-vtv"></tbody>
+  </table></div>
+</div>
+
+<!-- ============ DOCUMENTACIÓN (Seguros + Permisos) ============ -->
+<div class="sec" id="s-doc">
+  <div class="ptitle">Documentación</div>
+  <div class="psub">Un vehículo por fila — seguro y permiso vigentes uno al lado del otro</div>
+  <div class="tw"><table>
+    <thead><tr><th>Vehículo</th><th>Seguro</th><th>Permiso</th><th>Acciones</th></tr></thead>
+    <tbody id="t-doc"></tbody>
+  </table></div>
+</div>
+
+</main>
+</div><!-- /layout -->
+</div><!-- /app -->
+
+<script>
+  // Cierre de modales desde los botones "×" (inline por simplicidad).
+  function cm(id) { document.getElementById(id)?.classList.remove('open'); }
+</script>
+<script type="module" src="js/main.js"></script>
+</body>
+</html>

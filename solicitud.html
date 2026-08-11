@@ -1,0 +1,493 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Solicitud de Vehículo — FlotaManager</title>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
+<style>
+:root{--bg:#0f1117;--bg2:#161b27;--bg3:#1c2333;--border:#2a3248;--text:#e2e8f0;--muted:#7c8db5;--accent:#3b82f6;--accent2:#6366f1;--green:#22c55e;--yellow:#f59e0b;--red:#ef4444;--purple:#a855f7;--font:'Segoe UI',system-ui,sans-serif}
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:var(--font);background:var(--bg);color:var(--text);min-height:100vh;font-size:14px}
+/* CFG */
+#cfg{display:flex;align-items:center;justify-content:center;min-height:100vh;padding:20px}
+.cfg-box{background:var(--bg2);border:1px solid var(--border);border-radius:16px;padding:36px;width:440px;max-width:100%}
+.cfg-logo{font-size:20px;font-weight:700;margin-bottom:6px;display:flex;align-items:center;gap:10px}
+.cfg-icon{width:38px;height:38px;background:linear-gradient(135deg,var(--accent),var(--accent2));border-radius:9px;display:flex;align-items:center;justify-content:center;font-size:20px}
+.cfg-sub{color:var(--muted);font-size:13px;margin-bottom:24px}
+/* APP */
+#app{display:none;flex-direction:column;min-height:100vh}
+header{background:var(--bg2);border-bottom:1px solid var(--border);padding:0 20px;height:54px;display:flex;align-items:center;justify-content:space-between;flex-shrink:0}
+.logo{display:flex;align-items:center;gap:10px;font-weight:700;font-size:15px}
+.logo-icon{width:30px;height:30px;background:linear-gradient(135deg,var(--accent),var(--accent2));border-radius:7px;display:flex;align-items:center;justify-content:center;font-size:16px}
+.hbadge{background:rgba(99,102,241,.15);color:var(--accent2);border:1px solid rgba(99,102,241,.3);padding:2px 10px;border-radius:20px;font-size:11px;font-weight:700}
+main{flex:1;padding:28px 20px;max-width:860px;margin:0 auto;width:100%}
+/* PASOS */
+.steps{display:flex;gap:0;margin-bottom:32px}
+.step{display:flex;align-items:center;gap:8px;font-size:13px;color:var(--muted);flex:1}
+.step:not(:last-child)::after{content:'';flex:1;height:1px;background:var(--border);margin:0 8px}
+.step-num{width:26px;height:26px;border-radius:50%;border:1px solid var(--border);display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;flex-shrink:0}
+.step.active .step-num{background:var(--accent);border-color:var(--accent);color:#fff}
+.step.active{color:var(--text)}
+.step.done .step-num{background:var(--green);border-color:var(--green);color:#fff}
+.step.done{color:var(--muted)}
+/* VEHÍCULOS SELECCIONABLES */
+.vc-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:12px;margin-bottom:24px}
+.vc-card{background:var(--bg2);border:2px solid var(--border);border-radius:12px;padding:16px;cursor:pointer;transition:all .15s;position:relative;overflow:hidden}
+.vc-card:hover{border-color:var(--accent);transform:translateY(-1px)}
+.vc-card.sel{border-color:var(--accent);background:rgba(59,130,246,.06)}
+.vc-card .stripe{position:absolute;top:0;left:0;right:0;height:3px}
+.vc-card.ci .stripe{background:var(--accent)}.vc-card.co .stripe{background:var(--purple)}
+.vc-plate{font-size:18px;font-weight:700;letter-spacing:1px;margin-top:4px}
+.vc-mod{font-size:12px;color:var(--muted);margin-top:3px}
+.vc-emp{font-size:10px;color:var(--muted);margin-top:2px}
+.vc-sel-check{position:absolute;top:10px;right:10px;width:22px;height:22px;border-radius:50%;background:var(--accent);color:#fff;display:none;align-items:center;justify-content:center;font-size:13px;font-weight:700}
+.vc-card.sel .vc-sel-check{display:flex}
+.libre-badge{display:inline-block;padding:3px 9px;border-radius:20px;font-size:11px;font-weight:600;background:rgba(34,197,94,.15);color:var(--green);margin-top:8px}
+/* FORM */
+.form-card{background:var(--bg2);border:1px solid var(--border);border-radius:12px;padding:24px;margin-bottom:20px}
+.form-title{font-size:15px;font-weight:600;margin-bottom:18px;color:var(--text)}
+.fg{margin-bottom:16px}
+.fr{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+label{display:block;font-size:12px;color:var(--muted);margin-bottom:5px}
+label .req{color:var(--red)}
+input,select,textarea{width:100%;background:var(--bg3);border:1px solid var(--border);border-radius:8px;color:var(--text);padding:9px 12px;font-size:13px;font-family:var(--font);transition:border-color .15s}
+input:focus,select:focus,textarea:focus{outline:none;border-color:var(--accent)}
+textarea{resize:vertical;min-height:80px}
+select option{background:var(--bg3)}
+.btn{padding:10px 22px;border-radius:9px;border:1px solid var(--border);background:transparent;color:var(--text);cursor:pointer;font-size:14px;font-family:var(--font);font-weight:600;transition:all .15s;display:inline-flex;align-items:center;gap:7px}
+.btn:hover{background:var(--bg3)}
+.btn.p{background:var(--accent);border-color:var(--accent);color:#fff}
+.btn.p:hover{background:#2563eb}
+.btn:disabled{opacity:.4;cursor:not-allowed}
+.btn-row{display:flex;gap:10px;justify-content:space-between;align-items:center;margin-top:20px}
+/* SELECCIÓN RESUMEN */
+.sel-banner{background:rgba(59,130,246,.08);border:1px solid rgba(59,130,246,.25);border-radius:10px;padding:12px 16px;margin-bottom:20px;display:flex;align-items:center;justify-content:space-between;font-size:13px}
+.sel-banner strong{color:var(--accent)}
+/* SUCCESS */
+#success{display:none;text-align:center;padding:48px 20px}
+.success-icon{font-size:64px;margin-bottom:20px}
+.success-title{font-size:24px;font-weight:700;margin-bottom:8px}
+.success-sub{color:var(--muted);font-size:14px;margin-bottom:28px;line-height:1.6}
+.success-card{background:var(--bg2);border:1px solid var(--border);border-radius:12px;padding:20px;text-align:left;max-width:400px;margin:0 auto 24px;font-size:13px;line-height:2}
+/* TOAST */
+.toast-c{position:fixed;top:64px;right:14px;z-index:300;display:flex;flex-direction:column;gap:7px}
+.toast{background:var(--bg3);border:1px solid var(--border);border-radius:8px;padding:9px 15px;font-size:13px;min-width:210px;display:flex;align-items:center;gap:7px;animation:sin .2s ease}
+@keyframes sin{from{transform:translateX(100%);opacity:0}to{transform:translateX(0);opacity:1}}
+.toast.ok{border-color:var(--green)}.toast.er{border-color:var(--red)}
+.spin{width:22px;height:22px;border:2px solid var(--border);border-top-color:var(--accent);border-radius:50%;animation:sp .6s linear infinite;margin:40px auto}
+@keyframes sp{to{transform:rotate(360deg)}}
+.empty{text-align:center;color:var(--muted);padding:32px;font-size:13px}
+.no-disponibles{background:rgba(245,158,11,.07);border:1px solid rgba(245,158,11,.25);border-radius:10px;padding:20px;text-align:center;color:var(--yellow);font-size:13px}
+/* HISTORIAL */
+.hist-item{background:var(--bg2);border:1px solid var(--border);border-radius:10px;padding:14px 16px;margin-bottom:10px}
+.hist-header{display:flex;justify-content:space-between;align-items:center;margin-bottom:6px}
+.hist-fecha{font-size:12px;color:var(--muted)}
+.badge{padding:2px 8px;border-radius:12px;font-size:11px;font-weight:600;display:inline-block}
+.badge.pendiente{background:rgba(245,158,11,.15);color:var(--yellow)}
+.badge.aprobado{background:rgba(34,197,94,.15);color:var(--green)}
+.badge.rechazado{background:rgba(239,68,68,.15);color:var(--red)}
+/* TABS */
+.tabs{display:flex;gap:0;margin-bottom:24px;border-bottom:1px solid var(--border)}
+.tab{padding:10px 18px;cursor:pointer;font-size:13px;font-weight:500;color:var(--muted);border-bottom:2px solid transparent;margin-bottom:-1px;transition:all .15s}
+.tab:hover{color:var(--text)}
+.tab.active{color:var(--accent);border-bottom-color:var(--accent)}
+.tab-content{display:none}.tab-content.on{display:block}
+/* MISC */
+.cfg-divider{border:none;border-top:1px solid var(--border);margin:20px 0}
+.text-muted{color:var(--muted)}
+@media(max-width:600px){.fr{grid-template-columns:1fr}.vc-grid{grid-template-columns:1fr 1fr}.steps .step span{display:none}}
+</style>
+</head>
+<body>
+<div class="toast-c" id="TC"></div>
+
+<!-- ERROR DE CONEXIÓN (solo se muestra si falla la conexión automática a Supabase) -->
+<div id="cfg" style="display:none">
+<div class="cfg-box">
+  <div class="cfg-logo"><div class="cfg-icon">⚠️</div>Solicitud de Vehículo</div>
+  <div class="cfg-sub">No se pudo conectar a Supabase</div>
+  <div id="cfg-msg" style="margin-top:12px;font-size:13px"></div>
+</div>
+</div>
+
+<!-- APP -->
+<div id="app">
+<header>
+  <div class="logo"><div class="logo-icon">📋</div><span>Solicitud de Vehículo</span><span class="hbadge">PERSONAL</span></div>
+  <div style="display:flex;align-items:center;gap:8px">
+    <span id="clk" style="font-size:12px;color:var(--muted)"></span>
+  </div>
+</header>
+
+<main>
+  <div class="tabs">
+    <div class="tab active" onclick="showTab('nueva',this)">📋 Nueva solicitud</div>
+    <div class="tab" onclick="showTab('historial',this)">📂 Mis solicitudes</div>
+  </div>
+
+  <!-- NUEVA SOLICITUD -->
+  <div class="tab-content on" id="tab-nueva">
+
+    <!-- STEP INDICADOR -->
+    <div class="steps" id="steps">
+      <div class="step active" id="step1"><div class="step-num">1</div><span>Elegí el vehículo</span></div>
+      <div class="step" id="step2"><div class="step-num">2</div><span>Tus datos</span></div>
+      <div class="step" id="step3"><div class="step-num">3</div><span>Confirmar</span></div>
+    </div>
+
+    <!-- PASO 1: elegir vehículo -->
+    <div id="p1">
+      <div class="form-title">Vehículos disponibles ahora</div>
+      <div id="vc-lista"><div class="spin"></div></div>
+      <div id="sel-banner" style="display:none" class="sel-banner">
+        ✓ Seleccionaste: <strong id="sel-desc">–</strong>
+        <button class="btn" style="padding:4px 12px;font-size:12px" onclick="deseleccionar()">Cambiar</button>
+      </div>
+      <div style="text-align:right">
+        <button class="btn p" id="btn-paso2" onclick="irPaso2()" disabled>Continuar →</button>
+      </div>
+    </div>
+
+    <!-- PASO 2: datos del solicitante -->
+    <div id="p2" style="display:none">
+      <div class="form-card">
+        <div class="form-title">Tus datos</div>
+        <div class="fr">
+          <div class="fg"><label>Nombre y Apellido <span class="req">*</span></label><select id="s_sol" required><option value="">Seleccionar...</option></select></div>
+          <div class="fg"><label>Sector <span class="req">*</span></label><input id="s_sec" required placeholder="Calidad, Obra, Logística..."></div>
+        </div>
+        <div class="fr">
+          <div class="fg"><label>Email</label><input type="email" id="s_email" placeholder="tu@empresa.com"></div>
+          <div class="fg"><label>OT / Proyecto</label><input id="s_ot" placeholder="Nro. de OT"></div>
+        </div>
+      </div>
+      <div class="form-card">
+        <div class="form-title">Detalles del viaje</div>
+        <div class="fr">
+          <div class="fg"><label>Fecha de uso <span class="req">*</span></label><input type="date" id="s_fuso" required></div>
+          <div class="fg"><label>Fecha de devolución</label><input type="date" id="s_fdev"></div>
+        </div>
+        <div class="fg"><label>Destino / Motivo <span class="req">*</span></label><input id="s_dest" required placeholder="¿A dónde vas y para qué?"></div>
+        <div class="fg"><label>Observaciones adicionales</label><textarea id="s_obs" placeholder="Cantidad de pasajeros, materiales a transportar, etc."></textarea></div>
+      </div>
+      <div class="btn-row">
+        <button class="btn" onclick="irPaso1()">← Volver</button>
+        <button class="btn p" onclick="irPaso3()">Revisar solicitud →</button>
+      </div>
+    </div>
+
+    <!-- PASO 3: confirmar -->
+    <div id="p3" style="display:none">
+      <div class="form-card">
+        <div class="form-title">Revisá tu solicitud antes de enviar</div>
+        <div id="resumen" style="font-size:13px;line-height:2.2;color:var(--text)"></div>
+      </div>
+      <div style="background:rgba(59,130,246,.07);border:1px solid rgba(59,130,246,.2);border-radius:10px;padding:14px 16px;font-size:13px;color:var(--muted);margin-bottom:20px">
+        ℹ️ Tu solicitud quedará <strong style="color:var(--yellow)">PENDIENTE</strong> hasta que el área administrativa la apruebe o rechace. Te puede llegar un correo con la respuesta.
+      </div>
+      <div class="btn-row">
+        <button class="btn" onclick="irPaso2()">← Modificar</button>
+        <button class="btn p" id="btn-enviar" onclick="enviarSolicitud()">✓ Enviar solicitud</button>
+      </div>
+    </div>
+
+    <!-- SUCCESS -->
+    <div id="success">
+      <div class="success-icon">🎉</div>
+      <div class="success-title">¡Solicitud enviada!</div>
+      <div class="success-sub">Tu solicitud fue recibida y está pendiente de aprobación.<br>El área administrativa la revisará a la brevedad.</div>
+      <div class="success-card" id="success-detail"></div>
+      <button class="btn p" onclick="nuevaSolicitud()" style="margin:0 auto;display:flex">+ Hacer otra solicitud</button>
+    </div>
+  </div>
+
+  <!-- HISTORIAL -->
+  <div class="tab-content" id="tab-historial">
+    <div style="margin-bottom:16px">
+      <div style="font-size:13px;color:var(--muted);margin-bottom:12px">Filtrá por tu nombre para ver solo tus solicitudes</div>
+      <div style="display:flex;gap:10px;flex-wrap:wrap">
+        <input id="h-nombre" placeholder="Tu nombre..." style="max-width:200px;background:var(--bg3);border:1px solid var(--border);border-radius:7px;color:var(--text);padding:7px 11px;font-size:13px;font-family:var(--font)" oninput="loadHistorial()">
+        <select id="h-estado" onchange="loadHistorial()" style="max-width:160px;background:var(--bg3);border:1px solid var(--border);border-radius:7px;color:var(--text);padding:7px 11px;font-size:13px;font-family:var(--font)">
+          <option value="">Todos los estados</option>
+          <option value="PENDIENTE">Pendientes</option>
+          <option value="APROBADO">Aprobadas</option>
+          <option value="RECHAZADO">Rechazadas</option>
+        </select>
+      </div>
+    </div>
+    <div id="hist-lista"><div class="empty">Escribí tu nombre para buscar tus solicitudes</div></div>
+  </div>
+</main>
+</div><!-- /app -->
+
+<script>
+let SB = null;
+let VCS_LIBRES = [];
+let vcSeleccionado = null;
+// Proyecto Supabase compartido con el sistema de legajos (Nexo RRHH).
+// Tablas de este tablero con prefijo compras_ (ver sql/schema.sql).
+const SUPABASE_URL = 'https://bmueojeeexheprteavay.supabase.co';
+const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImJtdWVvamVlZXhoZXBydGVhdmF5Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODA0MjEyMzQsImV4cCI6MjA5NTk5NzIzNH0.Rh_OGhhnWZwOil1Rp7261QETH9kFgSvylZVJS35e7-o';
+SB = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {auth:{persistSession:false}});
+let PERSONAL = [];
+const desc = v => v ? (v.marca ? `${v.marca} ${v.modelo||''}`.trim() : (v.modelo||'')) : '';
+
+// Personal habilitado a solicitar vehículo: mensuales activos + quincenales con puesto
+// "Camion". Viene de las tablas de legajos (mismo proyecto Supabase, ver
+// rrhh_puestos_config / v_empleados_activos) — no hay FK entre ellas, se cruzan por
+// desc_puesto en el cliente.
+async function cargarPersonal() {
+  const [{data:puestos}, {data:empleados}] = await Promise.all([
+    SB.from('rrhh_puestos_config').select('desc_puesto,tipo'),
+    SB.from('v_empleados_activos').select('legajo,empresa,apellido_y_nombre,desc_puesto'),
+  ]);
+  const mensuales = new Set((puestos||[]).filter(p=>p.tipo==='mensual').map(p=>p.desc_puesto));
+  PERSONAL = (empleados||[])
+    .filter(e => mensuales.has(e.desc_puesto) || e.desc_puesto === 'Camion')
+    .sort((a,b)=>a.apellido_y_nombre.localeCompare(b.apellido_y_nombre,'es'));
+  document.getElementById('s_sol').innerHTML = '<option value="">Seleccionar...</option>' +
+    PERSONAL.map(p=>`<option value="${p.apellido_y_nombre}">${p.apellido_y_nombre} — ${p.empresa}</option>`).join('');
+}
+
+async function conectar() {
+  const msg = document.getElementById('cfg-msg');
+  try {
+    const {error} = await SB.from('compras_vehiculos').select('id').limit(1);
+    if (error) throw error;
+    document.getElementById('app').style.display = 'flex';
+    await Promise.all([cargarVehiculos(), cargarPersonal()]);
+    // Fecha mínima = hoy
+    document.getElementById('s_fuso').min = today();
+    document.getElementById('s_fdev').min = today();
+  } catch(e) {
+    document.getElementById('cfg').style.display = 'flex';
+    msg.innerHTML = `<span style="color:var(--red)">${e.message}</span>`;
+  }
+}
+
+const toast = (msg, type='ok') => {
+  const t = document.createElement('div'); t.className=`toast ${type}`;
+  t.innerHTML=`<span>${type==='ok'?'✓':'✗'}</span> ${msg}`;
+  document.getElementById('TC').appendChild(t);
+  setTimeout(()=>t.remove(),3200);
+};
+const fmt = d => d ? new Date(d+'T12:00:00').toLocaleDateString('es-AR') : '–';
+const today = () => new Date().toISOString().slice(0,10);
+setInterval(()=>{ document.getElementById('clk').textContent = new Date().toLocaleTimeString('es-AR',{hour:'2-digit',minute:'2-digit'}); },1000);
+
+function showTab(id, el) {
+  document.querySelectorAll('.tab').forEach(t=>t.classList.remove('active'));
+  document.querySelectorAll('.tab-content').forEach(t=>t.classList.remove('on'));
+  el.classList.add('active');
+  document.getElementById('tab-'+id).classList.add('on');
+  if (id==='historial') loadHistorial();
+}
+
+// ============================================================
+// PASO 1 — ELEGIR VEHÍCULO
+// ============================================================
+async function cargarVehiculos() {
+  const cont = document.getElementById('vc-lista');
+  cont.innerHTML = '<div class="spin"></div>';
+  // Solo LIBRE — el personal no ve los que están EN USO o en MANTENIMIENTO
+  const {data, error} = await SB.from('compras_vehiculos')
+    .select('*').eq('activo',true).eq('estado','LIBRE').order('empresa').order('patente');
+  if (error) { cont.innerHTML=`<div class="empty" style="color:var(--red)">${error.message}</div>`; return; }
+  VCS_LIBRES = data || [];
+  renderVehiculos();
+}
+
+function renderVehiculos() {
+  const cont = document.getElementById('vc-lista');
+  if (!VCS_LIBRES.length) {
+    cont.innerHTML = `<div class="no-disponibles">
+      ⚠️ No hay vehículos disponibles en este momento.<br>
+      <span style="font-size:12px;margin-top:6px;display:block">Todos los vehículos están en uso o en mantenimiento. Consultá con el área administrativa.</span>
+    </div>`;
+    return;
+  }
+  cont.innerHTML = `<div class="vc-grid">${VCS_LIBRES.map(v=>{
+    const cls = v.empresa?.includes('Co.mo.ing') ? 'co' : 'ci';
+    const sel = vcSeleccionado?.id === v.id;
+    return `<div class="vc-card ${cls} ${sel?'sel':''}" onclick="seleccionarVC('${v.id}')">
+      <div class="stripe"></div>
+      <div class="vc-sel-check">✓</div>
+      <div class="vc-plate">${v.patente}</div>
+      <div class="vc-mod">${desc(v)}${v.tipo?' · '+v.tipo:''}</div>
+      <div class="vc-emp">${v.empresa}</div>
+      <div class="libre-badge">✓ Disponible</div>
+    </div>`;
+  }).join('')}</div>`;
+}
+
+function seleccionarVC(id) {
+  vcSeleccionado = VCS_LIBRES.find(v=>v.id===id);
+  renderVehiculos();
+  const banner = document.getElementById('sel-banner');
+  const btn = document.getElementById('btn-paso2');
+  if (vcSeleccionado) {
+    document.getElementById('sel-desc').textContent = `${vcSeleccionado.patente} – ${desc(vcSeleccionado)} (${vcSeleccionado.empresa})`;
+    banner.style.display = 'flex';
+    btn.disabled = false;
+  } else {
+    banner.style.display = 'none';
+    btn.disabled = true;
+  }
+}
+
+function deseleccionar() {
+  vcSeleccionado = null;
+  renderVehiculos();
+  document.getElementById('sel-banner').style.display = 'none';
+  document.getElementById('btn-paso2').disabled = true;
+}
+
+// ============================================================
+// NAVEGACIÓN ENTRE PASOS
+// ============================================================
+function irPaso1() {
+  document.getElementById('p1').style.display='block';
+  document.getElementById('p2').style.display='none';
+  document.getElementById('p3').style.display='none';
+  document.getElementById('success').style.display='none';
+  setStep(1);
+}
+function irPaso2() {
+  if (!vcSeleccionado) { toast('Seleccioná un vehículo','er'); return; }
+  document.getElementById('p1').style.display='none';
+  document.getElementById('p2').style.display='block';
+  document.getElementById('p3').style.display='none';
+  document.getElementById('success').style.display='none';
+  if (!document.getElementById('s_fuso').value) document.getElementById('s_fuso').value = today();
+  setStep(2);
+}
+function irPaso3() {
+  const sol = document.getElementById('s_sol').value.trim();
+  const sec = document.getElementById('s_sec').value.trim();
+  const fuso = document.getElementById('s_fuso').value;
+  const dest = document.getElementById('s_dest').value.trim();
+  if (!sol||!sec||!fuso||!dest) { toast('Completá los campos obligatorios','er'); return; }
+  const fdev = document.getElementById('s_fdev').value;
+  document.getElementById('resumen').innerHTML = `
+    <div style="display:grid;grid-template-columns:140px 1fr;gap:4px 12px">
+      <span style="color:var(--muted)">Vehículo</span><strong>${vcSeleccionado.patente} – ${desc(vcSeleccionado)}</strong>
+      <span style="color:var(--muted)">Empresa</span><span>${vcSeleccionado.empresa}</span>
+      <span style="color:var(--muted)">Solicitante</span><strong>${sol}</strong>
+      <span style="color:var(--muted)">Sector</span><span>${sec}</span>
+      <span style="color:var(--muted)">OT</span><span>${document.getElementById('s_ot').value||'–'}</span>
+      <span style="color:var(--muted)">Fecha de uso</span><strong>${fmt(fuso)}</strong>
+      <span style="color:var(--muted)">Devolución</span><span>${fdev?fmt(fdev):'–'}</span>
+      <span style="color:var(--muted)">Destino</span><strong>${dest}</strong>
+      <span style="color:var(--muted)">Observaciones</span><span>${document.getElementById('s_obs').value||'–'}</span>
+    </div>`;
+  document.getElementById('p1').style.display='none';
+  document.getElementById('p2').style.display='none';
+  document.getElementById('p3').style.display='block';
+  document.getElementById('success').style.display='none';
+  setStep(3);
+}
+
+function setStep(n) {
+  [1,2,3].forEach(i=>{
+    const s = document.getElementById('step'+i);
+    s.className = 'step' + (i===n?' active':i<n?' done':'');
+  });
+}
+
+// ============================================================
+// ENVIAR SOLICITUD
+// ============================================================
+async function enviarSolicitud() {
+  const btn = document.getElementById('btn-enviar');
+  btn.disabled = true; btn.textContent = 'Enviando...';
+  const payload = {
+    solicitante: document.getElementById('s_sol').value.trim(),
+    email: document.getElementById('s_email').value.trim()||null,
+    sector: document.getElementById('s_sec').value.trim(),
+    vehiculo_id: vcSeleccionado.id,
+    vehiculo_desc: `${vcSeleccionado.patente} – ${desc(vcSeleccionado)}`,
+    vehiculo_sugerido: `${vcSeleccionado.patente} – ${desc(vcSeleccionado)} (${vcSeleccionado.empresa})`,
+    fecha_uso: document.getElementById('s_fuso').value,
+    fecha_devolucion: document.getElementById('s_fdev').value||null,
+    ot: document.getElementById('s_ot').value.trim()||null,
+    destino: document.getElementById('s_dest').value.trim(),
+    observacion: document.getElementById('s_obs').value.trim()||null,
+    estado: 'PENDIENTE',
+  };
+  const {error} = await SB.from('compras_solicitudes').insert(payload);
+  btn.disabled = false; btn.textContent = '✓ Enviar solicitud';
+  if (error) { toast(error.message,'er'); return; }
+
+  // Mostrar success
+  document.getElementById('p3').style.display = 'none';
+  document.getElementById('success').style.display = 'block';
+  document.getElementById('success-detail').innerHTML = `
+    <strong>Vehículo:</strong> ${vcSeleccionado.patente} – ${desc(vcSeleccionado)}<br>
+    <strong>Fecha:</strong> ${fmt(document.getElementById('s_fuso').value)}<br>
+    <strong>Solicitante:</strong> ${payload.solicitante}<br>
+    <strong>Estado:</strong> <span style="color:var(--yellow);font-weight:600">PENDIENTE DE APROBACIÓN</span>`;
+  setStep(3);
+}
+
+function nuevaSolicitud() {
+  vcSeleccionado = null;
+  document.getElementById('fMOV')?.reset();
+  ['s_sol','s_sec','s_email','s_ot','s_fuso','s_fdev','s_dest','s_obs'].forEach(id=>{
+    const el=document.getElementById(id); if(el) el.value='';
+  });
+  document.getElementById('btn-paso2').disabled = true;
+  document.getElementById('sel-banner').style.display = 'none';
+  document.getElementById('success').style.display = 'none';
+  document.getElementById('p1').style.display = 'block';
+  setStep(1);
+  cargarVehiculos();
+}
+
+// ============================================================
+// HISTORIAL
+// ============================================================
+async function loadHistorial() {
+  const nombre = document.getElementById('h-nombre').value.trim();
+  const estado = document.getElementById('h-estado').value;
+  const cont = document.getElementById('hist-lista');
+
+  if (!nombre) { cont.innerHTML='<div class="empty">Escribí tu nombre para buscar tus solicitudes</div>'; return; }
+  cont.innerHTML='<div class="spin"></div>';
+
+  let q = SB.from('compras_solicitudes').select('*').ilike('solicitante','%'+nombre+'%').order('created_at',{ascending:false}).limit(50);
+  if (estado) q = q.eq('estado', estado);
+  const {data, error} = await q;
+
+  if (error) { cont.innerHTML=`<div class="empty" style="color:var(--red)">${error.message}</div>`; return; }
+  if (!data?.length) { cont.innerHTML='<div class="empty">No se encontraron solicitudes</div>'; return; }
+
+  cont.innerHTML = data.map(s=>{
+    const badgeCls = {PENDIENTE:'pendiente',APROBADO:'aprobado',RECHAZADO:'rechazado'}[s.estado]||'pendiente';
+    return `<div class="hist-item">
+      <div class="hist-header">
+        <div>
+          <strong>${s.vehiculo_sugerido||s.vehiculo_desc}</strong>
+          ${s.vehiculo_asignado_desc && s.vehiculo_asignado_desc!==s.vehiculo_desc
+            ? `<span style="font-size:12px;color:var(--muted)"> → asignado: ${s.vehiculo_asignado_desc}</span>` : ''}
+        </div>
+        <span class="badge ${badgeCls}">${s.estado}</span>
+      </div>
+      <div style="font-size:12px;color:var(--muted);display:flex;gap:16px;flex-wrap:wrap">
+        <span>📅 ${fmt(s.fecha_uso)}${s.fecha_devolucion?' → '+fmt(s.fecha_devolucion):''}</span>
+        <span>👤 ${s.solicitante} · ${s.sector}</span>
+        ${s.ot?`<span>OT: ${s.ot}</span>`:''}
+        ${s.destino?`<span>📍 ${s.destino}</span>`:''}
+      </div>
+      ${s.motivo_rechazo?`<div style="margin-top:8px;font-size:12px;background:var(--bg3);border-radius:6px;padding:8px 10px;color:var(--muted)">💬 ${s.motivo_rechazo}</div>`:''}
+    </div>`;
+  }).join('');
+}
+
+// ============================================================
+// AUTO-LOGIN
+// ============================================================
+window.addEventListener('load', conectar);
+</script>
+</body>
+</html>

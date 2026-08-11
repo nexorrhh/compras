@@ -1,0 +1,564 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Portería — FlotaManager</title>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
+<style>
+:root{--bg:#0f1117;--bg2:#161b27;--bg3:#1c2333;--border:#2a3248;--text:#e2e8f0;--muted:#7c8db5;--accent:#3b82f6;--green:#22c55e;--yellow:#f59e0b;--red:#ef4444;--orange:#f97316;--font:'Segoe UI',system-ui,sans-serif}
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:var(--font);background:var(--bg);color:var(--text);min-height:100vh;font-size:14px}
+#cfg{display:flex;align-items:center;justify-content:center;min-height:100vh;padding:20px}
+.cfg-box{background:var(--bg2);border:1px solid var(--border);border-radius:16px;padding:36px;width:440px;max-width:100%}
+.cfg-logo{font-size:20px;font-weight:700;margin-bottom:6px;display:flex;align-items:center;gap:10px}
+.cfg-icon{width:38px;height:38px;background:#1e3a5f;border-radius:9px;display:flex;align-items:center;justify-content:center;font-size:20px}
+.cfg-sub{color:var(--muted);font-size:13px;margin-bottom:24px}
+#app{display:none;flex-direction:column;min-height:100vh}
+header{background:var(--bg2);border-bottom:1px solid var(--border);padding:0 24px;height:56px;display:flex;align-items:center;justify-content:space-between;flex-shrink:0;position:sticky;top:0;z-index:50}
+.logo{display:flex;align-items:center;gap:10px;font-weight:700;font-size:16px}
+.logo-icon{width:32px;height:32px;background:#1e3a5f;border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:17px}
+.hbadge{background:rgba(59,130,246,.15);color:var(--accent);border:1px solid rgba(59,130,246,.3);padding:2px 10px;border-radius:20px;font-size:11px;font-weight:700}
+.live-dot{width:8px;height:8px;border-radius:50%;background:var(--green);animation:pulse 2s infinite}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.3}}
+main{flex:1;padding:24px;max-width:1100px;margin:0 auto;width:100%}
+.sec-title{font-size:15px;font-weight:700;margin-bottom:14px;display:flex;align-items:center;gap:10px}
+.cnt{padding:2px 9px;border-radius:12px;font-size:12px;font-weight:700}
+.cnt.red{background:rgba(239,68,68,.15);color:var(--red)}
+.cnt.green{background:rgba(34,197,94,.15);color:var(--green)}
+.cnt.yellow{background:rgba(245,158,11,.15);color:var(--yellow)}
+.auth-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:14px;margin-bottom:28px}
+.auth-card{background:var(--bg2);border:1px solid var(--border);border-radius:12px;overflow:hidden}
+.auth-card .stripe{height:3px}
+.auth-card.psal .stripe{background:var(--yellow)}
+.auth-card.encalle .stripe{background:var(--red)}
+.auth-body{padding:16px}
+.auth-plate{font-size:20px;font-weight:700;letter-spacing:1px}
+.auth-mod{font-size:12px;color:var(--muted);margin-top:2px}
+.auth-info{margin-top:10px;font-size:12px;color:var(--muted);line-height:2}
+.auth-info strong{color:var(--text)}
+.astatus{display:inline-flex;align-items:center;gap:5px;padding:3px 10px;border-radius:20px;font-size:11px;font-weight:700;margin-top:10px}
+.astatus.listo{background:rgba(245,158,11,.15);color:var(--yellow)}
+.astatus.calle{background:rgba(239,68,68,.15);color:var(--red)}
+.auth-acts{display:flex;gap:8px;margin-top:12px;padding-top:12px;border-top:1px solid var(--border)}
+.btn{padding:8px 16px;border-radius:8px;border:1px solid var(--border);background:transparent;color:var(--text);cursor:pointer;font-size:13px;font-family:var(--font);font-weight:500;transition:all .15s;display:inline-flex;align-items:center;gap:6px}
+.btn:hover{background:var(--bg3)}
+.btn.sal{background:var(--yellow);border-color:var(--yellow);color:#000}
+.btn.sal:hover{background:#d97706}
+.btn.ret{background:var(--green);border-color:var(--green);color:#fff}
+.btn.ret:hover{background:#16a34a}
+.btn.p{background:var(--accent);border-color:var(--accent);color:#fff}
+.btn.exc{background:transparent;border-color:rgba(239,68,68,.35);color:var(--red);font-size:12px}
+.btn.exc:hover{background:rgba(239,68,68,.08)}
+.tw{background:var(--bg2);border:1px solid var(--border);border-radius:10px;overflow:hidden;margin-bottom:24px}
+table{width:100%;border-collapse:collapse}
+thead{background:var(--bg3)}
+th{padding:9px 14px;text-align:left;font-size:11px;text-transform:uppercase;letter-spacing:.4px;color:var(--muted);white-space:nowrap}
+td{padding:10px 14px;border-top:1px solid var(--border);vertical-align:middle;font-size:13px}
+tr:hover td{background:rgba(255,255,255,.02)}
+.modal-ov{display:none;position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:200;align-items:center;justify-content:center;backdrop-filter:blur(3px)}
+.modal-ov.open{display:flex}
+.modal{background:var(--bg2);border:1px solid var(--border);border-radius:14px;padding:28px;width:480px;max-width:95vw;max-height:90vh;overflow-y:auto;animation:sup .18s ease}
+@keyframes sup{from{transform:translateY(14px);opacity:0}to{transform:translateY(0);opacity:1}}
+.mtitle{font-size:17px;font-weight:700;margin-bottom:4px}
+.msub{font-size:13px;color:var(--muted);margin-bottom:20px}
+.mcls{float:right;cursor:pointer;color:var(--muted);font-size:22px;line-height:1}
+.mcls:hover{color:var(--text)}
+.fg{margin-bottom:14px}
+.fr{display:grid;grid-template-columns:1fr 1fr;gap:11px}
+label{display:block;font-size:12px;color:var(--muted);margin-bottom:4px}
+input,select,textarea{width:100%;background:var(--bg3);border:1px solid var(--border);border-radius:7px;color:var(--text);padding:8px 12px;font-size:13px;font-family:var(--font);transition:border-color .15s}
+input:focus,select:focus,textarea:focus{outline:none;border-color:var(--accent)}
+textarea{resize:vertical;min-height:70px}
+select option{background:var(--bg3)}
+.brow{display:flex;gap:8px;justify-content:flex-end;margin-top:20px}
+.info-box{background:var(--bg3);border-radius:9px;padding:12px 14px;margin-bottom:16px;font-size:13px;line-height:1.9}
+.info-box strong{color:var(--text)}
+.exc-warn{background:rgba(239,68,68,.06);border:1px solid rgba(239,68,68,.2);border-radius:9px;padding:12px 14px;margin-bottom:14px;font-size:12px;color:var(--muted);line-height:1.6}
+.exc-warn strong{color:var(--red)}
+.toast-c{position:fixed;top:66px;right:14px;z-index:300;display:flex;flex-direction:column;gap:7px}
+.toast{background:var(--bg3);border:1px solid var(--border);border-radius:8px;padding:10px 16px;font-size:13px;min-width:220px;display:flex;align-items:center;gap:8px;animation:sin .2s ease}
+@keyframes sin{from{transform:translateX(100%);opacity:0}to{transform:translateX(0);opacity:1}}
+.toast.ok{border-color:var(--green)}.toast.er{border-color:var(--red)}
+.badge{padding:2px 8px;border-radius:12px;font-size:11px;font-weight:600;display:inline-block}
+.badge.salida{background:rgba(239,68,68,.15);color:var(--red)}
+.badge.retorno{background:rgba(34,197,94,.15);color:var(--green)}
+.badge.excepcion{background:rgba(249,115,22,.15);color:var(--orange)}
+.divider{border:none;border-top:1px solid var(--border);margin:24px 0}
+.empty{text-align:center;color:var(--muted);padding:26px;font-size:13px}
+.spin{width:22px;height:22px;border:2px solid var(--border);border-top-color:var(--accent);border-radius:50%;animation:sp .6s linear infinite;margin:30px auto}
+@keyframes sp{to{transform:rotate(360deg)}}
+.exc-section{margin-top:8px}
+.exc-toggle{background:transparent;border:1px dashed rgba(239,68,68,.3);color:var(--muted);font-size:12px;padding:9px 16px;border-radius:8px;cursor:pointer;width:100%;text-align:center;transition:all .15s;font-family:var(--font)}
+.exc-toggle:hover{border-color:var(--red);color:var(--red)}
+@media(max-width:600px){.fr{grid-template-columns:1fr}.auth-grid{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+<div class="toast-c" id="TC"></div>
+
+<!-- ERROR DE CONEXIÓN (solo se muestra si falla la conexión automática a Supabase) -->
+<div id="cfg" style="display:none">
+<div class="cfg-box">
+  <div class="cfg-logo"><div class="cfg-icon">⚠️</div>Portería — FlotaManager</div>
+  <div class="cfg-sub">No se pudo conectar a Supabase</div>
+  <div id="cfg-msg" style="margin-top:12px;font-size:13px"></div>
+</div>
+</div>
+
+<!-- APP -->
+<div id="app">
+
+<!-- MODAL: CONFIRMAR SALIDA -->
+<div class="modal-ov" id="mSAL">
+<div class="modal">
+  <span class="mcls" onclick="cm('mSAL')">×</span>
+  <div class="mtitle" style="color:var(--yellow)">🚀 Confirmar Salida</div>
+  <div class="msub">Confirmá que el vehículo está saliendo ahora</div>
+  <input type="hidden" id="sal_vcid">
+  <div class="info-box" id="sal_info"></div>
+  <div class="fr">
+    <div class="fg">
+      <label>Conductor que retira *</label>
+      <select id="sal_cond" required><option value="">Seleccionar...</option></select>
+    </div>
+    <div class="fg">
+      <label>KM al salir</label>
+      <input type="number" id="sal_km" placeholder="0">
+    </div>
+  </div>
+  <div class="fg"><label>Hora de salida</label><input type="datetime-local" id="sal_fh"></div>
+  <div class="fg"><label>Observaciones</label><textarea id="sal_obs" placeholder="Estado del vehículo, novedades..."></textarea></div>
+  <div class="brow">
+    <button class="btn" onclick="cm('mSAL')">Cancelar</button>
+    <button class="btn sal" onclick="confirmarSalida()">🚀 Confirmar Salida</button>
+  </div>
+</div></div>
+
+<!-- MODAL: RETORNO -->
+<div class="modal-ov" id="mRET">
+<div class="modal">
+  <span class="mcls" onclick="cm('mRET')">×</span>
+  <div class="mtitle" style="color:var(--green)">✅ Registrar Retorno</div>
+  <div class="msub">El vehículo regresó y la llave fue entregada</div>
+  <input type="hidden" id="ret_vcid">
+  <input type="hidden" id="ret_conductor">
+  <div class="info-box" id="ret_info"></div>
+  <div class="fr">
+    <div class="fg"><label>KM al regresar</label><input type="number" id="ret_km" placeholder="0"></div>
+    <div class="fg"><label>Hora de retorno</label><input type="datetime-local" id="ret_fh"></div>
+  </div>
+  <div class="fg"><label>Registrado por</label><input id="ret_reg" placeholder="Nombre del portero"></div>
+  <div class="fg"><label>Observaciones</label><textarea id="ret_obs" placeholder="Estado al regresar, daños, novedades..."></textarea></div>
+  <div class="brow">
+    <button class="btn" onclick="cm('mRET')">Cancelar</button>
+    <button class="btn ret" onclick="confirmarRetorno()">✅ Confirmar Retorno</button>
+  </div>
+</div></div>
+
+<!-- MODAL: EXCEPCIÓN -->
+<div class="modal-ov" id="mEXC">
+<div class="modal">
+  <span class="mcls" onclick="cm('mEXC')">×</span>
+  <div class="mtitle" style="color:var(--orange)">⚠️ Salida Excepcional</div>
+  <div class="msub">Solo para casos urgentes sin autorización previa del sistema</div>
+  <div class="exc-warn">
+    <strong>Atención:</strong> Este movimiento queda marcado como excepción y es visible para el área administrativa. Usarlo solo cuando sea imposible esperar la aprobación normal.
+  </div>
+  <div class="fg"><label>Vehículo *</label><select id="exc_vc"><option value="">Seleccionar...</option></select></div>
+  <div class="fr">
+    <div class="fg"><label>Conductor *</label><select id="exc_cond" required><option value="">Seleccionar...</option></select></div>
+    <div class="fg"><label>Sector / Autoriza *</label><input id="exc_sec" placeholder="Quién autoriza verbalmente"></div>
+  </div>
+  <div class="fr">
+    <div class="fg"><label>KM al salir</label><input type="number" id="exc_km" placeholder="0"></div>
+    <div class="fg"><label>Hora</label><input type="datetime-local" id="exc_fh"></div>
+  </div>
+  <div class="fg"><label>Motivo de la excepción *</label><textarea id="exc_motivo" placeholder="Explicá por qué no fue posible esperar la autorización..."></textarea></div>
+  <div class="brow">
+    <button class="btn" onclick="cm('mEXC')">Cancelar</button>
+    <button class="btn exc" onclick="registrarExcepcion()">⚠️ Registrar de todas formas</button>
+  </div>
+</div></div>
+
+<header>
+  <div class="logo">
+    <div class="logo-icon">🔑</div>
+    <span>FlotaManager</span>
+    <span class="hbadge">PORTERÍA</span>
+  </div>
+  <div style="display:flex;align-items:center;gap:10px">
+    <div class="live-dot"></div>
+    <span id="clk" style="font-size:13px;color:var(--muted)"></span>
+  </div>
+</header>
+
+<main>
+
+  <!-- AUTORIZADOS PENDIENTES DE SALIDA -->
+  <div class="sec-title">
+    Autorizados para salir hoy
+    <span class="cnt yellow" id="cnt-aut">0</span>
+  </div>
+  <div id="grid-aut"><div class="spin"></div></div>
+
+  <!-- EN CALLE AHORA -->
+  <div class="sec-title">
+    En calle ahora
+    <span class="cnt red" id="cnt-calle">0</span>
+  </div>
+  <div id="grid-calle"><div class="spin"></div></div>
+
+  <hr class="divider">
+
+  <!-- MOVIMIENTOS DEL DÍA -->
+  <div class="sec-title">
+    Movimientos del día
+    <span class="cnt green" id="cnt-hoy">0</span>
+  </div>
+  <div class="tw">
+    <table>
+      <thead>
+        <tr><th>Hora</th><th>Tipo</th><th>Vehículo</th><th>Conductor</th><th>KM</th><th>Observaciones</th></tr>
+      </thead>
+      <tbody id="t-hoy"></tbody>
+    </table>
+  </div>
+
+  <!-- EXCEPCIÓN -->
+  <div class="exc-section">
+    <button class="exc-toggle" onclick="abrirExcepcion()">
+      ⚠️ Registrar salida excepcional
+    </button>
+    <div style="font-size:11px;color:var(--muted);margin-top:7px;text-align:center">
+      Utilizar solo en caso de no haber ningún autorizador disponible.
+    </div>
+  </div>
+
+</main>
+</div>
+
+<script>
+// Proyecto Supabase compartido con el sistema de legajos (Nexo RRHH).
+// Tablas de este tablero con prefijo compras_ (ver sql/schema.sql).
+const SUPABASE_URL = 'https://bmueojeeexheprteavay.supabase.co';
+const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImJtdWVvamVlZXhoZXBydGVhdmF5Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODA0MjEyMzQsImV4cCI6MjA5NTk5NzIzNH0.Rh_OGhhnWZwOil1Rp7261QETH9kFgSvylZVJS35e7-o';
+let SB = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {auth:{persistSession:false}});
+let VCS = [], AUTORIZADOS = [], PERSONAL = [];
+const desc = v => v ? (v.marca ? `${v.marca} ${v.modelo||''}`.trim() : (v.modelo||'')) : '';
+
+// Personal habilitado a manejar: mensuales activos + quincenales con puesto "Camion".
+// Viene de las tablas de legajos (mismo proyecto Supabase, ver rrhh_puestos_config /
+// v_empleados_activos) — no hay FK entre ellas, se cruzan por desc_puesto en el cliente.
+async function cargarPersonal() {
+  const [{data:puestos}, {data:empleados}] = await Promise.all([
+    SB.from('rrhh_puestos_config').select('desc_puesto,tipo'),
+    SB.from('v_empleados_activos').select('legajo,empresa,apellido_y_nombre,desc_puesto'),
+  ]);
+  const mensuales = new Set((puestos||[]).filter(p=>p.tipo==='mensual').map(p=>p.desc_puesto));
+  PERSONAL = (empleados||[])
+    .filter(e => mensuales.has(e.desc_puesto) || e.desc_puesto === 'Camion')
+    .sort((a,b)=>a.apellido_y_nombre.localeCompare(b.apellido_y_nombre,'es'));
+}
+
+function fillPersonalSelect(sel, currentValue) {
+  sel.innerHTML = '<option value="">Seleccionar...</option>' +
+    PERSONAL.map(p=>`<option value="${p.apellido_y_nombre}">${p.apellido_y_nombre} — ${p.empresa}</option>`).join('');
+  sel.value = currentValue || '';
+}
+
+async function conectar() {
+  try {
+    const {error} = await SB.from('compras_vehiculos').select('id').limit(1);
+    if (error) throw error;
+    document.getElementById('app').style.display = 'flex';
+    await cargarPersonal();
+    await refresh();
+    setInterval(refresh, 20000);
+  } catch(e) {
+    document.getElementById('cfg').style.display = 'flex';
+    document.getElementById('cfg-msg').innerHTML = `<span style="color:var(--red)">${e.message}</span>`;
+  }
+}
+
+const toast = (msg, type='ok') => {
+  const t = document.createElement('div'); t.className=`toast ${type}`;
+  t.innerHTML=`<span>${type==='ok'?'✓':'✗'}</span> ${msg}`;
+  document.getElementById('TC').appendChild(t);
+  setTimeout(()=>t.remove(), 3500);
+};
+const om = id => document.getElementById(id).classList.add('open');
+const cm = id => document.getElementById(id).classList.remove('open');
+const fmt = d => d ? new Date(d+'T12:00:00').toLocaleDateString('es-AR') : '–';
+const fmtDT = d => d ? new Date(d).toLocaleString('es-AR',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'}) : '–';
+const today = () => new Date().toISOString().slice(0,10);
+const nowLocal = () => { const n=new Date(); n.setMinutes(n.getMinutes()-n.getTimezoneOffset()); return n.toISOString().slice(0,16); };
+// Un <input type="datetime-local"> da "2026-08-06T08:50" (sin huso horario). Si esa
+// cadena se manda tal cual a una columna timestamptz, Postgres la interpreta como UTC
+// en vez de hora local, corriendo el horario guardado por el offset del huso (3hs en
+// Argentina). new Date(...) sí interpreta esa cadena como hora LOCAL del navegador,
+// así que convertimos a ISO (con Z) antes de mandarla a Supabase.
+const localToUTC = v => v ? new Date(v).toISOString() : null;
+
+setInterval(()=>{ document.getElementById('clk').textContent = new Date().toLocaleTimeString('es-AR',{hour:'2-digit',minute:'2-digit',second:'2-digit'}); },1000);
+
+// ============================================================
+// REFRESH
+// ============================================================
+async function refresh() {
+  const todayStr = today();
+
+  const [{data:vcs},{data:sols},{data:movsHoy}] = await Promise.all([
+    SB.from('compras_vehiculos').select('*').eq('activo',true).order('patente'),
+    SB.from('compras_solicitudes').select('*').eq('estado','APROBADO').eq('fecha_uso',todayStr),
+    SB.from('compras_movimientos').select('*').gte('fecha_hora',todayStr+'T00:00:00').order('fecha_hora',{ascending:false}),
+  ]);
+
+  VCS = vcs || [];
+  AUTORIZADOS = sols || [];
+  const movs = movsHoy || [];
+
+  // Vehículos que ya registraron salida hoy
+  const yaSalieron = new Set(movs.filter(m=>m.tipo==='SALIDA').map(m=>m.vehiculo_id));
+
+  // ── AUTORIZADOS PENDIENTES DE SALIDA ──────────────────────
+  const pendientes = AUTORIZADOS.filter(s => s.vehiculo_asignado_id && !yaSalieron.has(s.vehiculo_asignado_id));
+  document.getElementById('cnt-aut').textContent = pendientes.length;
+
+  const gAut = document.getElementById('grid-aut');
+  if (!pendientes.length) {
+    gAut.innerHTML = '<div class="empty">Sin autorizaciones pendientes de salida para hoy</div>';
+  } else {
+    gAut.innerHTML = `<div class="auth-grid">${pendientes.map(s=>{
+      const vc = VCS.find(v=>v.id===s.vehiculo_asignado_id);
+      return `<div class="auth-card psal">
+        <div class="stripe"></div>
+        <div class="auth-body">
+          <div style="display:flex;justify-content:space-between;align-items:flex-start">
+            <div>
+              <div class="auth-plate">${vc?.patente||'–'}</div>
+              <div class="auth-mod">${desc(vc)} · ${vc?.tipo||''}</div>
+            </div>
+            <span class="astatus listo">⏳ Autorizado</span>
+          </div>
+          <div class="auth-info">
+            <strong>Solicitante:</strong> ${s.solicitante}<br>
+            <strong>Sector:</strong> ${s.sector}<br>
+            ${s.ot?`<strong>OT:</strong> ${s.ot}<br>`:''}
+            ${s.destino?`<strong>Destino:</strong> ${s.destino}<br>`:''}
+            <strong>Retorna:</strong> ${s.fecha_devolucion?fmt(s.fecha_devolucion):'No especificado'}
+          </div>
+          <div class="auth-acts">
+            <button class="btn sal" style="flex:1;justify-content:center"
+              onclick="abrirSalida('${s.vehiculo_asignado_id}','${s.solicitante}','${s.destino||''}','${s.ot||''}')">
+              🚀 Confirmar Salida
+            </button>
+          </div>
+        </div>
+      </div>`;
+    }).join('')}</div>`;
+  }
+
+  // ── EN CALLE ──────────────────────────────────────────────
+  const enCalle = VCS.filter(v=>v.estado==='EN USO');
+  document.getElementById('cnt-calle').textContent = enCalle.length;
+
+  const gCalle = document.getElementById('grid-calle');
+  if (!enCalle.length) {
+    gCalle.innerHTML = '<div class="empty">✅ Ningún vehículo en calle ahora</div>';
+  } else {
+    // Última salida de cada vehículo en calle
+    const vcIds = enCalle.map(v=>v.id);
+    const {data:salidas} = await SB.from('compras_movimientos')
+      .select('*').in('vehiculo_id',vcIds).eq('tipo','SALIDA')
+      .order('fecha_hora',{ascending:false});
+
+    gCalle.innerHTML = `<div class="auth-grid">${enCalle.map(v=>{
+      const m = (salidas||[]).find(x=>x.vehiculo_id===v.id);
+      const esExc = m?.observacion?.startsWith('[EXCEPCIÓN]');
+      return `<div class="auth-card encalle">
+        <div class="stripe"></div>
+        <div class="auth-body">
+          <div style="display:flex;justify-content:space-between;align-items:flex-start">
+            <div>
+              <div class="auth-plate">${v.patente}</div>
+              <div class="auth-mod">${desc(v)} · ${v.tipo||''}</div>
+            </div>
+            <span class="astatus calle">🔴 En calle</span>
+          </div>
+          <div class="auth-info">
+            <strong>Conductor:</strong> ${m?.conductor||'–'}<br>
+            <strong>Salida:</strong> ${fmtDT(m?.fecha_hora)}<br>
+            ${esExc?`<strong style="color:var(--orange)">⚠️ Salida excepcional</strong><br>`:''}
+          </div>
+          <div class="auth-acts">
+            <button class="btn ret" style="flex:1;justify-content:center" onclick="abrirRetorno('${v.id}')">
+              ✅ Registrar Retorno
+            </button>
+          </div>
+        </div>
+      </div>`;
+    }).join('')}</div>`;
+  }
+
+  // ── TABLA MOVIMIENTOS HOY ─────────────────────────────────
+  document.getElementById('cnt-hoy').textContent = movs.length;
+  const tb = document.getElementById('t-hoy');
+  if (!movs.length) {
+    tb.innerHTML = '<tr><td colspan="6" class="empty">Sin movimientos registrados hoy</td></tr>';
+  } else {
+    tb.innerHTML = movs.map(m=>{
+      const esExc = m.observacion?.startsWith('[EXCEPCIÓN]');
+      const cls = esExc ? 'excepcion' : m.tipo.toLowerCase();
+      const lbl = esExc ? 'EXCEPCIÓN' : m.tipo;
+      const obs = esExc ? m.observacion.replace('[EXCEPCIÓN] ','') : (m.observacion||'–');
+      return `<tr>
+        <td>${fmtDT(m.fecha_hora)}</td>
+        <td><span class="badge ${cls}">${lbl}</span></td>
+        <td>${m.vehiculo_desc}</td>
+        <td>${m.conductor}</td>
+        <td>${m.km?m.km.toLocaleString('es-AR')+' km':'–'}</td>
+        <td style="font-size:12px;max-width:200px">${obs}</td>
+      </tr>`;
+    }).join('');
+  }
+}
+
+// ============================================================
+// CONFIRMAR SALIDA
+// ============================================================
+function abrirSalida(vcId, solicitante, destino, ot) {
+  const vc = VCS.find(v=>v.id===vcId);
+  document.getElementById('sal_vcid').value = vcId;
+  document.getElementById('sal_fh').value = nowLocal();
+  fillPersonalSelect(document.getElementById('sal_cond'), solicitante);
+  document.getElementById('sal_km').value = vc?.km_actual||'';
+  document.getElementById('sal_obs').value = '';
+  document.getElementById('sal_info').innerHTML =
+    `<strong>Vehículo:</strong> ${vc?.patente} – ${desc(vc)}<br>
+     <strong>Solicitante:</strong> ${solicitante}
+     ${ot?`<br><strong>OT:</strong> ${ot}`:''}
+     ${destino?`<br><strong>Destino:</strong> ${destino}`:''}`;
+  om('mSAL');
+}
+
+async function confirmarSalida() {
+  const vcId = document.getElementById('sal_vcid').value;
+  const vc = VCS.find(v=>v.id===vcId);
+  const cond = document.getElementById('sal_cond').value.trim();
+  if (!cond) { toast('Ingresá el nombre del conductor','er'); return; }
+  const km = parseInt(document.getElementById('sal_km').value)||null;
+
+  const {error} = await SB.from('compras_movimientos').insert({
+    vehiculo_id: vcId,
+    vehiculo_desc: vc ? vc.patente+' – '+desc(vc) : '',
+    tipo: 'SALIDA',
+    fecha_hora: localToUTC(document.getElementById('sal_fh').value),
+    conductor: cond, km,
+    observacion: document.getElementById('sal_obs').value.trim()||null,
+  });
+  if (error) { toast(error.message,'er'); return; }
+
+  const upd = {estado:'EN USO'};
+  if (km) upd.km_actual = km;
+  await SB.from('compras_vehiculos').update(upd).eq('id',vcId);
+  toast('🚀 Salida confirmada'); cm('mSAL'); await refresh();
+}
+
+// ============================================================
+// RETORNO
+// ============================================================
+async function abrirRetorno(vcId) {
+  const vc = VCS.find(v=>v.id===vcId);
+  document.getElementById('ret_vcid').value = vcId;
+  document.getElementById('ret_fh').value = nowLocal();
+  document.getElementById('ret_km').value = vc?.km_actual||'';
+  document.getElementById('ret_obs').value = '';
+  document.getElementById('ret_reg').value = '';
+  // Traemos el conductor de la última salida de este vehículo, para que el
+  // retorno quede asociado a la misma persona en vez de quedar en blanco.
+  const {data:salidas} = await SB.from('compras_movimientos')
+    .select('conductor').eq('vehiculo_id',vcId).eq('tipo','SALIDA')
+    .order('fecha_hora',{ascending:false}).limit(1);
+  const conductor = salidas?.[0]?.conductor || '–';
+  document.getElementById('ret_conductor').value = conductor;
+  document.getElementById('ret_info').innerHTML =
+    `<strong>Vehículo:</strong> ${vc?.patente} – ${desc(vc)}<br>
+     <strong>Empresa:</strong> ${vc?.empresa}<br>
+     <strong>Conductor:</strong> ${conductor}`;
+  om('mRET');
+}
+
+async function confirmarRetorno() {
+  const vcId = document.getElementById('ret_vcid').value;
+  const vc = VCS.find(v=>v.id===vcId);
+  const km = parseInt(document.getElementById('ret_km').value)||null;
+
+  const {error} = await SB.from('compras_movimientos').insert({
+    vehiculo_id: vcId,
+    vehiculo_desc: vc ? vc.patente+' – '+desc(vc) : '',
+    tipo: 'RETORNO',
+    fecha_hora: localToUTC(document.getElementById('ret_fh').value),
+    conductor: document.getElementById('ret_conductor').value || '–',
+    registrado_por: document.getElementById('ret_reg').value.trim()||null,
+    km,
+    observacion: document.getElementById('ret_obs').value.trim()||null,
+  });
+  if (error) { toast(error.message,'er'); return; }
+
+  const upd = {estado:'LIBRE'};
+  if (km) upd.km_actual = km;
+  await SB.from('compras_vehiculos').update(upd).eq('id',vcId);
+  toast('✅ Retorno registrado'); cm('mRET'); await refresh();
+}
+
+// ============================================================
+// EXCEPCIÓN
+// ============================================================
+async function abrirExcepcion() {
+  const libres = VCS.filter(v=>v.estado==='LIBRE');
+  if (!libres.length) { toast('No hay vehículos disponibles','er'); return; }
+  document.getElementById('exc_vc').innerHTML =
+    '<option value="">Seleccionar vehículo...</option>'+
+    libres.map(v=>`<option value="${v.id}">${v.patente} – ${desc(v)} (${v.empresa})</option>`).join('');
+  document.getElementById('exc_fh').value = nowLocal();
+  fillPersonalSelect(document.getElementById('exc_cond'), '');
+  ['exc_sec','exc_motivo'].forEach(id=>document.getElementById(id).value='');
+  document.getElementById('exc_km').value = '';
+  om('mEXC');
+}
+
+async function registrarExcepcion() {
+  const vcId = document.getElementById('exc_vc').value;
+  const cond = document.getElementById('exc_cond').value.trim();
+  const sec = document.getElementById('exc_sec').value.trim();
+  const motivo = document.getElementById('exc_motivo').value.trim();
+  if (!vcId||!cond||!sec||!motivo) { toast('Completá todos los campos','er'); return; }
+
+  const vc = VCS.find(v=>v.id===vcId);
+  const km = parseInt(document.getElementById('exc_km').value)||null;
+
+  const {error} = await SB.from('compras_movimientos').insert({
+    vehiculo_id: vcId,
+    vehiculo_desc: vc ? vc.patente+' – '+desc(vc) : '',
+    tipo: 'SALIDA',
+    fecha_hora: localToUTC(document.getElementById('exc_fh').value),
+    conductor: cond, registrado_por: sec, km,
+    observacion: `[EXCEPCIÓN] ${motivo}`,
+  });
+  if (error) { toast(error.message,'er'); return; }
+
+  const upd = {estado:'EN USO'}; if (km) upd.km_actual = km;
+  await SB.from('compras_vehiculos').update(upd).eq('id',vcId);
+
+  toast('⚠️ Excepción registrada'); cm('mEXC');
+  await refresh();
+}
+
+// ============================================================
+// AUTO-LOGIN
+// ============================================================
+window.addEventListener('load', conectar);
+</script>
+</body>
+</html>

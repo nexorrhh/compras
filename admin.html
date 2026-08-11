@@ -1,0 +1,896 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>FlotaManager — Admin</title>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
+<style>
+:root{--bg:#0f1117;--bg2:#161b27;--bg3:#1c2333;--border:#2a3248;--text:#e2e8f0;--muted:#7c8db5;--accent:#3b82f6;--accent2:#6366f1;--green:#22c55e;--yellow:#f59e0b;--red:#ef4444;--orange:#f97316;--teal:#14b8a6;--purple:#a855f7;--r:10px;--font:'Segoe UI',system-ui,sans-serif}
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:var(--font);background:var(--bg);color:var(--text);min-height:100vh;font-size:14px}
+/* CONFIG SCREEN */
+#cfg-screen{display:flex;align-items:center;justify-content:center;min-height:100vh;padding:20px}
+.cfg-box{background:var(--bg2);border:1px solid var(--border);border-radius:16px;padding:36px;width:460px;max-width:100%}
+.cfg-logo{display:flex;align-items:center;gap:10px;font-size:20px;font-weight:700;margin-bottom:8px}
+.cfg-logo-icon{width:40px;height:40px;background:linear-gradient(135deg,var(--accent),var(--accent2));border-radius:10px;display:flex;align-items:center;justify-content:center;font-size:20px}
+.cfg-sub{color:var(--muted);font-size:13px;margin-bottom:28px}
+/* MAIN UI */
+#app{display:none}
+header{background:var(--bg2);border-bottom:1px solid var(--border);padding:0 20px;height:54px;display:flex;align-items:center;justify-content:space-between;position:sticky;top:0;z-index:100}
+.logo{display:flex;align-items:center;gap:10px;font-weight:700;font-size:16px}
+.logo-icon{width:32px;height:32px;background:linear-gradient(135deg,var(--accent),var(--accent2));border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:17px}
+.hbadge{background:rgba(239,68,68,.15);color:var(--red);border:1px solid rgba(239,68,68,.3);padding:2px 10px;border-radius:20px;font-size:11px;font-weight:700}
+.live-dot{width:8px;height:8px;border-radius:50%;background:var(--green);animation:pulse 2s infinite}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.3}}
+.layout{display:flex;height:calc(100vh - 54px)}
+nav{width:210px;background:var(--bg2);border-right:1px solid var(--border);padding:12px 0;flex-shrink:0;overflow-y:auto}
+.nav-sec{padding:4px 14px 6px;font-size:10px;text-transform:uppercase;letter-spacing:1px;color:var(--muted);margin-top:8px}
+.nav-item{display:flex;align-items:center;gap:9px;padding:8px 16px;cursor:pointer;color:var(--muted);font-size:13px;border-left:2px solid transparent;transition:all .15s}
+.nav-item:hover{background:var(--bg3);color:var(--text)}
+.nav-item.active{background:rgba(59,130,246,.1);color:var(--accent);border-left-color:var(--accent)}
+.nav-badge{background:var(--red);color:#fff;border-radius:10px;padding:1px 6px;font-size:10px;margin-left:auto}
+main{flex:1;overflow-y:auto;padding:22px}
+.sec{display:none}.sec.on{display:block}
+.ptitle{font-size:20px;font-weight:700;margin-bottom:3px}
+.psub{color:var(--muted);font-size:13px;margin-bottom:20px}
+.kpi-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:10px;margin-bottom:20px}
+.kpi{background:var(--bg2);border:1px solid var(--border);border-radius:var(--r);padding:14px;text-align:center}
+.kpi-val{font-size:28px;font-weight:700;line-height:1}
+.kpi-lbl{font-size:11px;color:var(--muted);margin-top:5px;text-transform:uppercase;letter-spacing:.4px}
+.cards{display:grid;grid-template-columns:repeat(auto-fill,minmax(250px,1fr));gap:14px;margin-bottom:20px}
+.vcard{background:var(--bg2);border:1px solid var(--border);border-radius:var(--r);padding:15px;transition:border-color .15s,transform .1s;position:relative;overflow:hidden}
+.vcard:hover{border-color:var(--accent);transform:translateY(-1px)}
+.vcard .stripe{position:absolute;top:0;left:0;right:0;height:3px}
+.vcard.ci .stripe{background:var(--accent)}.vcard.co .stripe{background:var(--purple)}
+.vc-h{display:flex;justify-content:space-between;align-items:flex-start;margin-top:4px}
+.vc-plate{font-size:17px;font-weight:700;letter-spacing:1px}
+.vc-mod{font-size:12px;color:var(--muted);margin-top:2px}
+.vc-emp{font-size:10px;color:var(--muted);margin-top:1px}
+.sbadge{padding:3px 9px;border-radius:20px;font-size:11px;font-weight:600}
+.sbadge.libre{background:rgba(34,197,94,.15);color:var(--green)}
+.sbadge.enuso{background:rgba(239,68,68,.15);color:var(--red)}
+.sbadge.mant{background:rgba(249,115,22,.15);color:var(--orange)}
+.vc-acts{display:flex;gap:6px;margin-top:11px;flex-wrap:wrap}
+.bsm{padding:5px 11px;border-radius:6px;border:1px solid var(--border);background:transparent;color:var(--text);cursor:pointer;font-size:12px;transition:all .15s}
+.bsm:hover{background:var(--bg3)}
+.bsm.p{background:var(--accent);border-color:var(--accent);color:#fff}
+.bsm.g{background:rgba(34,197,94,.15);border-color:var(--green);color:var(--green)}
+.bsm.d{background:rgba(239,68,68,.15);border-color:var(--red);color:var(--red)}
+.bsm.y{background:rgba(245,158,11,.15);border-color:var(--yellow);color:var(--yellow)}
+.tw{background:var(--bg2);border:1px solid var(--border);border-radius:var(--r);overflow:hidden;margin-bottom:20px}
+table{width:100%;border-collapse:collapse}
+thead{background:var(--bg3)}
+th{padding:9px 13px;text-align:left;font-size:11px;text-transform:uppercase;letter-spacing:.4px;color:var(--muted);white-space:nowrap}
+td{padding:9px 13px;border-top:1px solid var(--border);vertical-align:middle;font-size:13px}
+tr:hover td{background:rgba(255,255,255,.02)}
+.modal-ov{display:none;position:fixed;inset:0;background:rgba(0,0,0,.65);z-index:200;align-items:center;justify-content:center;backdrop-filter:blur(2px)}
+.modal-ov.open{display:flex}
+.modal{background:var(--bg2);border:1px solid var(--border);border-radius:14px;padding:26px;width:520px;max-width:95vw;max-height:90vh;overflow-y:auto;animation:sup .2s ease}
+@keyframes sup{from{transform:translateY(16px);opacity:0}to{transform:translateY(0);opacity:1}}
+.mtitle{font-size:16px;font-weight:700;margin-bottom:18px}
+.mcls{float:right;cursor:pointer;color:var(--muted);font-size:22px;line-height:1}
+.mcls:hover{color:var(--text)}
+.fg{margin-bottom:14px}
+.fr{display:grid;grid-template-columns:1fr 1fr;gap:11px}
+label{display:block;font-size:12px;color:var(--muted);margin-bottom:4px}
+input,select,textarea{width:100%;background:var(--bg3);border:1px solid var(--border);border-radius:7px;color:var(--text);padding:7px 11px;font-size:13px;font-family:var(--font);transition:border-color .15s}
+input:focus,select:focus,textarea:focus{outline:none;border-color:var(--accent)}
+textarea{resize:vertical;min-height:65px}
+select option{background:var(--bg3)}
+.btn{padding:8px 18px;border-radius:8px;border:1px solid var(--border);background:transparent;color:var(--text);cursor:pointer;font-size:13px;font-family:var(--font);font-weight:500;transition:all .15s;display:inline-flex;align-items:center;gap:6px}
+.btn:hover{background:var(--bg3)}
+.btn.p{background:var(--accent);border-color:var(--accent);color:#fff}
+.btn.p:hover{background:#2563eb}
+.btn.g{background:var(--green);border-color:var(--green);color:#fff}
+.btn.d{background:var(--red);border-color:var(--red);color:#fff}
+.brow{display:flex;gap:8px;justify-content:flex-end;margin-top:18px}
+.toast-c{position:fixed;top:64px;right:14px;z-index:300;display:flex;flex-direction:column;gap:7px}
+.toast{background:var(--bg3);border:1px solid var(--border);border-radius:8px;padding:9px 15px;font-size:13px;min-width:210px;display:flex;align-items:center;gap:7px;animation:sin .2s ease}
+@keyframes sin{from{transform:translateX(100%);opacity:0}to{transform:translateX(0);opacity:1}}
+.toast.ok{border-color:var(--green)}.toast.er{border-color:var(--red)}
+.filters{display:flex;gap:9px;margin-bottom:14px;flex-wrap:wrap}
+.filters input,.filters select{max-width:190px}
+.sh{display:flex;justify-content:space-between;align-items:center;margin-bottom:14px}
+.sh h2{font-size:15px;font-weight:600}
+.badge{padding:2px 8px;border-radius:12px;font-size:11px;font-weight:600;display:inline-block}
+.badge.pendiente{background:rgba(245,158,11,.15);color:var(--yellow)}
+.badge.aprobado{background:rgba(34,197,94,.15);color:var(--green)}
+.badge.rechazado{background:rgba(239,68,68,.15);color:var(--red)}
+.badge.salida{background:rgba(239,68,68,.15);color:var(--red)}
+.badge.retorno{background:rgba(34,197,94,.15);color:var(--green)}
+.badge.comp{background:rgba(20,184,166,.15);color:var(--teal)}
+.alert-box{background:rgba(245,158,11,.08);border:1px solid rgba(245,158,11,.3);border-radius:8px;padding:10px 14px;margin-bottom:10px;font-size:13px;color:var(--yellow)}
+.pcard{background:var(--bg2);border:1px solid var(--border);border-radius:12px;padding:18px;margin-bottom:14px}
+.divider{border:none;border-top:1px solid var(--border);margin:18px 0}
+.text-muted{color:var(--muted)}.text-green{color:var(--green)}.text-red{color:var(--red)}.text-yellow{color:var(--yellow)}.text-accent{color:var(--accent)}.text-orange{color:var(--orange)}
+.gantt-w{background:var(--bg2);border:1px solid var(--border);border-radius:var(--r);overflow-x:auto}
+.g-hdr,.g-row{display:flex}
+.g-row{border-bottom:1px solid var(--border)}
+.g-row:last-child{border-bottom:none}
+.g-vc{width:165px;flex-shrink:0;padding:7px 12px;font-size:12px;font-weight:600;border-right:1px solid var(--border);display:flex;align-items:center}
+.g-days{display:flex;flex:1}
+.g-dh{flex:0 0 34px;height:34px;display:flex;flex-direction:column;align-items:center;justify-content:center;font-size:10px;color:var(--muted);border-right:1px solid rgba(42,50,72,.4)}
+.g-dh.hoy{background:rgba(59,130,246,.1);color:var(--accent);font-weight:700}
+.g-dh.fds{background:rgba(0,0,0,.2)}
+.g-cel{flex:0 0 34px;height:34px;border-right:1px solid rgba(42,50,72,.25)}
+.g-cel.ocu{background:rgba(239,68,68,.22)}
+.g-cel.hoy{outline:2px solid var(--accent);outline-offset:-1px}
+.spin{width:24px;height:24px;border:2px solid var(--border);border-top-color:var(--accent);border-radius:50%;animation:sp .6s linear infinite;margin:0 auto 10px}
+@keyframes sp{to{transform:rotate(360deg)}}
+.loading{text-align:center;color:var(--muted);padding:30px}
+/* APROBACIÓN MODAL */
+.sol-detail{background:var(--bg3);border-radius:8px;padding:14px;margin-bottom:14px;font-size:13px;line-height:1.8}
+.sol-detail strong{color:var(--text)}
+@media(max-width:700px){nav{display:none}main{padding:12px}.fr{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+
+<div class="toast-c" id="TC"></div>
+
+<!-- CONFIG SCREEN -->
+<div id="cfg-screen">
+<div class="cfg-box">
+  <div class="cfg-logo"><div class="cfg-logo-icon">🚗</div>FlotaManager</div>
+  <div class="cfg-sub">Ingresá las credenciales de tu proyecto Supabase para continuar</div>
+  <div class="fg"><label>URL del proyecto</label><input id="cfg-url" placeholder="https://xxxx.supabase.co" type="url"></div>
+  <div class="fg"><label>Anon Key</label><input id="cfg-key" placeholder="eyJhbGciOi..." type="password"></div>
+  <div style="display:flex;gap:8px;margin-top:4px">
+    <button class="btn p" style="flex:1" onclick="conectar()">Conectar →</button>
+    <button class="btn" onclick="testConn()">Probar</button>
+  </div>
+  <div id="cfg-msg" style="margin-top:12px;font-size:13px"></div>
+  <div style="margin-top:20px;padding-top:16px;border-top:1px solid var(--border);font-size:12px;color:var(--muted)">
+    Las credenciales se guardan en tu navegador. Solo necesitás configurarlas una vez.
+  </div>
+</div>
+</div>
+
+<!-- MAIN APP -->
+<div id="app">
+
+<!-- MODALES -->
+<div class="modal-ov" id="mVC">
+<div class="modal">
+  <span class="mcls" onclick="cm('mVC')">×</span>
+  <div class="mtitle" id="mVC_t">Vehículo</div>
+  <form id="fVC">
+    <input type="hidden" id="vc_id">
+    <div class="fr">
+      <div class="fg"><label>Patente *</label><input id="vc_pat" required style="text-transform:uppercase" placeholder="AA000XY"></div>
+      <div class="fg"><label>Modelo *</label><input id="vc_mod" required placeholder="Ranger, Sprinter..."></div>
+    </div>
+    <div class="fr">
+      <div class="fg"><label>Empresa</label><select id="vc_emp"><option>Cimomet S.A.</option><option>Co.mo.ing S.R.L.</option></select></div>
+      <div class="fg"><label>Tipo</label><select id="vc_tip"><option>Auto</option><option>Camioneta</option><option>Furgón</option><option>Camión</option><option>Moto</option><option>Otro</option></select></div>
+    </div>
+    <div class="fr">
+      <div class="fg"><label>KM actuales</label><input type="number" id="vc_km" placeholder="0"></div>
+      <div class="fg"><label>Año</label><input type="number" id="vc_ano" placeholder="2020"></div>
+    </div>
+    <div class="fr">
+      <div class="fg"><label>Venc. Seguro</label><input type="date" id="vc_seg"></div>
+      <div class="fg"><label>Venc. VTV</label><input type="date" id="vc_vtv"></div>
+    </div>
+    <div class="fg"><label>Estado</label><select id="vc_est"><option>LIBRE</option><option>EN USO</option><option>MANTENIMIENTO</option><option>FUERA DE SERVICIO</option></select></div>
+    <div class="fg"><label>Observaciones</label><textarea id="vc_obs" placeholder="Notas..."></textarea></div>
+    <div class="brow"><button type="button" class="btn" onclick="cm('mVC')">Cancelar</button><button type="submit" class="btn p">Guardar</button></div>
+  </form>
+</div></div>
+
+<div class="modal-ov" id="mMOV">
+<div class="modal">
+  <span class="mcls" onclick="cm('mMOV')">×</span>
+  <div class="mtitle" id="mMOV_t">Movimiento</div>
+  <form id="fMOV">
+    <input type="hidden" id="m_tipo">
+    <div class="fg"><label>Vehículo *</label><select id="m_vc" required><option value="">Seleccionar...</option></select></div>
+    <div class="fr">
+      <div class="fg"><label>Conductor *</label><input id="m_cond" required placeholder="Nombre completo"></div>
+      <div class="fg"><label>Registrado por</label><input id="m_reg" placeholder="Portería..."></div>
+    </div>
+    <div class="fr">
+      <div class="fg"><label id="m_km_lbl">KM</label><input type="number" id="m_km" placeholder="0"></div>
+      <div class="fg"><label>Fecha y hora</label><input type="datetime-local" id="m_fh"></div>
+    </div>
+    <div class="fg"><label>Observaciones</label><textarea id="m_obs" placeholder="Estado, novedades..."></textarea></div>
+    <div class="brow"><button type="button" class="btn" onclick="cm('mMOV')">Cancelar</button><button type="submit" class="btn p" id="mMOV_sub">Registrar</button></div>
+  </form>
+</div></div>
+
+<div class="modal-ov" id="mMAN">
+<div class="modal">
+  <span class="mcls" onclick="cm('mMAN')">×</span>
+  <div class="mtitle">🔧 Registrar Mantenimiento</div>
+  <form id="fMAN">
+    <div class="fr">
+      <div class="fg"><label>Vehículo *</label><select id="ma_vc" required><option value="">Seleccionar...</option></select></div>
+      <div class="fg"><label>Tipo</label><select id="ma_tip"><option>Service</option><option>Reparación</option><option>VTV</option><option>Neumáticos</option><option>Frenos</option><option>Aceite</option><option>Limpieza</option><option>Otro</option></select></div>
+    </div>
+    <div class="fg"><label>Descripción</label><input id="ma_desc" placeholder="Detalle del trabajo"></div>
+    <div class="fr">
+      <div class="fg"><label>Fecha *</label><input type="date" id="ma_fecha" required></div>
+      <div class="fg"><label>KM</label><input type="number" id="ma_km" placeholder="0"></div>
+    </div>
+    <div class="fr">
+      <div class="fg"><label>Costo (ARS)</label><input type="number" id="ma_costo" placeholder="0"></div>
+      <div class="fg"><label>Proveedor</label><input id="ma_prov" placeholder="Taller..."></div>
+    </div>
+    <div class="fr">
+      <div class="fg"><label>Próxima fecha</label><input type="date" id="ma_pfecha"></div>
+      <div class="fg"><label>Próximo KM</label><input type="number" id="ma_pkm" placeholder="0"></div>
+    </div>
+    <div class="brow"><button type="button" class="btn" onclick="cm('mMAN')">Cancelar</button><button type="submit" class="btn p">Guardar</button></div>
+  </form>
+</div></div>
+
+<!-- MODAL APROBACIÓN / RECHAZO -->
+<div class="modal-ov" id="mAPRO">
+<div class="modal">
+  <span class="mcls" onclick="cm('mAPRO')">×</span>
+  <div class="mtitle" id="mAPRO_t">Gestionar Solicitud</div>
+  <input type="hidden" id="apro_id">
+  <div class="sol-detail" id="apro_detail"></div>
+  <div class="fg"><label>¿Qué vehículo asignás? *</label><select id="apro_vc"><option value="">Seleccionar vehículo...</option></select></div>
+  <div class="fg"><label>Motivo / Nota para el solicitante (opcional)</label><textarea id="apro_nota" placeholder="Ej: Se asigna Ranger porque el Oroch está en mantenimiento..."></textarea></div>
+  <div class="brow">
+    <button type="button" class="btn" onclick="cm('mAPRO')">Cancelar</button>
+    <button type="button" class="btn d" onclick="rechazar()">✗ Rechazar</button>
+    <button type="button" class="btn g" onclick="aprobar()">✓ Aprobar</button>
+  </div>
+</div></div>
+
+<header>
+  <div class="logo"><div class="logo-icon">🚗</div><span>FlotaManager</span><span class="hbadge">ADMIN</span></div>
+  <div style="display:flex;align-items:center;gap:8px">
+    <div class="live-dot"></div>
+    <span style="font-size:12px;color:var(--muted)">En vivo</span>
+    <span id="clk" style="font-size:12px;color:var(--muted);margin-left:6px"></span>
+    <button class="btn" style="padding:4px 10px;font-size:11px;margin-left:8px" onclick="desconectar()">Salir</button>
+  </div>
+</header>
+
+<div class="layout">
+<nav>
+  <div class="nav-sec">Principal</div>
+  <div class="nav-item active" onclick="go('dash',this)"><span>📊</span> Dashboard</div>
+  <div class="nav-item" onclick="go('vcs',this)"><span>🚗</span> Vehículos</div>
+  <div class="nav-item" onclick="go('port',this)"><span>🔑</span> Portería</div>
+  <div class="nav-sec">Gestión</div>
+  <div class="nav-item" id="nav-sols" onclick="go('sols',this)"><span>📋</span> Solicitudes <span class="nav-badge" id="badge-pend" style="display:none">0</span></div>
+  <div class="nav-item" onclick="go('movs',this)"><span>📍</span> Movimientos</div>
+  <div class="nav-item" onclick="go('gantt',this)"><span>📅</span> Gantt</div>
+  <div class="nav-sec">Admin</div>
+  <div class="nav-item" onclick="go('mant',this)"><span>🔧</span> Mantenimiento</div>
+  <div class="nav-item" onclick="go('cfg2',this)"><span>⚙️</span> Config</div>
+</nav>
+<main>
+
+<div class="sec on" id="s-dash">
+  <div class="ptitle">Panel de Control</div>
+  <div class="psub" id="d-fecha"></div>
+  <div class="kpi-grid">
+    <div class="kpi"><div class="kpi-val" id="k-tot">–</div><div class="kpi-lbl">Vehículos</div></div>
+    <div class="kpi"><div class="kpi-val text-green" id="k-lib">–</div><div class="kpi-lbl">Disponibles</div></div>
+    <div class="kpi"><div class="kpi-val text-red" id="k-uso">–</div><div class="kpi-lbl">En uso</div></div>
+    <div class="kpi"><div class="kpi-val text-orange" id="k-man">–</div><div class="kpi-lbl">Mantenimiento</div></div>
+    <div class="kpi"><div class="kpi-val text-yellow" id="k-pen">–</div><div class="kpi-lbl">Solicitudes pend.</div></div>
+    <div class="kpi"><div class="kpi-val text-accent" id="k-hoy">–</div><div class="kpi-lbl">Movimientos hoy</div></div>
+  </div>
+  <div id="d-alertas"></div>
+  <div class="sh"><h2>Estado de la flota</h2><button class="btn p" onclick="go('sols',document.querySelector('[onclick*=sols]'))">Ver solicitudes pendientes</button></div>
+  <div class="cards" id="d-cards"><div class="loading"><div class="spin"></div>Cargando...</div></div>
+</div>
+
+<div class="sec" id="s-vcs">
+  <div class="ptitle">Vehículos</div>
+  <div class="psub">Administración completa de la flota</div>
+  <div class="sh">
+    <div class="filters">
+      <input placeholder="Buscar patente / modelo..." oninput="renderVCS()" id="f-pat">
+      <select onchange="renderVCS()" id="f-emp"><option value="">Todas las empresas</option><option>Cimomet S.A.</option><option>Co.mo.ing S.R.L.</option></select>
+      <select onchange="renderVCS()" id="f-est"><option value="">Todos los estados</option><option>LIBRE</option><option>EN USO</option><option>MANTENIMIENTO</option></select>
+    </div>
+    <button class="btn p" onclick="nuevoVC()">+ Agregar</button>
+  </div>
+  <div class="cards" id="vcs-grid"><div class="loading"><div class="spin"></div>Cargando...</div></div>
+</div>
+
+<div class="sec" id="s-port">
+  <div class="ptitle">🔑 Portería</div>
+  <div class="psub">Registro de salidas y retornos</div>
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:22px">
+    <div class="pcard" style="border-color:rgba(239,68,68,.4)">
+      <div style="font-size:15px;font-weight:700;color:var(--red)">🚀 Registrar SALIDA</div>
+      <div style="font-size:13px;color:var(--muted);margin-top:5px">El vehículo sale de las instalaciones</div>
+      <button style="width:100%;margin-top:12px;padding:10px;border-radius:8px;background:var(--red);color:#fff;border:none;font-size:14px;font-weight:700;cursor:pointer" onclick="abrirMov('SALIDA')">Registrar Salida →</button>
+    </div>
+    <div class="pcard" style="border-color:rgba(34,197,94,.4)">
+      <div style="font-size:15px;font-weight:700;color:var(--green)">✅ Registrar RETORNO</div>
+      <div style="font-size:13px;color:var(--muted);margin-top:5px">El vehículo regresó y entregó la llave</div>
+      <button style="width:100%;margin-top:12px;padding:10px;border-radius:8px;background:var(--green);color:#fff;border:none;font-size:14px;font-weight:700;cursor:pointer" onclick="abrirMov('RETORNO')">Registrar Retorno →</button>
+    </div>
+  </div>
+  <div class="sh"><h2>En calle ahora</h2></div>
+  <div class="tw"><table><thead><tr><th>Vehículo</th><th>Conductor</th><th>Salida</th><th>Observaciones</th><th>Acción</th></tr></thead><tbody id="p-encalle"></tbody></table></div>
+  <hr class="divider">
+  <div class="sh"><h2>Movimientos del día</h2></div>
+  <div class="tw"><table><thead><tr><th>Hora</th><th>Tipo</th><th>Vehículo</th><th>Conductor</th><th>KM</th><th>Observaciones</th></tr></thead><tbody id="p-hoy"></tbody></table></div>
+</div>
+
+<div class="sec" id="s-sols">
+  <div class="ptitle">Solicitudes</div>
+  <div class="psub">Aprobá, rechazá y asigná vehículos a las solicitudes del personal</div>
+  <div class="sh">
+    <div class="filters">
+      <select onchange="renderSOLS()" id="f-sest"><option value="">Todos</option><option value="PENDIENTE">Pendientes</option><option value="APROBADO">Aprobadas</option><option value="RECHAZADO">Rechazadas</option></select>
+      <input type="date" id="f-sfecha" onchange="renderSOLS()">
+    </div>
+  </div>
+  <div class="tw"><table>
+    <thead><tr><th>Fecha</th><th>Solicitante</th><th>Sector</th><th>Vehículo sugerido</th><th>Vehículo asignado</th><th>OT</th><th>Estado</th><th>Acciones</th></tr></thead>
+    <tbody id="t-sols"></tbody>
+  </table></div>
+</div>
+
+<div class="sec" id="s-movs">
+  <div class="ptitle">Movimientos</div>
+  <div class="psub">Historial completo de salidas y retornos</div>
+  <div class="filters">
+    <input type="date" id="f-mfecha" onchange="renderMOVS()">
+    <select id="f-mvc" onchange="renderMOVS()"><option value="">Todos los vehículos</option></select>
+    <select id="f-mtipo" onchange="renderMOVS()"><option value="">Todos</option><option value="SALIDA">Salidas</option><option value="RETORNO">Retornos</option></select>
+  </div>
+  <div class="tw"><table>
+    <thead><tr><th>Fecha/Hora</th><th>Tipo</th><th>Vehículo</th><th>Conductor</th><th>KM</th><th>Registrado por</th><th>Observaciones</th></tr></thead>
+    <tbody id="t-movs"></tbody>
+  </table></div>
+</div>
+
+<div class="sec" id="s-gantt">
+  <div class="ptitle">Planificación Gantt</div>
+  <div class="psub">Disponibilidad basada en solicitudes aprobadas</div>
+  <div class="filters">
+    <button class="btn" onclick="gOff-=7;renderGantt()">← Anterior</button>
+    <span id="g-rng" style="color:var(--muted);font-size:13px;align-self:center;min-width:200px;text-align:center"></span>
+    <button class="btn" onclick="gOff+=7;renderGantt()">Siguiente →</button>
+    <button class="btn" onclick="gOff=0;renderGantt()">Hoy</button>
+  </div>
+  <div class="gantt-w" style="margin-top:10px" id="g-cont"><div class="loading"><div class="spin"></div>Cargando...</div></div>
+</div>
+
+<div class="sec" id="s-mant">
+  <div class="ptitle">Mantenimiento</div>
+  <div class="psub">Registro de revisiones y reparaciones</div>
+  <div class="sh"><div></div><button class="btn p" onclick="abrirMAN()">+ Registrar</button></div>
+  <div class="tw"><table>
+    <thead><tr><th>Fecha</th><th>Vehículo</th><th>Tipo</th><th>Descripción</th><th>KM</th><th>Costo</th><th>Próximo</th></tr></thead>
+    <tbody id="t-mant"></tbody>
+  </table></div>
+</div>
+
+<div class="sec" id="s-cfg2">
+  <div class="ptitle">Configuración</div>
+  <div class="psub">Credenciales Supabase</div>
+  <div style="max-width:440px">
+    <div class="pcard">
+      <div class="fg"><label>URL del proyecto</label><input id="cfg2-url" type="url"></div>
+      <div class="fg"><label>Anon Key</label><input id="cfg2-key" type="password"></div>
+      <div class="brow" style="justify-content:flex-start">
+        <button class="btn p" onclick="guardarCfg2()">Guardar y reconectar</button>
+        <button class="btn d" onclick="desconectar()">Cerrar sesión</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+</main>
+</div><!-- /app -->
+</div>
+
+<script>
+// ============================================================
+// SUPABASE
+// ============================================================
+let SB = null;
+let VCS = [];
+let gOff = 0;
+
+const CFG_KEY = 'fm_cfg';
+const getCfg = () => JSON.parse(localStorage.getItem(CFG_KEY)||'{}');
+const saveCfg = o => localStorage.setItem(CFG_KEY, JSON.stringify(o));
+
+function buildClient(url, key) {
+  return window.supabase.createClient(url, key, { auth: { persistSession: false } });
+}
+
+async function conectar() {
+  const url = document.getElementById('cfg-url').value.trim();
+  const key = document.getElementById('cfg-key').value.trim();
+  const msg = document.getElementById('cfg-msg');
+  if (!url || !key) { msg.innerHTML='<span style="color:var(--red)">Completá ambos campos</span>'; return; }
+  msg.innerHTML = 'Conectando...';
+  try {
+    const client = buildClient(url, key);
+    const { error } = await client.from('fm_vehiculos').select('id').limit(1);
+    if (error) throw error;
+    saveCfg({ url, key });
+    SB = client;
+    document.getElementById('cfg-screen').style.display = 'none';
+    document.getElementById('app').style.display = 'block';
+    await init();
+  } catch(e) {
+    msg.innerHTML = `<span style="color:var(--red)">Error: ${e.message}</span>`;
+  }
+}
+
+async function testConn() {
+  const url = document.getElementById('cfg-url').value.trim();
+  const key = document.getElementById('cfg-key').value.trim();
+  const msg = document.getElementById('cfg-msg');
+  if (!url || !key) { msg.innerHTML='<span style="color:var(--red)">Completá los datos</span>'; return; }
+  msg.innerHTML = 'Probando...';
+  try {
+    const client = buildClient(url, key);
+    const { error } = await client.from('fm_vehiculos').select('id').limit(1);
+    if (error) throw error;
+    msg.innerHTML = '<span style="color:var(--green)">✓ Conexión exitosa</span>';
+  } catch(e) {
+    msg.innerHTML = `<span style="color:var(--red)">✗ ${e.message}</span>`;
+  }
+}
+
+function desconectar() {
+  localStorage.removeItem(CFG_KEY);
+  location.reload();
+}
+
+function guardarCfg2() {
+  const url = document.getElementById('cfg2-url').value.trim();
+  const key = document.getElementById('cfg2-key').value.trim();
+  if (!url || !key) { toast('Completá los campos', 'er'); return; }
+  saveCfg({ url, key });
+  toast('Guardado. Reconectando...');
+  setTimeout(() => location.reload(), 800);
+}
+
+// ============================================================
+// UTILS
+// ============================================================
+const toast = (msg, type='ok') => {
+  const t = document.createElement('div');
+  t.className = `toast ${type}`;
+  t.innerHTML = `<span>${type==='ok'?'✓':'✗'}</span> ${msg}`;
+  document.getElementById('TC').appendChild(t);
+  setTimeout(() => t.remove(), 3200);
+};
+const om = id => document.getElementById(id).classList.add('open');
+const cm = id => document.getElementById(id).classList.remove('open');
+const fmt = d => d ? new Date(d+'T12:00:00').toLocaleDateString('es-AR') : '–';
+const fmtDT = d => d ? new Date(d).toLocaleString('es-AR',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'}) : '–';
+const fmtM = n => n ? '$'+Number(n).toLocaleString('es-AR') : '–';
+const today = () => new Date().toISOString().slice(0,10);
+const nowLocal = () => { const n=new Date(); n.setMinutes(n.getMinutes()-n.getTimezoneOffset()); return n.toISOString().slice(0,16); };
+
+setInterval(()=>{ document.getElementById('clk').textContent = new Date().toLocaleTimeString('es-AR',{hour:'2-digit',minute:'2-digit',second:'2-digit'}); },1000);
+
+function go(id, el) {
+  document.querySelectorAll('.sec').forEach(s=>s.classList.remove('on'));
+  document.querySelectorAll('.nav-item').forEach(n=>n.classList.remove('active'));
+  document.getElementById('s-'+id).classList.add('on');
+  el.classList.add('active');
+  const fn = {dash:renderDash,vcs:renderVCS,port:renderPort,sols:renderSOLS,movs:renderMOVS,gantt:renderGantt,mant:renderMAN};
+  if(fn[id]) fn[id]();
+  if(id==='cfg2'){ document.getElementById('cfg2-url').value=getCfg().url||''; document.getElementById('cfg2-key').value=getCfg().key||''; }
+}
+
+// ============================================================
+// VEHÍCULOS
+// ============================================================
+async function loadVCS() {
+  const { data } = await SB.from('fm_vehiculos').select('*').eq('activo',true).order('patente');
+  VCS = data || [];
+  return VCS;
+}
+
+function renderVCards(vcs, cid, fromDash) {
+  const c = document.getElementById(cid);
+  if(!vcs.length){ c.innerHTML='<div style="color:var(--muted);padding:20px">Sin vehículos</div>'; return; }
+  c.innerHTML = vcs.map(v=>{
+    const cls = v.empresa?.includes('Co.mo.ing') ? 'co' : 'ci';
+    const scls = v.estado==='LIBRE'?'libre':v.estado==='EN USO'?'enuso':'mant';
+    const act = v.estado==='LIBRE'
+      ? `<button class="bsm p" onclick="abrirMov('SALIDA','${v.id}')">Salida</button>`
+      : v.estado==='EN USO'
+      ? `<button class="bsm g" onclick="abrirMov('RETORNO','${v.id}')">Retorno</button>` : '';
+    return `<div class="vcard ${cls}">
+      <div class="stripe"></div>
+      <div class="vc-h">
+        <div>
+          <div class="vc-plate">${v.patente}</div>
+          <div class="vc-mod">${v.descripcion}${v.tipo?' · '+v.tipo:''}</div>
+          <div class="vc-emp">${v.empresa}</div>
+        </div>
+        <span class="sbadge ${scls}">${v.estado}</span>
+      </div>
+      <div style="font-size:11px;color:var(--muted);margin-top:7px">
+        ${v.km_actual?'📍 '+v.km_actual.toLocaleString('es-AR')+' km':''}
+        ${v.vtv_vencimiento?' · VTV: '+fmt(v.vtv_vencimiento):''}
+      </div>
+      <div class="vc-acts">
+        ${act}
+        ${fromDash?'':`<button class="bsm" onclick="editVC('${v.id}')">✏ Editar</button>`}
+      </div>
+    </div>`;
+  }).join('');
+}
+
+async function renderVCS() {
+  document.getElementById('vcs-grid').innerHTML='<div class="loading"><div class="spin"></div>Cargando...</div>';
+  await loadVCS();
+  let vcs = VCS;
+  const pat=(document.getElementById('f-pat')?.value||'').toLowerCase();
+  const emp=document.getElementById('f-emp')?.value||'';
+  const est=document.getElementById('f-est')?.value||'';
+  if(pat) vcs=vcs.filter(v=>v.patente.toLowerCase().includes(pat)||v.descripcion.toLowerCase().includes(pat));
+  if(emp) vcs=vcs.filter(v=>v.empresa===emp);
+  if(est) vcs=vcs.filter(v=>v.estado===est);
+  renderVCards(vcs,'vcs-grid',false);
+}
+
+function nuevoVC(){
+  document.getElementById('mVC_t').textContent='+ Nuevo Vehículo';
+  document.getElementById('vc_id').value='';
+  document.getElementById('fVC').reset();
+  om('mVC');
+}
+function editVC(id){
+  const v=VCS.find(x=>x.id===id); if(!v) return;
+  document.getElementById('mVC_t').textContent='Editar '+v.patente;
+  ['vc_id','vc_pat','vc_mod','vc_emp','vc_tip','vc_km','vc_ano','vc_seg','vc_vtv','vc_est','vc_obs'].forEach(k=>{
+    const el=document.getElementById(k);
+    const map={vc_id:'id',vc_pat:'patente',vc_mod:'descripcion',vc_emp:'empresa',vc_tip:'tipo',vc_km:'km_actual',vc_ano:'ano',vc_seg:'seguro_vencimiento',vc_vtv:'vtv_vencimiento',vc_est:'estado',vc_obs:'observaciones'};
+    if(el) el.value=v[map[k]]||'';
+  });
+  om('mVC');
+}
+document.getElementById('fVC').addEventListener('submit', async e=>{
+  e.preventDefault();
+  const id=document.getElementById('vc_id').value;
+  const payload={
+    patente:document.getElementById('vc_pat').value.toUpperCase().trim(),
+    descripcion:document.getElementById('vc_mod').value.trim(),
+    empresa:document.getElementById('vc_emp').value,
+    tipo:document.getElementById('vc_tip').value,
+    km_actual:parseInt(document.getElementById('vc_km').value)||0,
+    ano:parseInt(document.getElementById('vc_ano').value)||null,
+    seguro_vencimiento:document.getElementById('vc_seg').value||null,
+    vtv_vencimiento:document.getElementById('vc_vtv').value||null,
+    estado:document.getElementById('vc_est').value,
+    observaciones:document.getElementById('vc_obs').value.trim()||null,
+  };
+  const { error } = id
+    ? await SB.from('fm_vehiculos').update(payload).eq('id',id)
+    : await SB.from('fm_vehiculos').insert(payload);
+  if(error){ toast(error.message,'er'); return; }
+  toast('Guardado ✓'); cm('mVC'); await loadVCS(); renderVCards(VCS,'vcs-grid',false);
+});
+
+// ============================================================
+// DASHBOARD
+// ============================================================
+async function renderDash() {
+  document.getElementById('d-fecha').textContent = new Date().toLocaleDateString('es-AR',{weekday:'long',year:'numeric',month:'long',day:'numeric'});
+  await loadVCS();
+  document.getElementById('k-tot').textContent=VCS.length;
+  document.getElementById('k-lib').textContent=VCS.filter(v=>v.estado==='LIBRE').length;
+  document.getElementById('k-uso').textContent=VCS.filter(v=>v.estado==='EN USO').length;
+  document.getElementById('k-man').textContent=VCS.filter(v=>['MANTENIMIENTO','FUERA DE SERVICIO'].includes(v.estado)).length;
+  const {count:pend}=await SB.from('fm_solicitudes').select('*',{count:'exact',head:true}).eq('estado','PENDIENTE');
+  document.getElementById('k-pen').textContent=pend||0;
+  const bp=document.getElementById('badge-pend');
+  if(pend>0){bp.textContent=pend;bp.style.display='inline';}else{bp.style.display='none';}
+  const todayStr=today();
+  const {count:movHoy}=await SB.from('fm_movimientos').select('*',{count:'exact',head:true}).gte('fecha_hora',todayStr+'T00:00:00').lte('fecha_hora',todayStr+'T23:59:59');
+  document.getElementById('k-hoy').textContent=movHoy||0;
+  const enUnMes=new Date(); enUnMes.setDate(enUnMes.getDate()+30);
+  const lim=enUnMes.toISOString().slice(0,10);
+  let alertas='';
+  VCS.forEach(v=>{
+    if(v.seguro_vencimiento&&v.seguro_vencimiento<=lim) alertas+=`<div class="alert-box">⚠ <strong>${v.patente}</strong>: seguro vence ${fmt(v.seguro_vencimiento)}</div>`;
+    if(v.vtv_vencimiento&&v.vtv_vencimiento<=lim) alertas+=`<div class="alert-box">⚠ <strong>${v.patente}</strong>: VTV vence ${fmt(v.vtv_vencimiento)}</div>`;
+  });
+  document.getElementById('d-alertas').innerHTML=alertas;
+  renderVCards(VCS,'d-cards',true);
+}
+
+// ============================================================
+// SOLICITUDES — con modal de aprobación
+// ============================================================
+async function renderSOLS() {
+  const tb=document.getElementById('t-sols');
+  tb.innerHTML='<tr><td colspan="8" class="loading">Cargando...</td></tr>';
+  let q=SB.from('fm_solicitudes').select('*').order('created_at',{ascending:false}).limit(100);
+  const est=document.getElementById('f-sest')?.value||'';
+  const fecha=document.getElementById('f-sfecha')?.value||'';
+  if(est) q=q.eq('estado',est);
+  if(fecha) q=q.eq('fecha_uso',fecha);
+  const {data,error}=await q;
+  if(error){tb.innerHTML=`<tr><td colspan="8" style="color:var(--red);padding:12px">${error.message}</td></tr>`;return;}
+  if(!data?.length){tb.innerHTML='<tr><td colspan="8" style="text-align:center;padding:18px;color:var(--muted)">Sin solicitudes</td></tr>';return;}
+  const badgeMap={PENDIENTE:'pendiente',APROBADO:'aprobado',RECHAZADO:'rechazado'};
+  tb.innerHTML=data.map(s=>`<tr>
+    <td>${fmt(s.fecha_uso)}${s.fecha_devolucion?' → '+fmt(s.fecha_devolucion):''}</td>
+    <td><strong>${s.solicitante}</strong><br><span style="font-size:11px;color:var(--muted)">${s.sector}</span></td>
+    <td>${s.sector}</td>
+    <td>${s.vehiculo_sugerido||s.vehiculo_desc||'–'}</td>
+    <td>${s.vehiculo_asignado_desc||'–'}</td>
+    <td>${s.ot||'–'}</td>
+    <td><span class="badge ${badgeMap[s.estado]||''}">${s.estado}</span></td>
+    <td>
+      ${s.estado==='PENDIENTE'?`<button class="bsm y" onclick="abrirApro('${s.id}')">⚖ Gestionar</button>`:''}
+    </td>
+  </tr>`).join('');
+}
+
+async function abrirApro(id) {
+  const {data:s}=await SB.from('fm_solicitudes').select('*').eq('id',id).single();
+  if(!s) return;
+  document.getElementById('apro_id').value=id;
+  document.getElementById('apro_detail').innerHTML=`
+    <strong>Solicitante:</strong> ${s.solicitante} (${s.sector})<br>
+    <strong>Fechas:</strong> ${fmt(s.fecha_uso)}${s.fecha_devolucion?' → '+fmt(s.fecha_devolucion):''}<br>
+    <strong>Vehículo solicitado:</strong> ${s.vehiculo_sugerido||s.vehiculo_desc||'–'}<br>
+    <strong>OT:</strong> ${s.ot||'–'}<br>
+    <strong>Destino:</strong> ${s.destino||'–'}<br>
+    <strong>Observaciones:</strong> ${s.observacion||'–'}`;
+  // Llenar select con TODOS los vehículos (admin puede asignar cualquiera)
+  await loadVCS();
+  document.getElementById('apro_vc').innerHTML=
+    '<option value="">Seleccionar vehículo a asignar...</option>'+
+    VCS.map(v=>`<option value="${v.id}" data-desc="${v.patente} – ${v.descripcion}">${v.patente} – ${v.descripcion} [${v.estado}]</option>`).join('');
+  // Pre-seleccionar si ya sugirió uno
+  if(s.vehiculo_id){ document.getElementById('apro_vc').value=s.vehiculo_id; }
+  document.getElementById('apro_nota').value='';
+  om('mAPRO');
+}
+
+async function aprobar() {
+  const id=document.getElementById('apro_id').value;
+  const vcSel=document.getElementById('apro_vc');
+  const vcId=vcSel.value;
+  const vcDesc=vcSel.options[vcSel.selectedIndex]?.dataset?.desc||'';
+  const nota=document.getElementById('apro_nota').value.trim();
+  if(!vcId){ toast('Seleccioná un vehículo','er'); return; }
+  const {error}=await SB.from('fm_solicitudes').update({
+    estado:'APROBADO',
+    vehiculo_asignado_id:vcId,
+    vehiculo_asignado_desc:vcDesc,
+    motivo_rechazo:nota||null,
+    aprobado_por:'Admin',
+  }).eq('id',id);
+  if(error){ toast(error.message,'er'); return; }
+  toast('Solicitud aprobada ✓'); cm('mAPRO'); renderSOLS(); renderDash();
+}
+
+async function rechazar() {
+  const id=document.getElementById('apro_id').value;
+  const nota=document.getElementById('apro_nota').value.trim();
+  const {error}=await SB.from('fm_solicitudes').update({
+    estado:'RECHAZADO',
+    motivo_rechazo:nota||null,
+    aprobado_por:'Admin',
+  }).eq('id',id);
+  if(error){ toast(error.message,'er'); return; }
+  toast('Solicitud rechazada'); cm('mAPRO'); renderSOLS(); renderDash();
+}
+
+// ============================================================
+// MOVIMIENTOS / PORTERÍA
+// ============================================================
+async function abrirMov(tipo, vcId) {
+  await loadVCS();
+  document.getElementById('m_tipo').value=tipo;
+  document.getElementById('mMOV_t').textContent=tipo==='SALIDA'?'🚀 Registrar Salida':'✅ Registrar Retorno';
+  document.getElementById('mMOV_sub').textContent=tipo==='SALIDA'?'Confirmar Salida':'Confirmar Retorno';
+  document.getElementById('m_km_lbl').textContent=tipo==='SALIDA'?'KM salida':'KM retorno';
+  document.getElementById('m_fh').value=nowLocal();
+  document.getElementById('fMOV').reset();
+  document.getElementById('m_tipo').value=tipo;
+  document.getElementById('m_fh').value=nowLocal();
+  const lista=tipo==='SALIDA'?VCS.filter(v=>v.estado==='LIBRE'):VCS.filter(v=>v.estado==='EN USO');
+  document.getElementById('m_vc').innerHTML='<option value="">Seleccionar...</option>'+lista.map(v=>`<option value="${v.id}" ${v.id===vcId?'selected':''}>${v.patente} – ${v.descripcion}</option>`).join('');
+  om('mMOV');
+}
+
+document.getElementById('fMOV').addEventListener('submit', async e=>{
+  e.preventDefault();
+  const tipo=document.getElementById('m_tipo').value;
+  const vcId=document.getElementById('m_vc').value;
+  const vc=VCS.find(v=>v.id===vcId);
+  const km=parseInt(document.getElementById('m_km').value)||null;
+  const {error:e1}=await SB.from('fm_movimientos').insert({
+    vehiculo_id:vcId, vehiculo_desc:vc?vc.patente+' – '+vc.descripcion:'',
+    tipo, fecha_hora:document.getElementById('m_fh').value,
+    conductor:document.getElementById('m_cond').value.trim(),
+    registrado_por:document.getElementById('m_reg').value.trim()||null,
+    km, observacion:document.getElementById('m_obs').value.trim()||null,
+  });
+  if(e1){ toast(e1.message,'er'); return; }
+  const upd={estado:tipo==='SALIDA'?'EN USO':'LIBRE'};
+  if(km) upd.km_actual=km;
+  await SB.from('fm_vehiculos').update(upd).eq('id',vcId);
+  toast(tipo==='SALIDA'?'Salida registrada ✓':'Retorno registrado ✓');
+  cm('mMOV');
+  await loadVCS();
+  const sec=document.querySelector('.sec.on');
+  if(sec?.id==='s-dash') renderDash();
+  if(sec?.id==='s-port') renderPort();
+  if(sec?.id==='s-vcs') renderVCards(VCS,'vcs-grid',false);
+});
+
+async function renderPort() {
+  await loadVCS();
+  const enCalle=VCS.filter(v=>v.estado==='EN USO');
+  const {data:movs}=await SB.from('fm_movimientos').select('*').in('vehiculo_id',enCalle.map(v=>v.id)||['x']).eq('tipo','SALIDA').order('fecha_hora',{ascending:false});
+  const tb1=document.getElementById('p-encalle');
+  tb1.innerHTML=enCalle.length?enCalle.map(v=>{
+    const m=[...(movs||[])].find(x=>x.vehiculo_id===v.id);
+    return `<tr><td><strong>${v.patente}</strong> – ${v.descripcion}</td><td>${m?.conductor||'–'}</td><td>${fmtDT(m?.fecha_hora)}</td><td>${m?.observacion||'–'}</td><td><button class="bsm g" onclick="abrirMov('RETORNO','${v.id}')">✅ Retorno</button></td></tr>`;
+  }).join(''):'<tr><td colspan="5" style="text-align:center;padding:16px;color:var(--muted)">Ningún vehículo en calle</td></tr>';
+  const todayStr=today();
+  const {data:movsHoy}=await SB.from('fm_movimientos').select('*').gte('fecha_hora',todayStr+'T00:00:00').order('fecha_hora',{ascending:false});
+  const tb2=document.getElementById('p-hoy');
+  tb2.innerHTML=movsHoy?.length?movsHoy.map(m=>`<tr>
+    <td>${fmtDT(m.fecha_hora)}</td>
+    <td><span class="badge ${m.tipo.toLowerCase()}">${m.tipo}</span></td>
+    <td>${m.vehiculo_desc}</td><td>${m.conductor}</td>
+    <td>${m.km?m.km.toLocaleString('es-AR')+' km':'–'}</td>
+    <td>${m.observacion||'–'}</td></tr>`).join(''):'<tr><td colspan="6" style="text-align:center;padding:16px;color:var(--muted)">Sin movimientos hoy</td></tr>';
+}
+
+async function renderMOVS() {
+  const tb=document.getElementById('t-movs');
+  tb.innerHTML='<tr><td colspan="7" class="loading">Cargando...</td></tr>';
+  let q=SB.from('fm_movimientos').select('*').order('fecha_hora',{ascending:false}).limit(200);
+  const fecha=document.getElementById('f-mfecha')?.value||'';
+  const vcId=document.getElementById('f-mvc')?.value||'';
+  const tipo=document.getElementById('f-mtipo')?.value||'';
+  if(fecha) q=q.gte('fecha_hora',fecha+'T00:00:00').lte('fecha_hora',fecha+'T23:59:59');
+  if(vcId) q=q.eq('vehiculo_id',vcId);
+  if(tipo) q=q.eq('tipo',tipo);
+  const {data}=await q;
+  const sel=document.getElementById('f-mvc');
+  if(sel&&VCS.length){const cur=sel.value;sel.innerHTML='<option value="">Todos los vehículos</option>'+VCS.map(v=>`<option value="${v.id}" ${v.id===cur?'selected':''}>${v.patente} – ${v.descripcion}</option>`).join('');}
+  if(!data?.length){tb.innerHTML='<tr><td colspan="7" style="text-align:center;padding:18px;color:var(--muted)">Sin registros</td></tr>';return;}
+  tb.innerHTML=data.map(m=>`<tr>
+    <td>${fmtDT(m.fecha_hora)}</td>
+    <td><span class="badge ${m.tipo.toLowerCase()}">${m.tipo}</span></td>
+    <td>${m.vehiculo_desc}</td><td>${m.conductor}</td>
+    <td>${m.km?m.km.toLocaleString('es-AR')+' km':'–'}</td>
+    <td>${m.registrado_por||'–'}</td>
+    <td>${m.observacion||'–'}</td></tr>`).join('');
+}
+
+// ============================================================
+// GANTT
+// ============================================================
+async function renderGantt() {
+  const DAYS=21; const base=new Date(); base.setDate(base.getDate()+gOff);
+  const dates=Array.from({length:DAYS},(_,i)=>{const d=new Date(base);d.setDate(d.getDate()+i);return d;});
+  const todayStr=today();
+  document.getElementById('g-rng').textContent=dates[0].toLocaleDateString('es-AR',{day:'numeric',month:'short'})+' – '+dates[DAYS-1].toLocaleDateString('es-AR',{day:'numeric',month:'short',year:'numeric'});
+  const {data:sols}=await SB.from('fm_solicitudes').select('vehiculo_asignado_id,fecha_uso,fecha_devolucion').eq('estado','APROBADO');
+  if(!VCS.length) await loadVCS();
+  let html=`<div class="g-hdr"><div class="g-vc" style="font-size:10px;color:var(--muted);background:var(--bg3);border-bottom:1px solid var(--border)">Vehículo</div><div class="g-days">`;
+  dates.forEach(d=>{
+    const ds=d.toISOString().slice(0,10);
+    const isH=ds===todayStr,isFds=d.getDay()===0||d.getDay()===6;
+    html+=`<div class="g-dh ${isH?'hoy':''} ${isFds?'fds':''}" style="background:${isH?'rgba(59,130,246,.1)':isFds?'rgba(0,0,0,.2)':'var(--bg3)'};border-bottom:1px solid var(--border)"><span>${d.getDate()}</span></div>`;
+  });
+  html+='</div></div>';
+  VCS.forEach(v=>{
+    html+=`<div class="g-row"><div class="g-vc">${v.patente}<br><span style="font-size:10px;color:var(--muted)">${v.descripcion}</span></div><div class="g-days">`;
+    dates.forEach(d=>{
+      const ds=d.toISOString().slice(0,10);
+      const isH=ds===todayStr;
+      const ocu=sols?.some(s=>s.vehiculo_asignado_id===v.id&&ds>=s.fecha_uso&&ds<=(s.fecha_devolucion||s.fecha_uso))||(v.estado==='EN USO'&&isH);
+      html+=`<div class="g-cel ${ocu?'ocu':''} ${isH?'hoy':''}"></div>`;
+    });
+    html+='</div></div>';
+  });
+  document.getElementById('g-cont').innerHTML=html;
+}
+
+// ============================================================
+// MANTENIMIENTO
+// ============================================================
+async function renderMAN() {
+  const tb=document.getElementById('t-mant');
+  tb.innerHTML='<tr><td colspan="7" class="loading">Cargando...</td></tr>';
+  const {data}=await SB.from('fm_mantenimientos').select('*').order('fecha',{ascending:false}).limit(100);
+  if(!data?.length){tb.innerHTML='<tr><td colspan="7" style="text-align:center;padding:18px;color:var(--muted)">Sin registros</td></tr>';return;}
+  tb.innerHTML=data.map(m=>`<tr>
+    <td>${fmt(m.fecha)}</td><td>${m.vehiculo_desc}</td>
+    <td><span class="badge comp">${m.tipo}</span></td>
+    <td>${m.descripcion||'–'}</td>
+    <td>${m.km?m.km.toLocaleString('es-AR')+' km':'–'}</td>
+    <td>${fmtM(m.costo)}</td>
+    <td>${m.proxima_fecha?fmt(m.proxima_fecha):m.proximo_km?m.proximo_km.toLocaleString('es-AR')+' km':'–'}</td></tr>`).join('');
+}
+
+async function abrirMAN() {
+  await loadVCS();
+  document.getElementById('ma_vc').innerHTML='<option value="">Seleccionar...</option>'+VCS.map(v=>`<option value="${v.id}">${v.patente} – ${v.descripcion}</option>`).join('');
+  document.getElementById('ma_fecha').value=today();
+  document.getElementById('fMAN').reset();
+  document.getElementById('ma_fecha').value=today();
+  document.getElementById('ma_vc').innerHTML='<option value="">Seleccionar...</option>'+VCS.map(v=>`<option value="${v.id}">${v.patente} – ${v.descripcion}</option>`).join('');
+  om('mMAN');
+}
+
+document.getElementById('fMAN').addEventListener('submit', async e=>{
+  e.preventDefault();
+  const vcId=document.getElementById('ma_vc').value;
+  const vc=VCS.find(v=>v.id===vcId);
+  const {error}=await SB.from('fm_mantenimientos').insert({
+    vehiculo_id:vcId, vehiculo_desc:vc?vc.patente+' – '+vc.descripcion:'',
+    tipo:document.getElementById('ma_tip').value,
+    descripcion:document.getElementById('ma_desc').value.trim()||null,
+    fecha:document.getElementById('ma_fecha').value,
+    km:parseInt(document.getElementById('ma_km').value)||null,
+    costo:parseFloat(document.getElementById('ma_costo').value)||null,
+    proveedor:document.getElementById('ma_prov').value.trim()||null,
+    proxima_fecha:document.getElementById('ma_pfecha').value||null,
+    proximo_km:parseInt(document.getElementById('ma_pkm').value)||null,
+  });
+  if(error){toast(error.message,'er');return;}
+  await SB.from('fm_vehiculos').update({estado:'MANTENIMIENTO'}).eq('id',vcId);
+  toast('Mantenimiento registrado ✓'); cm('mMAN'); renderMAN(); await loadVCS();
+});
+
+// ============================================================
+// AUTO-REFRESH cada 30s
+// ============================================================
+setInterval(async()=>{
+  await loadVCS();
+  const sec=document.querySelector('.sec.on');
+  if(sec?.id==='s-dash') renderDash();
+  if(sec?.id==='s-port') renderPort();
+  // badge pendientes
+  const {count}=await SB.from('fm_solicitudes').select('*',{count:'exact',head:true}).eq('estado','PENDIENTE');
+  const bp=document.getElementById('badge-pend');
+  if(count>0){bp.textContent=count;bp.style.display='inline';}else{bp.style.display='none';}
+},30000);
+
+// ============================================================
+// INIT
+// ============================================================
+async function init() {
+  await loadVCS();
+  renderDash();
+}
+
+// Auto-login si ya tiene config guardada
+window.addEventListener('load', async()=>{
+  const cfg=getCfg();
+  if(cfg.url&&cfg.key){
+    document.getElementById('cfg-url').value=cfg.url;
+    document.getElementById('cfg-key').value=cfg.key;
+    try {
+      SB=buildClient(cfg.url,cfg.key);
+      const {error}=await SB.from('fm_vehiculos').select('id').limit(1);
+      if(error) throw error;
+      document.getElementById('cfg-screen').style.display='none';
+      document.getElementById('app').style.display='block';
+      await init();
+    } catch(e) {
+      document.getElementById('cfg-screen').style.display='flex';
+      document.getElementById('cfg-msg').innerHTML=`<span style="color:var(--red)">Reconexión fallida: ${e.message}</span>`;
+    }
+  }
+});
+</script>
+</body>
+</html>
