@@ -14,8 +14,9 @@ import * as gantt from './modules/flota-gantt.js';
 import * as mantenimiento from './modules/flota-mantenimiento.js';
 import * as vtv from './modules/flota-vtv.js';
 import * as documentos from './modules/flota-documentos.js';
+import * as oc from './modules/oc.js';
 
-const MODULES = { dash: dashboard, vcs: vehiculos, sols: solicitudes, movs: movimientos, gantt, mant: mantenimiento, vtv, doc: documentos };
+const MODULES = { dash: dashboard, vcs: vehiculos, sols: solicitudes, movs: movimientos, gantt, mant: mantenimiento, vtv, doc: documentos, oc };
 
 function go(secId) {
   document.querySelectorAll('.sec').forEach(s => s.classList.remove('on'));

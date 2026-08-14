@@ -125,6 +125,33 @@ create table compras_movimientos (
 );
 
 -- ------------------------------------------------------------
+-- OC LÍNEAS — importadas del export de OC de Tango Gestión (ver
+-- sql/004_ordenes_compra.sql para el detalle del criterio de carga).
+-- No tiene relación con las tablas de Flota — es el módulo
+-- "Órdenes de Compra" (indicador de compras), independiente.
+-- ------------------------------------------------------------
+create table compras_oc_lineas (
+  id uuid primary key default gen_random_uuid(),
+  orden_compra text not null,
+  fecha date not null,
+  comprador_cod text,
+  comprador_nombre text,
+  proveedor_cod text,
+  proveedor_nombre text,
+  articulo_cod text not null,
+  articulo_desc text,
+  deposito text,
+  cant_pedida numeric not null default 0,
+  cant_recibida numeric not null default 0,
+  cant_pendiente numeric not null default 0,
+  precio_unitario numeric,
+  importe numeric,
+  archivo_origen text,
+  actualizado_en timestamptz not null default now(),
+  created_at timestamptz not null default now()
+);
+
+-- ------------------------------------------------------------
 -- ÍNDICES
 -- ------------------------------------------------------------
 create index idx_compras_mantenimientos_vehiculo on compras_mantenimientos(vehiculo_id);
@@ -135,6 +162,9 @@ create index idx_compras_solicitudes_estado on compras_solicitudes(estado);
 create index idx_compras_solicitudes_fecha_uso on compras_solicitudes(fecha_uso);
 create index idx_compras_movimientos_vehiculo on compras_movimientos(vehiculo_id);
 create index idx_compras_movimientos_fecha on compras_movimientos(fecha_hora);
+create index idx_compras_oc_orden on compras_oc_lineas(orden_compra);
+create index idx_compras_oc_fecha on compras_oc_lineas(fecha);
+create index idx_compras_oc_proveedor on compras_oc_lineas(proveedor_cod);
 
 -- ------------------------------------------------------------
 -- VISTAS — "último vencimiento vigente" por vehículo

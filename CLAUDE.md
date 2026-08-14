@@ -41,7 +41,7 @@ seguros, permisos). El resto de los módulos se va a ir sumando a medida que se 
 |---|---|---|
 | **Flota** | `[DETALLADO]` (sección 4) | Vehículos, mantenimiento, VTV, seguros, permisos, combustible |
 | Proveedores | `[TBD]` | Catálogo de proveedores, historial de compras, evaluación/calificación |
-| Órdenes de compra | `[TBD]` | Alta, seguimiento y estado de pedidos a proveedores |
+| **Órdenes de compra** | `[DETALLADO]` (sección 5) | No es alta/gestión de pedidos — es un indicador de compras (pendientes/recibidas/total) alimentado importando el export de OC de Tango Gestión |
 | Presupuesto y gastos de compras | `[TBD]` | Presupuestado vs. real por categoría/área, alertas de desvío |
 | Stock / insumos críticos | `[TBD]` | Niveles de stock, punto de reposición, insumos que no deben faltar |
 | Contratos y vencimientos | `[TBD]` | Contratos de servicios, alquileres, licencias — no solo de vehículos |
@@ -225,7 +225,84 @@ Si el criterio de quién puede manejar cambia, hay que tocar los tres lugares.
 
 ---
 
-## 5. Stack técnico
+## 5. Módulo: Órdenes de Compra `[DETALLADO]`
+
+Sin relación con Flota — es su propio módulo, independiente (nav propio, tabla propia). Nació de una
+necesidad puntual: tener un indicador de compras (total comprado / recibido / pendiente) sin tener que
+cargar nada a mano, aprovechando que el dato ya existe en Tango Gestión.
+
+### 5.1 De dónde viene el dato
+
+Se alimenta del **export de OC de Tango Gestión** (botón de exportar a Excel desde el propio Tango).
+Columnas del archivo (nombres tal cual los pone Tango): `FECHA`, `N_ORDEN_C`, `COMPRADOR`, `N_COMPRAD`,
+`COD_PROV`, `NOM_PROV`, `COD_ARTICU`, `DESC_ART`, `DEPÓSITO`, `CANT_PED`, `CANT_REC`, `CANT_PEN`,
+`PRECIO_UNI`, `IMPORTE`. Cada fila es una **línea** de una orden de compra — una OC puede tener varias
+líneas/artículos (se identificó esto con los 3 archivos de ejemplo que pasó el usuario: `Julio OC.xlsx`,
+`Agosto OC.xlsx` y `Julio Agosto OC.xlsx`, este último la unión exacta de los otros dos).
+
+- No hay una columna de "línea" estable — el mismo artículo puede aparecer más de una vez dentro de la
+  misma orden (ej. dos entregas distintas). Por eso NO se usa `(orden, artículo)` como clave única.
+- `IMPORTE` y `CANT_PEN` vienen ya calculados por Tango (con algún redondeo interno) — no se recalculan,
+  se guardan tal cual figuran en el archivo.
+- El campo `DEPÓSITO` (valores vistos: `90`, `01`) es la referencia a **pañol / despacho** que el
+  usuario quiere parametrizar más adelante — hoy se guarda tal cual pero no se usa todavía en la UI.
+
+### 5.2 Cómo se carga (clave del diseño)
+
+No hay backend: el `.xlsx` se parsea **en el navegador** con [SheetJS](https://sheetjs.com/) (CDN, ver
+`index.html`) y se sube directo a Supabase desde el cliente (`js/modules/oc.js`).
+
+Al subir un archivo:
+1. Se parsea y se detectan las órdenes de compra (`N_ORDEN_C`) presentes en ese archivo.
+2. Se **borran** las líneas que ya hubiera cargadas de *esas órdenes puntuales* (`delete().in('orden_compra', [...])`)
+   — no se toca ninguna otra orden.
+3. Se insertan todas las líneas del archivo.
+
+Esto permite las dos formas de trabajar que describió el usuario sin ningún caso especial:
+- **Hoy:** un archivo por mes (`Julio OC.xlsx`, `Agosto OC.xlsx`) — subir el de agosto nunca toca julio,
+  porque las órdenes de cada mes no se repiten entre archivos (confirmado con los 3 ejemplos: 0 órdenes
+  en común entre julio y agosto).
+- **Ideal a futuro:** un archivo con el año completo, re-subido cada semana para refrescar cantidades
+  recibidas/pendientes — como el reemplazo es por orden presente en el archivo, cada vez que se vuelve a
+  subir el mismo archivo (actualizado) las órdenes que ya se recibieron quedan con `pendiente = 0` y se
+  van "cerrando" solas en el indicador, sin duplicar nada.
+
+Antes de efectivamente borrar/insertar, se le muestra al usuario un `confirm()` con el resumen ("se
+leyeron X líneas de Y órdenes...") para que no sea una carga a ciegas.
+
+### 5.3 Qué muestra el tablero
+
+Una sola vista con KPIs + tabla, agrupada por **orden de compra** (no por línea):
+
+- KPIs: Total comprado, Total recibido (`cant_recibida × precio_unitario`, sumado), Total pendiente
+  (`cant_pendiente × precio_unitario`), % completado, cantidad de OC abiertas vs. cerradas.
+- Una OC se considera **cerrada** cuando la suma de `cant_pendiente × precio_unitario` de todas sus
+  líneas es ~0 (tolerancia por redondeo), **abierta** en caso contrario.
+- Filtros: proveedor, mes (derivado de `fecha`), estado (abierta/cerrada). Los KPIs se recalculan sobre
+  lo filtrado, no sobre el total.
+- No hay vista de detalle por línea/artículo todavía (se agrega si hace falta más adelante) — hoy es
+  agregado por orden, que es como el usuario piensa el problema ("que se me vayan cerrando OC").
+
+### 5.4 Modelo de datos
+
+Tabla `compras_oc_lineas` (ver [`sql/004_ordenes_compra.sql`](sql/004_ordenes_compra.sql) para la
+migración y `sql/schema.sql` para el estado final). Sin RLS, mismo criterio que el resto de `compras_*`.
+
+> Pendiente de decidir con el usuario: si conviene sumar la columna `deposito` (pañol/despacho) como
+> filtro real en la UI, y si en algún momento se quiere que el % de "recibido" pese por importe en vez
+> de por unidades×precio (hoy son equivalentes matemáticamente, pero si el precio cambiara entre líneas
+> de una misma orden dejarían de serlo).
+
+### 5.5 Archivos Excel de ejemplo — no van al repo
+
+Los 3 archivos que pasó el usuario (`Excels/Julio OC.xlsx`, `Excels/Agosto OC.xlsx`,
+`Excels/Julio Agosto OC.xlsx`) tienen datos reales de compras (proveedores, precios, montos) y el repo
+de este tablero es **público** en GitHub — por eso `Excels/` está en `.gitignore`, no se sube. Quedan
+solo en la máquina local para poder probar el parseo.
+
+---
+
+## 6. Stack técnico
 
 - **Frontend:** HTML/JS vanilla, mismo criterio que Nexo RRHH y CIMOMET v3.
 - **Diferencia respecto a Nexo RRHH:** en vez de un único archivo HTML, para este proyecto conviene
@@ -267,9 +344,13 @@ tablero-compras/
 │       ├── flota-vtv.js
 │       ├── flota-documentos.js  (Seguros + Permisos unificados, ver 4.4)
 │       ├── flota-personal.js  (lista de personal habilitado a manejar/solicitar, ver 4.4)
-│       └── (futuros módulos: proveedores.js, ordenes-compra.js, ...)
+│       └── oc.js  (Órdenes de Compra — módulo aparte, sin relación con Flota, ver sección 5)
+├── Excels/                (archivos de ejemplo de OC — en .gitignore, no se suben al repo)
 └── sql/
-    └── schema.sql
+    ├── schema.sql
+    ├── 002_seguros_archivo.sql
+    ├── 003_documentos_unificados.sql
+    └── 004_ordenes_compra.sql
 ```
 
 > `porteria.html` y `solicitud.html` son entry points separados (audiencias distintas: portero de
@@ -279,7 +360,7 @@ tablero-compras/
 > base) quedó sin tocar en la raíz como referencia — su funcionalidad ya está migrada a `index.html` +
 > los módulos `flota-*.js`; se puede borrar cuando lo confirmes.
 
-## 6. Notas específicas de entorno
+## 7. Notas específicas de entorno
 
 - Dijiste que vas a trabajar este proyecto en **Antigravity** (cuenta de la empresa). Ojo con un detalle
   que ya tenemos registrado de tu workflow: **Antigravity no carga `CLAUDE.md` automáticamente** — usa
@@ -289,7 +370,7 @@ tablero-compras/
   `CLAUDE.md`. Lo más simple: mantener el contenido en `CLAUDE.md` y tener una copia (o symlink) como
   `AGENTS.md`.
 
-## 7. Decisiones abiertas (TBD)
+## 8. Decisiones abiertas (TBD)
 
 Ya decidido al construir el módulo Flota (2026-08-04):
 - [x] Esquema de datos: se migró al diseño de la sección 4.4 (`compras_vehiculos` separado de
@@ -316,15 +397,17 @@ Todavía sin decidir:
 - [ ] ¿Se borran del todo `compras_seguros_old` / `compras_permisos_old` (ver 4.4) una vez confirmado
   que no hace falta consultarlas?
 
-## 8. Próximos pasos sugeridos
+## 9. Próximos pasos sugeridos
 
 1. Correr `sql/schema.sql` contra el proyecto Supabase real (ya hecho — tablas `compras_*` creadas).
 2. Correr [`sql/002_seguros_archivo.sql`](sql/002_seguros_archivo.sql) (ya hecho) y
-   [`sql/003_documentos_unificados.sql`](sql/003_documentos_unificados.sql) (fusiona Seguros + Permisos
-   en `compras_documentos` — todavía falta correrlo).
-3. Probar el circuito completo: pedir vehículo (solicitud.html) → aprobar y asignar (index.html) →
+   [`sql/003_documentos_unificados.sql`](sql/003_documentos_unificados.sql) (ya hecho — fusiona Seguros
+   + Permisos en `compras_documentos`).
+3. Correr [`sql/004_ordenes_compra.sql`](sql/004_ordenes_compra.sql) para crear `compras_oc_lineas`
+   (todavía falta — sin esto el módulo Órdenes de Compra muestra error de "tabla no encontrada").
+4. Probar el circuito completo: pedir vehículo (solicitud.html) → aprobar y asignar (index.html) →
    registrar salida/retorno (porteria.html) → ver el movimiento reflejado en el dashboard.
-4. Evaluar RLS (Row Level Security) en las tablas `compras_*` — hoy cualquiera con el link de
+5. Evaluar RLS (Row Level Security) en las tablas `compras_*` — hoy cualquiera con el link de
    `solicitud.html`/`porteria.html` puede leer/escribir todas las tablas, sin ningún login de por medio.
-5. Ir completando los módulos `[TBD]` de la sección 3 a medida que los necesites, usando el módulo
+6. Ir completando los módulos `[TBD]` de la sección 3 a medida que los necesites, usando el módulo
    Flota (carpeta `js/modules/`) como plantilla.

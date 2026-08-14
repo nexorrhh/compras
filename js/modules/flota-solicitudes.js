@@ -28,8 +28,19 @@ export async function render() {
     <td>${s.vehiculo_asignado_desc || '–'}</td>
     <td>${s.ot || '–'}</td>
     <td><span class="badge ${badgeMap[s.estado] || ''}">${s.estado}</span></td>
-    <td>${s.estado === 'PENDIENTE' ? `<button class="bsm y" onclick="window.flotaSolicitudes.abrirApro('${s.id}')">⚖ Gestionar</button>` : ''}</td>
+    <td>
+      ${s.estado === 'PENDIENTE' ? `<button class="bsm y" onclick="window.flotaSolicitudes.abrirApro('${s.id}')">⚖ Gestionar</button>` : ''}
+      <button class="bsm d" onclick="window.flotaSolicitudes.eliminarSolicitud('${s.id}')">🗑️</button>
+    </td>
   </tr>`).join('');
+}
+
+async function eliminarSolicitud(id) {
+  if (!confirm('¿Eliminar esta solicitud? No se puede deshacer.')) return;
+  const { error } = await SB.from('compras_solicitudes').delete().eq('id', id);
+  if (error) { toast(error.message, 'er'); return; }
+  toast('Solicitud eliminada');
+  render();
 }
 
 async function abrirApro(id) {
@@ -148,5 +159,5 @@ export function init() {
   document.getElementById('btn-nueva-sol')?.addEventListener('click', abrirNueva);
   document.getElementById('fNUEVASOL')?.addEventListener('submit', guardarNueva);
   document.getElementById('ns_sol')?.addEventListener('change', autofillSector);
-  window.flotaSolicitudes = { abrirApro };
+  window.flotaSolicitudes = { abrirApro, eliminarSolicitud };
 }

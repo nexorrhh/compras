@@ -1,6 +1,9 @@
 # Configuración local de Claude Code (específica de esta máquina, no del proyecto)
 .claude/
 
+# Excels de OC (datos reales de compras/proveedores/precios — no van a un repo público)
+Excels/
+
 # Archivos del sistema
 .DS_Store
 Thumbs.db
