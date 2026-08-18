@@ -371,11 +371,14 @@ Para el stock total de un artículo hay que **sumar `saldo`** entre todas sus fi
 - El archivo trae **16 depósitos** (`cod_deposi`): `01` PRINCIPAL, `90` PAÑOL, `11` MANTENIMIENTO, `22`/
   `24`/`25` CONTENEDOR 3/5/6, `26` CALIDAD, `30` MONTAJE, `03` PINTURAS, `YP` YPF FILTRO, `ZZ` Depósito
   Capataz, y varios con muy poco uso (COMEDOR, FABRICACION, CONTENEDOR 1/2). El usuario aclaró que solo
-  **Principal + Pañol** importan hoy para decidir qué comprar — el resto incluye cosas como un contenedor
-  armado para una obra específica (insumos de obra, microondas, etc.) que "no mueven la aguja". Por eso
-  se importan **todos los depósitos** (no se pierde información) pero el cálculo de "stock actual" contra
-  el mínimo usa por defecto solo Principal + Pañol — elegible en la UI (ver 6.3) si hace falta mirar otro
-  depósito puntual o todos juntos.
+  **Principal + Pañol** importan para decidir qué comprar — el resto incluye cosas como un contenedor
+  armado para una obra específica (insumos de obra, microondas, etc.) que "no mueven la aguja". Primera
+  versión: se importaban los 16 igual (no perder información) y el cálculo usaba por defecto solo
+  Principal+Pañol. El usuario pidió simplificar más: **"tengamos en cuenta solo estos, los otros
+  retiralos"** — ahora el parseo (`parseWorkbookStock()` en `js/modules/stock.js`) descarta directamente
+  cualquier fila que no sea de depósito `01` o `90`, **no llegan a guardarse** en `compras_stock_saldos`.
+  El `confirm()` antes de cargar avisa cuántas filas de otros depósitos se ignoraron. Se hizo una limpieza
+  única de lo que ya había cargado de otros depósitos (1850 filas de un total de 5983, quedaron 4133).
 - `estad_ela` trae dos valores (`LIB` / `LIR`) sin que quede claro que uno invalide el saldo — no se
   filtra por este campo, se suma todo tal cual figura.
 
@@ -408,11 +411,14 @@ Mismo patrón de nav colapsable que Flota y Órdenes de Compra ("📦 Stock ▾"
   con búsqueda por código/descripción y filtro de depósito. Expandible por fila (mismo patrón que
   Órdenes de Compra) para ver el desglose de saldo por depósito de ese artículo. Acá vive el botón
   **"⭐ Agregar/✏️ Editar"** que abre el modal de seguimiento, y el botón **"Cargar archivo (.xlsx)"**.
-- **Filtro de depósito** (presente en las 3 sub-vistas con tabla): `""` = Principal + Pañol (relevantes,
-  default), `TODOS` = los 16 juntos, o un depósito puntual — nunca se oculta el resto de la información,
-  solo cambia qué cuenta para el total mostrado.
+- **Filtro de depósito** (presente en las 3 sub-vistas con tabla, `sto_f_dep`/`stoc_f_dep`/`stos_f_dep`):
+  solo 3 opciones fijas (no se poblán dinámicamente, ya no hace falta) — `""` = Principal + Pañol
+  combinados, `"01"` = solo Principal, `"90"` = solo Pañol. Filtra de verdad la lista, no solo el total:
+  si elegís Pañol, solo aparecen artículos que tienen algo en Pañol, con el saldo de Pañol únicamente
+  (`agruparPorArticulo(depFiltro)` en `js/modules/stock.js` filtra las filas de `compras_stock_saldos`
+  *antes* de agrupar, no después).
 - Un mínimo es **por artículo**, no por artículo+depósito (decisión tomada con el usuario: más simple de
-  cargar/leer, se compara contra la suma del saldo en los depósitos elegidos).
+  cargar/leer, se compara contra la suma del saldo en el alcance de depósito elegido).
 
 ### 6.4 Modelo de datos
 

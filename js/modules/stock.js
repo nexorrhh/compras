@@ -13,13 +13,12 @@
 //
 // El usuario elige a mano qué artículos trackear con un stock
 // mínimo (compras_stock_minimos, un mínimo por artículo, no por
-// artículo+depósito — se compara contra la suma del saldo en los
-// depósitos considerados relevantes). El archivo tiene ~15
-// depósitos pero solo Principal (01) y Pañol (90) importan para esa
-// comparación por defecto — el resto (contenedores de obra,
-// mantenimiento, etc.) se carga igual y queda visible/filtrable
-// para no perder información, pero no cuenta para la alerta de
-// compra salvo que se elija explícitamente.
+// artículo+depósito — se compara contra la suma del saldo del
+// artículo). El archivo de Capataz trae ~16 depósitos, pero solo
+// importan Principal (01) y Pañol (90) — el resto (contenedores de
+// obra, mantenimiento, etc.) se descarta al cargar el archivo, no
+// se guarda en la base (decisión del usuario: "tengamos en cuenta
+// solo estos, los otros retiralos").
 // ============================================================
 import { SB } from '../supabase-client.js';
 import { toast, om, cm, norm, fechaISO, txt, num } from '../utils.js';
@@ -28,7 +27,7 @@ let SALDOS = [];
 let MINIMOS = [];
 let ARTICULO_ACTUAL = null;
 
-const DEPOSITOS_RELEVANTES = ['01', '90']; // Principal + Pañol
+const DEPOSITOS_RELEVANTES = ['01', '90']; // Principal + Pañol — únicos que se importan
 
 // ------------------------------------------------------------
 // Parseo del Excel (export de saldos de Capataz)
@@ -52,11 +51,14 @@ function parseWorkbookStock(arrayBuffer, filename) {
   }
 
   const out = [];
+  let descartadas = 0;
   for (let i = 1; i < rows.length; i++) {
     const r = rows[i];
     if (!r || r.every(c => c === null || c === '')) continue;
     const articulo = txt(r[col.articulo]);
     if (!articulo) continue;
+    const codDeposito = col.depCod >= 0 ? txt(r[col.depCod]) : null;
+    if (!DEPOSITOS_RELEVANTES.includes(codDeposito)) { descartadas++; continue; }
     out.push({
       cod_articulo: articulo,
       descripcion: col.desc >= 0 ? txt(r[col.desc]) : null,
@@ -65,13 +67,14 @@ function parseWorkbookStock(arrayBuffer, filename) {
       n_despacho: col.despacho >= 0 ? txt(r[col.despacho]) : null,
       saldo: num(r[col.saldo]),
       unidad_medida: col.unidad >= 0 ? txt(r[col.unidad]) : null,
-      cod_deposito: col.depCod >= 0 ? txt(r[col.depCod]) : null,
+      cod_deposito: codDeposito,
       nombre_deposito: col.depNom >= 0 ? txt(r[col.depNom]) : null,
       fecha: col.fecha >= 0 ? fechaISO(r[col.fecha]) : null,
       fecha_vto: col.fechaVto >= 0 ? fechaISO(r[col.fechaVto]) : null,
       archivo_origen: filename,
     });
   }
+  out.descartadas = descartadas; // filas de otros depósitos, ignoradas a propósito
   return out;
 }
 
@@ -87,12 +90,13 @@ async function cargarArchivo(file) {
     toast('No se pudo leer el archivo: ' + e.message, 'er');
     return;
   }
-  if (!filas.length) { toast('No se encontraron filas válidas en el archivo', 'er'); return; }
+  const descartadas = filas.descartadas || 0;
+  if (!filas.length) { toast('No se encontraron filas de Principal/Pañol en el archivo', 'er'); return; }
 
   const articulos = new Set(filas.map(f => f.cod_articulo)).size;
-  const depositos = [...new Map(filas.map(f => [f.cod_deposito, f.nombre_deposito])).entries()];
+  const avisoDescartadas = descartadas ? ` (se ignoraron ${descartadas} filas de otros depósitos — solo importan Principal y Pañol)` : '';
   const ok = confirm(
-    `Se leyeron ${filas.length} filas de ${articulos} artículos en ${depositos.length} depósitos.\n\n` +
+    `Se leyeron ${filas.length} filas de ${articulos} artículos en Principal + Pañol${avisoDescartadas}.\n\n` +
     `Esto REEMPLAZA todo el stock cargado anteriormente (es una foto completa, no un incremental).\n\n¿Continuar?`
   );
   if (!ok) return;
@@ -113,47 +117,31 @@ async function cargarArchivo(file) {
 }
 
 // ------------------------------------------------------------
-// Agrupado por artículo, sumando saldo entre lotes. `depFiltro`
-// determina qué depósitos cuentan para saldoScope: '' = relevantes
-// (Principal+Pañol), 'TODOS' = todos, cualquier otro valor = ese
-// depósito puntual. saldoTotal (todos los depósitos, siempre) queda
-// aparte para no perder de vista lo que hay en el resto.
+// Agrupado por artículo, sumando saldo entre lotes. `depFiltro` ('' =
+// ambos, '01' = Principal, '90' = Pañol) filtra de verdad la lista:
+// si se pide Pañol, solo aparecen artículos que tienen algo en Pañol
+// y con el saldo de Pañol únicamente (no de Principal) — no es solo
+// un recorte del total, es "traeme lo que hay en ese depósito".
 // ------------------------------------------------------------
 function agruparPorArticulo(depFiltro) {
-  const set = depFiltro === 'TODOS' ? null : (depFiltro ? [depFiltro] : DEPOSITOS_RELEVANTES);
   const map = new Map();
   for (const s of SALDOS) {
+    if (depFiltro && s.cod_deposito !== depFiltro) continue;
     if (!map.has(s.cod_articulo)) {
       map.set(s.cod_articulo, {
         cod_articulo: s.cod_articulo, descripcion: s.descripcion, desc_adicional: s.desc_adicional,
-        unidad_medida: s.unidad_medida, saldoScope: 0, saldoTotal: 0, lotes: [],
+        unidad_medida: s.unidad_medida, saldo: 0, lotes: [],
       });
     }
     const g = map.get(s.cod_articulo);
     g.lotes.push(s);
-    g.saldoTotal += s.saldo || 0;
-    if (!set || set.includes(s.cod_deposito)) g.saldoScope += s.saldo || 0;
+    g.saldo += s.saldo || 0;
   }
   return [...map.values()];
 }
 
-function estadoStock(saldoScope, minimo) {
-  return saldoScope < minimo ? 'BAJO' : 'OK';
-}
-
-function poblarFiltroDeposito(selectId) {
-  const sel = document.getElementById(selectId);
-  if (!sel) return;
-  const cur = sel.value;
-  const deps = [...new Map(SALDOS.map(s => [s.cod_deposito, s.nombre_deposito])).entries()]
-    .filter(([cod]) => cod)
-    .sort((a, b) => (a[1] || '').localeCompare(b[1] || ''));
-  sel.innerHTML =
-    '<option value="">Principal + Pañol (relevantes)</option>' +
-    '<option value="TODOS">Todos los depósitos</option>' +
-    deps.map(([cod, nom]) => `<option value="${cod}">${(nom || cod).trim()}</option>`).join('');
-  const valores = ['', 'TODOS', ...deps.map(([cod]) => cod)];
-  if (valores.includes(cur)) sel.value = cur;
+function estadoStock(saldo, minimo) {
+  return saldo < minimo ? 'BAJO' : 'OK';
 }
 
 function detalleArticulo(a) {
@@ -189,7 +177,6 @@ function initExpandCollapse(tbodyId) {
 // depósito. Acá vive el botón de carga de archivo.
 // ------------------------------------------------------------
 function renderTodo() {
-  poblarFiltroDeposito('sto_f_dep');
   const q = (document.getElementById('sto_f_q')?.value || '').trim().toUpperCase();
   const depFiltro = document.getElementById('sto_f_dep')?.value || '';
 
@@ -209,13 +196,13 @@ function renderTodo() {
     const min = minimosMap.get(a.cod_articulo);
     const badge = !min
       ? `<span class="badge" style="opacity:.5">Sin seguimiento</span>`
-      : estadoStock(a.saldoScope, min.stock_minimo) === 'BAJO'
+      : estadoStock(a.saldo, min.stock_minimo) === 'BAJO'
         ? `<span class="badge vencido">⚠️ Bajo mín. (${min.stock_minimo.toLocaleString('es-AR')})</span>`
         : `<span class="badge vigente">✓ OK (mín. ${min.stock_minimo.toLocaleString('es-AR')})</span>`;
     return `<tr class="oc-row">
       <td><span class="oc-chevron">▸</span> ${a.cod_articulo}</td>
       <td>${a.descripcion || ''}${a.desc_adicional ? ' ' + a.desc_adicional : ''}</td>
-      <td>${a.saldoScope.toLocaleString('es-AR')}</td>
+      <td>${a.saldo.toLocaleString('es-AR')}</td>
       <td>${a.unidad_medida || '–'}</td>
       <td>${badge}</td>
       <td><button class="bsm sto-accion" onclick="window.stock.abrirSeguimiento('${a.cod_articulo}')">${min ? '✏️ Editar' : '⭐ Agregar'}</button></td>
@@ -237,8 +224,8 @@ function calcularSeguimiento(depFiltro, soloBajoMinimo) {
 
   let filas = MINIMOS.map(m => {
     const a = porCodigo.get(m.cod_articulo);
-    const saldoScope = a ? a.saldoScope : 0;
-    return { min: m, articulo: a, saldoScope, estado: estadoStock(saldoScope, m.stock_minimo) };
+    const saldo = a ? a.saldo : 0;
+    return { min: m, articulo: a, saldoScope: saldo, estado: estadoStock(saldo, m.stock_minimo) };
   });
   if (soloBajoMinimo) filas = filas.filter(f => f.estado === 'BAJO');
   filas.sort((a, b) => (a.estado === b.estado ? 0 : a.estado === 'BAJO' ? -1 : 1) || a.min.cod_articulo.localeCompare(b.min.cod_articulo));
@@ -246,7 +233,6 @@ function calcularSeguimiento(depFiltro, soloBajoMinimo) {
 }
 
 function renderSeguimiento(prefix, tbodyId, soloBajoMinimo) {
-  poblarFiltroDeposito(`${prefix}_f_dep`);
   const depFiltro = document.getElementById(`${prefix}_f_dep`)?.value || '';
   const filas = calcularSeguimiento(depFiltro, soloBajoMinimo);
 
@@ -286,12 +272,12 @@ function renderSeguimiento(prefix, tbodyId, soloBajoMinimo) {
 // Dashboard
 // ------------------------------------------------------------
 function renderDashboard() {
-  const articulos = agruparPorArticulo(''); // scope por defecto: relevantes
+  const articulos = agruparPorArticulo(''); // Principal + Pañol combinados
   const porCodigo = new Map(articulos.map(a => [a.cod_articulo, a]));
   let bajoMinimo = 0;
   for (const m of MINIMOS) {
     const a = porCodigo.get(m.cod_articulo);
-    if (estadoStock(a ? a.saldoScope : 0, m.stock_minimo) === 'BAJO') bajoMinimo++;
+    if (estadoStock(a ? a.saldo : 0, m.stock_minimo) === 'BAJO') bajoMinimo++;
   }
   const setTxt = (id, v) => { const el = document.getElementById(id); if (el) el.textContent = v; };
   setTxt('sd_k_articulos', new Set(SALDOS.map(s => s.cod_articulo)).size);
@@ -306,7 +292,7 @@ function renderDashboard() {
 // Modal — agregar/editar artículo en seguimiento
 // ------------------------------------------------------------
 function abrirSeguimiento(codArticulo) {
-  const articulos = agruparPorArticulo('TODOS');
+  const articulos = agruparPorArticulo(''); // Principal + Pañol combinados
   const a = articulos.find(x => x.cod_articulo === codArticulo);
   const min = MINIMOS.find(m => m.cod_articulo === codArticulo);
   ARTICULO_ACTUAL = {
@@ -317,7 +303,7 @@ function abrirSeguimiento(codArticulo) {
   document.getElementById('sg_codigo').textContent = codArticulo;
   document.getElementById('sg_desc').textContent = ARTICULO_ACTUAL.descripcion || '(sin descripción)';
   document.getElementById('sg_unidad').textContent = ARTICULO_ACTUAL.unidad_medida || '–';
-  document.getElementById('sg_saldo_actual').textContent = a ? `${a.saldoTotal.toLocaleString('es-AR')} ${a.unidad_medida || ''} (todos los depósitos)` : 'No está en el último archivo cargado';
+  document.getElementById('sg_saldo_actual').textContent = a ? `${a.saldo.toLocaleString('es-AR')} ${a.unidad_medida || ''} (Principal + Pañol)` : 'No está en el último archivo cargado';
   document.getElementById('sg_minimo').value = min ? min.stock_minimo : '';
   document.getElementById('sg_notas').value = min ? (min.notas || '') : '';
   om('mSEGUI');
