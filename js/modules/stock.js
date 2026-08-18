@@ -228,10 +228,10 @@ function renderTodo() {
 // Seguimiento / A comprar — comparten el mismo componente: lista
 // de artículos marcados con su stock actual vs. mínimo. "A comprar"
 // es la misma vista pre-filtrada a los que están bajo el mínimo.
+// Factorizado en calcularSeguimiento() para que el render y la
+// exportación a Excel usen exactamente la misma lista.
 // ------------------------------------------------------------
-function renderSeguimiento(prefix, tbodyId, soloBajoMinimo) {
-  poblarFiltroDeposito(`${prefix}_f_dep`);
-  const depFiltro = document.getElementById(`${prefix}_f_dep`)?.value || '';
+function calcularSeguimiento(depFiltro, soloBajoMinimo) {
   const articulos = agruparPorArticulo(depFiltro);
   const porCodigo = new Map(articulos.map(a => [a.cod_articulo, a]));
 
@@ -242,6 +242,13 @@ function renderSeguimiento(prefix, tbodyId, soloBajoMinimo) {
   });
   if (soloBajoMinimo) filas = filas.filter(f => f.estado === 'BAJO');
   filas.sort((a, b) => (a.estado === b.estado ? 0 : a.estado === 'BAJO' ? -1 : 1) || a.min.cod_articulo.localeCompare(b.min.cod_articulo));
+  return filas;
+}
+
+function renderSeguimiento(prefix, tbodyId, soloBajoMinimo) {
+  poblarFiltroDeposito(`${prefix}_f_dep`);
+  const depFiltro = document.getElementById(`${prefix}_f_dep`)?.value || '';
+  const filas = calcularSeguimiento(depFiltro, soloBajoMinimo);
 
   const resumen = document.getElementById(`${prefix}_resumen`);
   if (resumen) {
@@ -345,6 +352,33 @@ async function quitarSeguimiento(codArticulo) {
 }
 
 // ------------------------------------------------------------
+// Exportar "A comprar" a Excel — mismo criterio (depósito elegido)
+// que se está viendo en pantalla, para llevar la lista a un proveedor
+// o al circuito de compras sin tener que transcribirla a mano.
+// ------------------------------------------------------------
+function exportarAComprar() {
+  const depFiltro = document.getElementById('stoc_f_dep')?.value || '';
+  const filas = calcularSeguimiento(depFiltro, true);
+  if (!filas.length) { toast('No hay artículos bajo el mínimo para exportar', 'er'); return; }
+
+  const datos = filas.map(f => {
+    const unidad = f.articulo?.unidad_medida || f.min.unidad_medida || '';
+    return {
+      'Código': f.min.cod_articulo,
+      'Descripción': f.min.descripcion || f.articulo?.descripcion || '',
+      'Unidad': unidad,
+      'Stock actual': f.saldoScope,
+      'Mínimo': f.min.stock_minimo,
+      'A comprar (aprox.)': Math.max(0, f.min.stock_minimo - f.saldoScope),
+    };
+  });
+  const ws = XLSX.utils.json_to_sheet(datos);
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, 'A comprar');
+  const fecha = new Date().toISOString().slice(0, 10);
+  XLSX.writeFile(wb, `a-comprar_${fecha}.xlsx`);
+}
+
 const TBODY_POR_SECCION = { 'stock-comprar': 't-stock-comprar', 'stock-segui': 't-stock-segui', 'stock-todo': 't-stock-todo' };
 
 export async function render(secId) {
@@ -380,6 +414,7 @@ export function init() {
 
   ['stoc_f_dep'].forEach(id => document.getElementById(id)?.addEventListener('change', () => renderSeguimiento('stoc', 't-stock-comprar', true)));
   ['stos_f_dep'].forEach(id => document.getElementById(id)?.addEventListener('change', () => renderSeguimiento('stos', 't-stock-segui', false)));
+  document.getElementById('stoc_export')?.addEventListener('click', exportarAComprar);
 
   document.getElementById('fSEGUI')?.addEventListener('submit', guardarSeguimiento);
 
