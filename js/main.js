@@ -54,6 +54,23 @@ function wireNav() {
   });
 }
 
+const THEME_KEY = 'compras_tema';
+
+function aplicarTema(tema) {
+  document.documentElement.setAttribute('data-theme', tema);
+  const btn = document.getElementById('theme-toggle');
+  if (btn) btn.textContent = tema === 'light' ? '☀️' : '🌙';
+}
+
+function initTheme() {
+  aplicarTema(document.documentElement.getAttribute('data-theme') === 'light' ? 'light' : 'dark');
+  document.getElementById('theme-toggle')?.addEventListener('click', () => {
+    const nuevo = document.documentElement.getAttribute('data-theme') === 'light' ? 'dark' : 'light';
+    localStorage.setItem(THEME_KEY, nuevo);
+    aplicarTema(nuevo);
+  });
+}
+
 function startClock() {
   const el = document.getElementById('clk');
   if (!el) return;
@@ -70,6 +87,7 @@ function startAutoRefresh() {
 async function onConnected() {
   [...new Set(Object.values(MODULES))].forEach(m => m.init?.());
   wireNav();
+  initTheme();
   startClock();
   startAutoRefresh();
   go('dash');

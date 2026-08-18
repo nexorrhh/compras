@@ -386,8 +386,12 @@ function datosTopCompradoresVolumen(grupos, n = 8) {
 
 function renderGraficosDashboard(grupos) {
   if (typeof Chart === 'undefined') return;
-  Chart.defaults.color = '#7c8db5';
-  Chart.defaults.borderColor = '#2a3248';
+  const cssVars = getComputedStyle(document.documentElement);
+  const colorMuted = cssVars.getPropertyValue('--muted').trim();
+  const colorBorder = cssVars.getPropertyValue('--border').trim();
+  const colorBg2 = cssVars.getPropertyValue('--bg2').trim();
+  Chart.defaults.color = colorMuted;
+  Chart.defaults.borderColor = colorBorder;
   Chart.defaults.font.family = "'Segoe UI',system-ui,sans-serif";
 
   const evol = datosEvolucionMensual(LINEAS);
@@ -413,7 +417,7 @@ function renderGraficosDashboard(grupos) {
     type: 'doughnut',
     data: {
       labels: ['Pendientes', 'Parciales', 'Completadas'],
-      datasets: [{ data: [porEstado.PENDIENTE, porEstado.PARCIAL, porEstado.COMPLETADA], backgroundColor: ['#ef4444', '#f97316', '#22c55e'], borderColor: '#161b27', borderWidth: 2 }],
+      datasets: [{ data: [porEstado.PENDIENTE, porEstado.PARCIAL, porEstado.COMPLETADA], backgroundColor: ['#ef4444', '#f97316', '#22c55e'], borderColor: colorBg2, borderWidth: 2 }],
     },
     options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'bottom' } } },
   });

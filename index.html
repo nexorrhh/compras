@@ -4,6 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Tablero de Compras — CIMOMET</title>
+<script>(function(){try{document.documentElement.setAttribute('data-theme',localStorage.getItem('compras_tema')||'dark');}catch(e){}})();</script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4/dist/chart.umd.min.js"></script>
@@ -192,6 +193,7 @@
     <div class="live-dot"></div>
     <span style="font-size:12px;color:var(--muted)">En vivo</span>
     <span id="clk" style="font-size:12px;color:var(--muted);margin-left:6px"></span>
+    <button class="btn" id="theme-toggle" title="Cambiar tema" style="padding:6px 10px;margin-left:8px">🌙</button>
   </div>
 </header>
 
@@ -484,8 +486,11 @@
 <div class="sec" id="s-stock-comprar">
   <div class="ptitle">Stock — A comprar</div>
   <div class="psub">Artículos en seguimiento cuyo stock actual está por debajo del mínimo configurado</div>
-  <div class="filters">
-    <select id="stoc_f_dep"><option value="">Principal + Pañol (relevantes)</option><option value="TODOS">Todos los depósitos</option></select>
+  <div class="sh">
+    <div class="filters">
+      <select id="stoc_f_dep"><option value="">Principal + Pañol (relevantes)</option><option value="TODOS">Todos los depósitos</option></select>
+    </div>
+    <button class="btn p" id="stoc_export">📥 Exportar (.xlsx)</button>
   </div>
   <div class="psub" id="stoc_resumen" style="margin-top:-8px"></div>
   <div class="tw"><table>

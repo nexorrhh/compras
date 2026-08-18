@@ -397,7 +397,11 @@ Mismo patrón de nav colapsable que Flota y Órdenes de Compra ("📦 Stock ▾"
   seguimiento, artículos bajo el mínimo) calculados con el alcance por defecto (Principal + Pañol) +
   accesos rápidos a las otras 3 sub-vistas.
 - **A comprar** (`stock-comprar`) — de los artículos en seguimiento, solo los que están **por debajo**
-  del mínimo configurado. Es el indicador de compra que pidió el usuario.
+  del mínimo configurado. Es el indicador de compra que pidió el usuario. Tiene un botón **"📥 Exportar
+  (.xlsx)"** (`exportarAComprar()` en `js/modules/stock.js`, usa SheetJS igual que la carga) que baja
+  exactamente lo que se está viendo (mismo filtro de depósito elegido) a un Excel con código, descripción,
+  stock actual, mínimo y una columna calculada "A comprar (aprox.)" = mínimo − stock actual — para llevar
+  la lista a un proveedor o al circuito de compras sin transcribirla a mano.
 - **Seguimiento** (`stock-segui`) — todos los artículos marcados, estén o no bajo el mínimo, con acciones
   para editar el mínimo (✏️) o sacarlos de la lista (🗑️, no borra el stock, solo el seguimiento).
 - **Todo el stock** (`stock-todo`) — listado completo agrupado por artículo (sumando saldo entre lotes),
@@ -437,6 +441,15 @@ este tablero es **público** en GitHub — por eso, igual que los de Órdenes de
   que ya está planificado para el Tablero de Control Ejecutivo. Motivo: pediste que esto sea "súper
   personalizable" y fácil de modificar a futuro; un solo archivo gigante se vuelve difícil de mantener
   a medida que sumes los módulos de la sección 3.
+- **Tema claro/oscuro:** toggle 🌙/☀️ en el header (`index.html`, `js/main.js`), persistido en
+  `localStorage` (`compras_tema`) y aplicado vía `data-theme` en `<html>`. Oscuro es el default (look
+  original, sin cambios). Un `<script>` inline al principio de `<head>` aplica el tema guardado antes de
+  pintar la página, para que no haya un flash del tema equivocado al cargar. Los colores estructurales
+  (`--bg`, `--bg2`, `--bg3`, `--border`, `--text`, `--muted`, `--row-hover`) están en `css/styles.css`
+  como variables, redefinidas bajo `html[data-theme="light"]`; los colores de acento/estado (verde, rojo,
+  amarillo, etc.) quedan iguales en los dos temas. Los gráficos de Chart.js (Dashboard de OC) leen esas
+  variables en cada `render()` (`getComputedStyle`) para adaptar el color de texto/grilla al tema activo
+  — si se agregan gráficos a otro módulo, hay que hacer lo mismo en vez de hardcodear colores.
 - **Backend/datos:** Supabase — proyecto compartido con el sistema de legajos (ver 4.4), no uno dedicado.
 - **Conexión:** las credenciales de Supabase (URL + anon key) están **hardcodeadas** en
   `js/supabase-client.js`, `porteria.html` y `solicitud.html` — no hay pantalla de login ni credenciales
@@ -535,9 +548,8 @@ Todavía sin decidir:
    [`sql/003_documentos_unificados.sql`](sql/003_documentos_unificados.sql) (ya hecho — fusiona Seguros
    + Permisos en `compras_documentos`).
 3. Correr [`sql/004_ordenes_compra.sql`](sql/004_ordenes_compra.sql) (ya hecho — crea `compras_oc_lineas`).
-4. Correr [`sql/005_stock.sql`](sql/005_stock.sql) para crear `compras_stock_saldos` y
-   `compras_stock_minimos` (**todavía falta** — sin esto el módulo Stock muestra error de "tabla no
-   encontrada" en sus 4 sub-vistas).
+4. Correr [`sql/005_stock.sql`](sql/005_stock.sql) (ya hecho — crea `compras_stock_saldos` y
+   `compras_stock_minimos`; ya hay artículos reales cargados en seguimiento).
 5. Probar el circuito completo: pedir vehículo (solicitud.html) → aprobar y asignar (index.html) →
    registrar salida/retorno (porteria.html) → ver el movimiento reflejado en el dashboard.
 6. Evaluar RLS (Row Level Security) en las tablas `compras_*` — hoy cualquiera con el link de
