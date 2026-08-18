@@ -310,28 +310,155 @@ function aplicarFiltrosYRender() {
   renderTabla('t-oc', gruposTabla);
 }
 
+// ------------------------------------------------------------
+// Gráficos del Dashboard (Chart.js, cargado por CDN en index.html)
+// ------------------------------------------------------------
+const CHARTS = {};
+function renderChart(key, canvasId, config) {
+  const canvas = document.getElementById(canvasId);
+  if (!canvas || typeof Chart === 'undefined') return;
+  if (CHARTS[key]) CHARTS[key].destroy();
+  CHARTS[key] = new Chart(canvas.getContext('2d'), config);
+}
+
+const MESES_CORTO = { '01': 'Ene', '02': 'Feb', '03': 'Mar', '04': 'Abr', '05': 'May', '06': 'Jun', '07': 'Jul', '08': 'Ago', '09': 'Sep', '10': 'Oct', '11': 'Nov', '12': 'Dic' };
+
+function datosEvolucionMensual(lineas) {
+  const map = new Map();
+  for (const l of lineas) {
+    const mes = l.fecha?.slice(0, 7);
+    if (!mes) continue;
+    if (!map.has(mes)) map.set(mes, { comprado: 0, recibido: 0 });
+    const m = map.get(mes);
+    m.comprado += l.importe || 0;
+    m.recibido += (l.cant_recibida || 0) * (l.precio_unitario || 0);
+  }
+  const meses = [...map.keys()].sort();
+  return {
+    labels: meses.map(m => `${MESES_CORTO[m.slice(5)] || m.slice(5)} ${m.slice(2, 4)}`),
+    comprado: meses.map(m => map.get(m).comprado),
+    recibido: meses.map(m => map.get(m).recibido),
+  };
+}
+
+function datosTopProveedoresPendiente(grupos, n = 8) {
+  const map = new Map();
+  for (const g of grupos) {
+    if (g.pendiente <= 0.01) continue;
+    const key = g.proveedor_nombre || 'Sin proveedor';
+    map.set(key, (map.get(key) || 0) + g.pendiente);
+  }
+  return [...map.entries()].sort((a, b) => b[1] - a[1]).slice(0, n);
+}
+
+function datosTopCompradoresVolumen(grupos, n = 8) {
+  const map = new Map();
+  for (const g of grupos) {
+    const key = g.comprador_nombre || 'Sin comprador';
+    map.set(key, (map.get(key) || 0) + g.importe);
+  }
+  return [...map.entries()].sort((a, b) => b[1] - a[1]).slice(0, n);
+}
+
+function renderGraficosDashboard(grupos) {
+  if (typeof Chart === 'undefined') return;
+  Chart.defaults.color = '#7c8db5';
+  Chart.defaults.borderColor = '#2a3248';
+  Chart.defaults.font.family = "'Segoe UI',system-ui,sans-serif";
+
+  const evol = datosEvolucionMensual(LINEAS);
+  renderChart('evol', 'ocd_chart_evol', {
+    type: 'bar',
+    data: {
+      labels: evol.labels,
+      datasets: [
+        { label: 'Comprado', data: evol.comprado, backgroundColor: '#3b82f6', borderRadius: 4 },
+        { label: 'Recibido', data: evol.recibido, backgroundColor: '#22c55e', borderRadius: 4 },
+      ],
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      plugins: { legend: { position: 'bottom' }, tooltip: { callbacks: { label: ctx => `${ctx.dataset.label}: ${fmtPesos(ctx.raw)}` } } },
+      scales: { y: { ticks: { callback: v => fmtCompacto(v) } } },
+    },
+  });
+
+  const porEstado = { PENDIENTE: 0, PARCIAL: 0, COMPLETADA: 0 };
+  grupos.forEach(g => porEstado[estadoOC(g)]++);
+  renderChart('estado', 'ocd_chart_estado', {
+    type: 'doughnut',
+    data: {
+      labels: ['Pendientes', 'Parciales', 'Completadas'],
+      datasets: [{ data: [porEstado.PENDIENTE, porEstado.PARCIAL, porEstado.COMPLETADA], backgroundColor: ['#ef4444', '#f97316', '#22c55e'], borderColor: '#161b27', borderWidth: 2 }],
+    },
+    options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'bottom' } } },
+  });
+
+  const topProv = datosTopProveedoresPendiente(grupos);
+  renderChart('prov', 'ocd_chart_prov', {
+    type: 'bar',
+    data: { labels: topProv.map(p => p[0]), datasets: [{ label: 'Pendiente', data: topProv.map(p => p[1]), backgroundColor: '#f59e0b', borderRadius: 4 }] },
+    options: {
+      indexAxis: 'y', responsive: true, maintainAspectRatio: false,
+      plugins: { legend: { display: false }, tooltip: { callbacks: { label: ctx => fmtPesos(ctx.raw) } } },
+      scales: { x: { ticks: { callback: v => fmtCompacto(v) } } },
+    },
+  });
+
+  const topComp = datosTopCompradoresVolumen(grupos);
+  renderChart('comp', 'ocd_chart_comp', {
+    type: 'bar',
+    data: { labels: topComp.map(c => c[0]), datasets: [{ label: 'Comprado', data: topComp.map(c => c[1]), backgroundColor: '#6366f1', borderRadius: 4 }] },
+    options: {
+      indexAxis: 'y', responsive: true, maintainAspectRatio: false,
+      plugins: { legend: { display: false }, tooltip: { callbacks: { label: ctx => fmtPesos(ctx.raw) } } },
+      scales: { x: { ticks: { callback: v => fmtCompacto(v) } } },
+    },
+  });
+}
+
 // Dashboard: panorama general (sin filtros) + accesos rápidos a cada
-// sub-vista filtrada por estado.
+// sub-vista.
 function renderDashboard() {
   const grupos = agruparPorOrden(LINEAS);
   renderKPIs('ocd', grupos, LINEAS);
   const porEstado = { PENDIENTE: 0, PARCIAL: 0, COMPLETADA: 0 };
   grupos.forEach(g => porEstado[estadoOC(g)]++);
   const setTxt = (id, val) => { const el = document.getElementById(id); if (el) el.textContent = val; };
-  setTxt('ocd-ir-pend', `🕐 Ver pendientes (${porEstado.PENDIENTE})`);
-  setTxt('ocd-ir-parc', `🟡 Ver parciales (${porEstado.PARCIAL})`);
+  setTxt('ocd-ir-abiertas', `🕐 Ver abiertas (${porEstado.PENDIENTE + porEstado.PARCIAL})`);
   setTxt('ocd-ir-comp', `✅ Ver completadas (${porEstado.COMPLETADA})`);
+  renderGraficosDashboard(grupos);
 }
 
-// Sub-vistas Pendientes / Parciales / Completadas: mismo componente
-// (filtros de proveedor/comprador/mes + resumen chico + tabla agrupada),
-// el estado viene fijo por sección en vez de ser un filtro más.
-const SECCIONES_ESTADO = [
-  { prefix: 'ocp', tbodyId: 't-oc-pend', estado: 'PENDIENTE' },
-  { prefix: 'ocpa', tbodyId: 't-oc-parc', estado: 'PARCIAL' },
-  { prefix: 'occ', tbodyId: 't-oc-comp', estado: 'COMPLETADA' },
-];
+// Abiertas: pendientes + parciales juntas (una orden con algo por
+// recibir es "abierta", sin importar si ya llegó una parte o nada) —
+// separarlas en dos pantallas distintas no aportaba, según feedback.
+function renderAbiertas() {
+  poblarFiltrosPrefijo('oca');
+  const prov = document.getElementById('oca_f_prov')?.value || '';
+  const comp = document.getElementById('oca_f_comp')?.value || '';
+  const mes = document.getElementById('oca_f_mes')?.value || '';
 
+  let lineas = LINEAS;
+  if (prov) lineas = lineas.filter(l => l.proveedor_nombre === prov);
+  if (comp) lineas = lineas.filter(l => l.comprador_nombre === comp);
+  if (mes) lineas = lineas.filter(l => l.fecha?.slice(0, 7) === mes);
+
+  const grupos = agruparPorOrden(lineas).filter(g => estadoOC(g) !== 'COMPLETADA');
+  const porEstado = { PENDIENTE: 0, PARCIAL: 0 };
+  grupos.forEach(g => porEstado[estadoOC(g)]++);
+  const importeTotal = grupos.reduce((s, g) => s + g.importe, 0);
+  const setTxt = (id, val) => { const el = document.getElementById(id); if (el) el.textContent = val; };
+  setTxt('oca_k_pendientes', porEstado.PENDIENTE);
+  setTxt('oca_k_parciales', porEstado.PARCIAL);
+  const impEl = document.getElementById('oca_k_importe');
+  if (impEl) { impEl.textContent = fmtCompacto(importeTotal); impEl.title = fmtPesos(importeTotal); }
+
+  renderTabla('t-oc-abiertas', grupos);
+}
+
+// Completadas: mismo componente (filtros + resumen chico + tabla
+// agrupada) que Abiertas, pero con el estado fijo en COMPLETADA.
 function renderSeccionEstado(prefix, tbodyId, estadoFijo) {
   poblarFiltrosPrefijo(prefix);
   const prov = document.getElementById(`${prefix}_f_prov`)?.value || '';
@@ -353,7 +480,11 @@ function renderSeccionEstado(prefix, tbodyId, estadoFijo) {
   renderTabla(tbodyId, grupos);
 }
 
-const TBODY_POR_SECCION = { 'oc-pend': 't-oc-pend', 'oc-parc': 't-oc-parc', 'oc-comp': 't-oc-comp', 'oc-todas': 't-oc' };
+const SECCIONES_ESTADO = [
+  { prefix: 'occ', tbodyId: 't-oc-comp', estado: 'COMPLETADA' },
+];
+
+const TBODY_POR_SECCION = { 'oc-abiertas': 't-oc-abiertas', 'oc-comp': 't-oc-comp', 'oc-todas': 't-oc' };
 
 export async function render(secId) {
   const tbodyId = TBODY_POR_SECCION[secId];
@@ -366,6 +497,7 @@ export async function render(secId) {
   }
   LINEAS = data || [];
 
+  if (secId === 'oc-abiertas') { renderAbiertas(); return; }
   const seccion = SECCIONES_ESTADO.find(s => s.tbodyId === tbodyId);
   if (seccion) { renderSeccionEstado(seccion.prefix, seccion.tbodyId, seccion.estado); return; }
   if (secId === 'oc-todas') { poblarFiltrosPrefijo('oc'); aplicarFiltrosYRender(); return; }
@@ -381,13 +513,15 @@ export function init() {
   ['oc_f_prov', 'oc_f_comp', 'oc_f_mes', 'oc_f_est', 'oc_f_ocultar_completadas'].forEach(id => document.getElementById(id)?.addEventListener('change', aplicarFiltrosYRender));
   initExpandCollapse('t-oc');
 
+  ['prov', 'comp', 'mes'].forEach(k => document.getElementById(`oca_f_${k}`)?.addEventListener('change', renderAbiertas));
+  initExpandCollapse('t-oc-abiertas');
+
   SECCIONES_ESTADO.forEach(({ prefix, tbodyId, estado }) => {
     ['prov', 'comp', 'mes'].forEach(k => document.getElementById(`${prefix}_f_${k}`)?.addEventListener('change', () => renderSeccionEstado(prefix, tbodyId, estado)));
     initExpandCollapse(tbodyId);
   });
 
-  document.getElementById('ocd-ir-pend')?.addEventListener('click', () => document.querySelector('.nav-item[data-sec="oc-pend"]')?.click());
-  document.getElementById('ocd-ir-parc')?.addEventListener('click', () => document.querySelector('.nav-item[data-sec="oc-parc"]')?.click());
+  document.getElementById('ocd-ir-abiertas')?.addEventListener('click', () => document.querySelector('.nav-item[data-sec="oc-abiertas"]')?.click());
   document.getElementById('ocd-ir-comp')?.addEventListener('click', () => document.querySelector('.nav-item[data-sec="oc-comp"]')?.click());
   document.getElementById('ocd-ir-todas')?.addEventListener('click', () => document.querySelector('.nav-item[data-sec="oc-todas"]')?.click());
 }

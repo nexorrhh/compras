@@ -18,7 +18,7 @@ import * as oc from './modules/oc.js';
 
 const MODULES = {
   dash: dashboard, vcs: vehiculos, sols: solicitudes, movs: movimientos, gantt, mant: mantenimiento, vtv, doc: documentos,
-  'oc-dash': oc, 'oc-pend': oc, 'oc-parc': oc, 'oc-comp': oc, 'oc-todas': oc,
+  'oc-dash': oc, 'oc-abiertas': oc, 'oc-comp': oc, 'oc-todas': oc,
 };
 
 function go(secId) {

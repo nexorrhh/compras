@@ -6,6 +6,7 @@
 <title>Tablero de Compras — CIMOMET</title>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4/dist/chart.umd.min.js"></script>
 <link rel="stylesheet" href="css/styles.css">
 </head>
 <body>
@@ -196,8 +197,7 @@
     <div class="nav-parent"><span>🧾</span> Órdenes de Compra <span class="nav-chevron">▾</span></div>
     <div class="nav-children">
       <div class="nav-item" data-sec="oc-dash"><span>📊</span> Dashboard</div>
-      <div class="nav-item" data-sec="oc-pend"><span>🕐</span> Pendientes</div>
-      <div class="nav-item" data-sec="oc-parc"><span>🟡</span> Parciales</div>
+      <div class="nav-item" data-sec="oc-abiertas"><span>🕐</span> Abiertas</div>
       <div class="nav-item" data-sec="oc-comp"><span>✅</span> Completadas</div>
       <div class="nav-item" data-sec="oc-todas"><span>📋</span> Todas</div>
     </div>
@@ -334,50 +334,49 @@
     <div class="kpi"><div class="kpi-val text-orange" id="ocd_k_parciales">–</div><div class="kpi-lbl">OC parciales</div></div>
     <div class="kpi"><div class="kpi-val text-green" id="ocd_k_completadas">–</div><div class="kpi-lbl">OC completadas</div></div>
   </div>
+  <div class="charts-grid">
+    <div class="chart-card">
+      <h3>Evolución mensual — comprado vs. recibido</h3>
+      <div class="chart-wrap"><canvas id="ocd_chart_evol"></canvas></div>
+    </div>
+    <div class="chart-card">
+      <h3>Distribución de OC por estado</h3>
+      <div class="chart-wrap"><canvas id="ocd_chart_estado"></canvas></div>
+    </div>
+    <div class="chart-card">
+      <h3>Top proveedores — importe pendiente</h3>
+      <div class="chart-wrap"><canvas id="ocd_chart_prov"></canvas></div>
+    </div>
+    <div class="chart-card">
+      <h3>Top compradores — volumen comprado</h3>
+      <div class="chart-wrap"><canvas id="ocd_chart_comp"></canvas></div>
+    </div>
+  </div>
   <div class="sh"><h2>Accesos rápidos</h2></div>
   <div style="display:flex;gap:10px;flex-wrap:wrap">
-    <button class="btn" id="ocd-ir-pend">🕐 Ver pendientes</button>
-    <button class="btn" id="ocd-ir-parc">🟡 Ver parciales</button>
+    <button class="btn" id="ocd-ir-abiertas">🕐 Ver abiertas</button>
     <button class="btn" id="ocd-ir-comp">✅ Ver completadas</button>
     <button class="btn p" id="ocd-ir-todas">📋 Ver todas / cargar archivo</button>
   </div>
 </div>
 
-<!-- ============ ÓRDENES DE COMPRA — PENDIENTES ============ -->
-<div class="sec" id="s-oc-pend">
-  <div class="ptitle">Órdenes de Compra — Pendientes</div>
-  <div class="psub">Órdenes sin nada recibido todavía</div>
+<!-- ============ ÓRDENES DE COMPRA — ABIERTAS (Pendientes + Parciales) ============ -->
+<div class="sec" id="s-oc-abiertas">
+  <div class="ptitle">Órdenes de Compra — Abiertas</div>
+  <div class="psub">Órdenes con algo todavía por recibir — pendientes y parciales juntas</div>
   <div class="filters">
-    <select id="ocp_f_prov"><option value="">Todos los proveedores</option></select>
-    <select id="ocp_f_comp"><option value="">Todos los compradores</option></select>
-    <select id="ocp_f_mes"><option value="">Todos los meses</option></select>
+    <select id="oca_f_prov"><option value="">Todos los proveedores</option></select>
+    <select id="oca_f_comp"><option value="">Todos los compradores</option></select>
+    <select id="oca_f_mes"><option value="">Todos los meses</option></select>
   </div>
-  <div class="kpi-grid" style="grid-template-columns:repeat(2,minmax(140px,1fr));max-width:420px">
-    <div class="kpi"><div class="kpi-val text-red" id="ocp_k_cant">–</div><div class="kpi-lbl">Órdenes pendientes</div></div>
-    <div class="kpi"><div class="kpi-val text-accent" id="ocp_k_importe">–</div><div class="kpi-lbl">Importe total</div></div>
+  <div class="kpi-grid" style="grid-template-columns:repeat(3,minmax(140px,1fr));max-width:620px">
+    <div class="kpi"><div class="kpi-val text-red" id="oca_k_pendientes">–</div><div class="kpi-lbl">Pendientes</div></div>
+    <div class="kpi"><div class="kpi-val text-orange" id="oca_k_parciales">–</div><div class="kpi-lbl">Parciales</div></div>
+    <div class="kpi"><div class="kpi-val text-accent" id="oca_k_importe">–</div><div class="kpi-lbl">Importe total</div></div>
   </div>
   <div class="tw"><table>
     <thead><tr><th>N° OC</th><th>Fecha</th><th>Proveedor</th><th>Comprador</th><th>Artículos</th><th>Estado</th><th>Importe OC</th></tr></thead>
-    <tbody id="t-oc-pend"></tbody>
-  </table></div>
-</div>
-
-<!-- ============ ÓRDENES DE COMPRA — PARCIALES ============ -->
-<div class="sec" id="s-oc-parc">
-  <div class="ptitle">Órdenes de Compra — Parciales</div>
-  <div class="psub">Órdenes con parte de lo pedido recibido</div>
-  <div class="filters">
-    <select id="ocpa_f_prov"><option value="">Todos los proveedores</option></select>
-    <select id="ocpa_f_comp"><option value="">Todos los compradores</option></select>
-    <select id="ocpa_f_mes"><option value="">Todos los meses</option></select>
-  </div>
-  <div class="kpi-grid" style="grid-template-columns:repeat(2,minmax(140px,1fr));max-width:420px">
-    <div class="kpi"><div class="kpi-val text-orange" id="ocpa_k_cant">–</div><div class="kpi-lbl">Órdenes parciales</div></div>
-    <div class="kpi"><div class="kpi-val text-accent" id="ocpa_k_importe">–</div><div class="kpi-lbl">Importe total</div></div>
-  </div>
-  <div class="tw"><table>
-    <thead><tr><th>N° OC</th><th>Fecha</th><th>Proveedor</th><th>Comprador</th><th>Artículos</th><th>Estado</th><th>Importe OC</th></tr></thead>
-    <tbody id="t-oc-parc"></tbody>
+    <tbody id="t-oc-abiertas"></tbody>
   </table></div>
 </div>
 

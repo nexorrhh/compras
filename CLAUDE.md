@@ -273,29 +273,48 @@ leyeron X líneas de Y órdenes...") para que no sea una carga a ciegas.
 ### 5.3 Qué muestra el tablero
 
 Igual que Flota, el módulo es un **grupo de nav colapsable** ("🧾 Órdenes de Compra ▾") con un
-Dashboard inicial y sub-vistas por estado, en vez de una sola pantalla:
+Dashboard inicial (con gráficos) y sub-vistas de solo lectura, en vez de una sola pantalla:
 
-- **Dashboard** (`oc-dash`) — panorama general sin filtros: los 7 KPIs (total comprado, total recibido,
-  total pendiente, % completado, cantidad de OC pendientes/parciales/completadas) + 3 accesos rápidos
-  ("Ver pendientes (N)", "Ver parciales (N)", "Ver completadas (N)") que llevan a la sub-vista
-  correspondiente, más un acceso a "Ver todas / cargar archivo".
-- **Pendientes / Parciales / Completadas** (`oc-pend` / `oc-parc` / `oc-comp`) — misma tabla agrupada
-  por OC que Dashboard, pero pre-filtrada a un estado fijo (no hay selector de estado acá, es implícito
-  por la sección); cada una tiene sus propios filtros de proveedor/comprador/mes y un resumen chico
-  (cantidad de OC + importe total de esa sección).
+- **Dashboard** (`oc-dash`) — panorama general sin filtros: los 7 KPIs de siempre (total comprado,
+  recibido, pendiente, % completado, cantidad de OC pendientes/parciales/completadas) + 4 gráficos
+  (Chart.js, cargado por CDN en `index.html` junto a SheetJS) + 2 accesos rápidos ("Ver abiertas (N)",
+  "Ver completadas (N)") más un acceso a "Ver todas / cargar archivo". Los gráficos:
+  1. **Evolución mensual comprado vs. recibido** (barras por mes) — para ver tendencia y si el área se
+     está atrasando en recibir lo comprado.
+  2. **Distribución de OC por estado** (dona) — pendientes/parciales/completadas de un vistazo.
+  3. **Top proveedores por importe pendiente** (barras horizontales) — a quién hay que reclamarle/
+     hacerle seguimiento primero.
+  4. **Top compradores por volumen comprado** (barras horizontales) — quién del equipo genera más
+     monto en OC.
+  Se recalculan en cada `render()` (se destruye la instancia anterior de Chart.js antes de crear la
+  nueva, si no los canvas quedan pisados). Los datos de "top proveedores/compradores" salen de sumar,
+  por cada orden ya agrupada, `pendiente`/`importe` según corresponda — no hacen falta queries nuevas.
+- **Abiertas** (`oc-abiertas`) — Pendientes y Parciales **juntas** en una sola vista (se probó
+  separarlas en dos sub-vistas y no convenció al usuario: "no me convence... eso debe estar junto" —
+  una orden con algo por recibir es "abierta", no importa si ya llegó una parte o nada). Filtros de
+  proveedor/comprador/mes + resumen chico (cantidad de pendientes, cantidad de parciales, importe
+  total) + la tabla agrupada de siempre. La distinción entre pendiente y parcial se sigue viendo en el
+  badge de estado de cada fila.
+- **Completadas** (`oc-comp`) — misma tabla agrupada, pre-filtrada a estado COMPLETADA (no hay
+  selector de estado acá, es implícito por la sección); filtros propios de proveedor/comprador/mes y
+  un resumen chico (cantidad de OC + importe total).
 - **Todas** (`oc-todas`) — la vista completa sin recortar por estado: los 4 filtros (proveedor,
   comprador, mes, estado) + el checkbox "Ocultar completadas" + los 7 KPIs + la tabla. Acá vive el
   botón **"Cargar archivo (.xlsx)"** — es el único lugar de todo el módulo donde se sube el Excel de
   Tango, justamente porque es la vista de "administrar todo", no una de las sub-vistas de solo lectura.
-- La tabla es la misma en las 4 sub-vistas (Dashboard no tiene tabla): agrupada por **orden de compra**
-  (no por línea), con la fila resumen desplegable mostrando el detalle de artículos (cantidad
-  pedida/recibida/pendiente, precio unitario e importe por línea).
+- La tabla es la misma en las 3 sub-vistas con tabla (Dashboard no tiene tabla): agrupada por **orden
+  de compra** (no por línea), con la fila resumen desplegable mostrando el detalle de artículos
+  (cantidad pedida/recibida/pendiente, precio unitario e importe por línea).
 - Estado de una OC — **PENDIENTE** (nada recibido todavía), **PARCIAL** (llegó parte), **COMPLETADA**
   (llegó todo) — se calcula por cantidades, no por dinero (ver `estadoOC()` en `js/modules/oc.js`).
 - `js/modules/oc.js` es un único módulo que expone `render(secId)`: internamente decide qué sub-vista
   pintar según el `secId` recibido (todas comparten las mismas funciones internas de parseo, agrupado
   y cálculo de estado — no hay lógica duplicada entre sub-vistas, solo IDs de DOM distintos por
-  prefijo: `ocd_`, `ocp_`, `ocpa_`, `occ_`, `oc_`).
+  prefijo: `ocd_`, `oca_`, `occ_`, `oc_`).
+- **Idea pendiente del usuario, no implementada todavía:** más adelante le gustaría poder clasificar
+  proveedores por categoría (ej. materia prima, pintura, insumos) y adaptar el indicador del Dashboard
+  según esa categoría — requeriría una tabla nueva (`compras_proveedores` o similar, con categoría) y
+  cruzarla por `proveedor_cod`/`proveedor_nombre`. Ver también sección 8.
 
 ### 5.4 Modelo de datos
 
@@ -410,6 +429,8 @@ Todavía sin decidir:
   respaldo?
 - [ ] ¿Se borran del todo `compras_seguros_old` / `compras_permisos_old` (ver 4.4) una vez confirmado
   que no hace falta consultarlas?
+- [ ] Categorización de proveedores (ver 5.3): clasificarlos por tipo (materia prima, pintura, insumos,
+  etc.) para poder adaptar/filtrar el Dashboard de OC según categoría — todavía no tiene tabla ni UI.
 
 ## 9. Próximos pasos sugeridos
 
