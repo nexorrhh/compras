@@ -254,35 +254,38 @@ No hay backend: el `.xlsx` se parsea **en el navegador** con [SheetJS](https://s
 
 Al subir un archivo:
 1. Se parsea y se detectan las órdenes de compra (`N_ORDEN_C`) presentes en ese archivo.
-2. Se **borran** las líneas que ya hubiera cargadas de *esas órdenes puntuales* (`delete().in('orden_compra', [...])`)
-   — no se toca ninguna otra orden.
-3. Se insertan todas las líneas del archivo.
+2. Se calcula el **rango de fechas** que cubre el archivo (mínima y máxima `FECHA` entre sus líneas) y
+   se consulta qué OC ya cargadas tienen fecha dentro de ese rango pero **no** están entre las órdenes
+   del archivo nuevo — son "desaparecidas": probablemente anuladas/reemplazadas en Tango (ver más abajo).
+3. El `confirm()` antes de cargar muestra el resumen de siempre ("se leyeron X líneas de Y órdenes...")
+   y, si hay desaparecidas, una lista explícita de cuáles son (orden, proveedor, importe) avisando que
+   se van a **eliminar** — para que el usuario las revise antes de aceptar, no es un borrado silencioso.
+4. Al confirmar, se **borran** las líneas de las órdenes del archivo *más* las desaparecidas
+   (`delete().in('orden_compra', [...])`) y se insertan todas las líneas del archivo nuevo. El resto del
+   historial (fuera del rango de fechas de este archivo) no se toca.
 
 Esto permite las dos formas de trabajar que describió el usuario sin ningún caso especial:
-- **Hoy:** un archivo por mes (`Julio OC.xlsx`, `Agosto OC.xlsx`) — subir el de agosto nunca toca julio,
-  porque las órdenes de cada mes no se repiten entre archivos (confirmado con los 3 ejemplos: 0 órdenes
-  en común entre julio y agosto).
-- **Ideal a futuro:** un archivo con el año completo, re-subido cada semana para refrescar cantidades
-  recibidas/pendientes — como el reemplazo es por orden presente en el archivo, cada vez que se vuelve a
-  subir el mismo archivo (actualizado) las órdenes que ya se recibieron quedan con `pendiente = 0` y se
-  van "cerrando" solas en el indicador, sin duplicar nada.
+- Un archivo por mes (`Julio OC.xlsx`, `Agosto OC.xlsx`) — subir el de agosto nunca toca julio, porque
+  sus fechas no se superponen.
+- Un archivo acumulado de varios meses re-subido periódicamente (`OC.xlsx`, el que efectivamente usa el
+  usuario — cubre 01/07 al 14/08 en 221 filas) para refrescar cantidades recibidas/pendientes: cada vez
+  que se sube, las órdenes que ya se recibieron quedan con `pendiente = 0` y se van "cerrando" solas, y
+  las que se anularon en Tango (dejaron de aparecer en el export) se detectan y eliminan solas también.
 
-Antes de efectivamente borrar/insertar, se le muestra al usuario un `confirm()` con el resumen ("se
-leyeron X líneas de Y órdenes...") para que no sea una carga a ciegas.
+**Por qué hace falta el paso 2 (detección de "desaparecidas"):** el reemplazo es por orden *presente en
+el archivo*, así que antes de esto una orden anulada en Tango (se emitió mal, se anuló, se generó una
+OC nueva) que dejaba de aparecer en los archivos siguientes nunca se borraba sola — no había nada en el
+archivo nuevo que la reemplazara, quedaba pisada para siempre con sus cantidades viejas (caso real:
+la OC `0000100008734` de ALAMO INDUSTRIAL SRL, $306,6M, mal cargada y anulada en Tango — comparando
+`Julio Agosto OC.xlsx` contra `OC.xlsx` se confirmó que es la única orden que desapareció entre ambos
+archivos). Comparar por **rango de fechas** (no asumir "todo lo que no está en el archivo se borra") es
+lo que hace seguro este chequeo incluso subiendo archivos parciales: una orden de julio no figura en el
+archivo de agosto porque no le corresponde estar, no porque se haya anulado — al estar fuera del rango
+de fechas de ese archivo, no se toca.
 
-**Limitación conocida — OC anuladas/reemplazadas en Tango:** el reemplazo es por orden *presente en el
-archivo subido*, así que una orden que se anula en Tango (se emitió mal, se anuló, se generó una OC
-nueva) y **deja de aparecer** en los archivos siguientes nunca se borra sola en este tablero — no hay
-nada en el archivo nuevo que la reemplace, así que queda pisada para siempre con sus cantidades viejas
-(caso real que le pasó al usuario: una OC con el importe mal cargado, anulada en Tango, seguía
-figurando como pendiente acá). Por eso cada fila de OC tiene un botón 🗑️ **"Eliminar esta OC del
-tablero"** (en Abiertas/Completadas/Todas, `eliminarOrden()` en `js/modules/oc.js`) que borra a mano
-todas las líneas de esa orden — no toca Tango, solo el indicador. Es la vía para corregir este caso
-hoy. Automatizar la detección ("esta orden estaba antes y ya no aparece en el archivo nuevo, hay que
-borrarla") no es seguro mientras se suba **un archivo por mes**: la ausencia de una orden en el archivo
-de agosto no distingue entre "es de julio, no le corresponde estar" y "se anuló". Si en algún momento
-se pasa al esquema ideal de subir **el año completo** cada vez (ver arriba), ahí sí se podría comparar
-contra el archivo completo y detectar automáticamente qué OC desaparecieron.
+Además del chequeo automático, cada fila de OC tiene un botón 🗑️ **"Eliminar esta OC del tablero"** (en
+Abiertas/Completadas/Todas, `eliminarOrden()` en `js/modules/oc.js`) para borrar una orden a mano en
+cualquier otro caso (cargada por error, duplicada, etc.) — no toca Tango, solo el indicador.
 
 ### 5.3 Qué muestra el tablero
 

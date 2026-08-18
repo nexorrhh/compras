@@ -121,15 +121,44 @@ async function cargarArchivo(file) {
   }
   if (!lineas.length) { toast('No se encontraron filas válidas en el archivo', 'er'); return; }
 
-  const ordenes = [...new Set(lineas.map(l => l.orden_compra))];
-  const ok = confirm(
-    `Se leyeron ${lineas.length} líneas de ${ordenes.length} órdenes de compra.\n\n` +
-    `Esto reemplaza los datos que ya hubiera cargados de esas ${ordenes.length} órdenes puntuales ` +
-    `(el resto del historial no se toca).\n\n¿Continuar?`
-  );
+  const ordenesArchivo = new Set(lineas.map(l => l.orden_compra));
+  const fechas = lineas.map(l => l.fecha).filter(Boolean).sort();
+  const fechaMin = fechas[0];
+  const fechaMax = fechas[fechas.length - 1];
+
+  // El archivo es "autoridad" sobre su propio rango de fechas: cualquier OC
+  // ya cargada con fecha dentro de ese rango que NO aparezca en el archivo
+  // nuevo probablemente fue anulada/reemplazada en Tango — se detecta acá
+  // (comparando contra lo que ya hay en la base) y se avisa antes de
+  // borrarla, en vez de dejarla pisada para siempre (ver CLAUDE.md 5.2).
+  let desaparecidas = [];
+  if (fechaMin && fechaMax) {
+    const { data: existentes, error: errExist } = await SB.from('compras_oc_lineas')
+      .select('orden_compra, proveedor_nombre, importe')
+      .gte('fecha', fechaMin).lte('fecha', fechaMax);
+    if (errExist) { toast(errExist.message, 'er'); return; }
+    const mapa = new Map();
+    for (const l of (existentes || [])) {
+      if (ordenesArchivo.has(l.orden_compra)) continue;
+      if (!mapa.has(l.orden_compra)) mapa.set(l.orden_compra, { proveedor: l.proveedor_nombre, importe: 0 });
+      mapa.get(l.orden_compra).importe += l.importe || 0;
+    }
+    desaparecidas = [...mapa.entries()];
+  }
+
+  let mensaje = `Se leyeron ${lineas.length} líneas de ${ordenesArchivo.size} órdenes de compra.\n\n` +
+    `Esto reemplaza los datos que ya hubiera cargados de esas órdenes puntuales (el resto del historial no se toca).`;
+  if (desaparecidas.length) {
+    mensaje += `\n\n⚠️ Estas ${desaparecidas.length} OC ya estaban cargadas (con fecha dentro del rango de este archivo) pero ya NO aparecen en el archivo nuevo — probablemente anuladas en Tango. Se van a ELIMINAR del tablero:\n` +
+      desaparecidas.map(([orden, info]) => `  • ${(orden || '').trim()} — ${info.proveedor || 'Sin proveedor'} — ${fmtPesos(info.importe)}`).join('\n');
+  }
+  mensaje += `\n\n¿Continuar?`;
+
+  const ok = confirm(mensaje);
   if (!ok) return;
 
-  const { error: delErr } = await SB.from('compras_oc_lineas').delete().in('orden_compra', ordenes);
+  const ordenesABorrar = [...ordenesArchivo, ...desaparecidas.map(([orden]) => orden)];
+  const { error: delErr } = await SB.from('compras_oc_lineas').delete().in('orden_compra', ordenesABorrar);
   if (delErr) { toast(delErr.message, 'er'); return; }
 
   const chunkSize = 500;
@@ -138,7 +167,7 @@ async function cargarArchivo(file) {
     const { error } = await SB.from('compras_oc_lineas').insert(chunk);
     if (error) { toast('Error insertando: ' + error.message, 'er'); return; }
   }
-  toast(`✓ ${lineas.length} líneas cargadas (${ordenes.length} órdenes)`);
+  toast(`✓ ${lineas.length} líneas cargadas (${ordenesArchivo.size} órdenes)` + (desaparecidas.length ? `, ${desaparecidas.length} anulada(s) eliminada(s)` : ''));
   render('oc-todas');
 }
 
