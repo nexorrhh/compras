@@ -272,16 +272,30 @@ leyeron X líneas de Y órdenes...") para que no sea una carga a ciegas.
 
 ### 5.3 Qué muestra el tablero
 
-Una sola vista con KPIs + tabla, agrupada por **orden de compra** (no por línea):
+Igual que Flota, el módulo es un **grupo de nav colapsable** ("🧾 Órdenes de Compra ▾") con un
+Dashboard inicial y sub-vistas por estado, en vez de una sola pantalla:
 
-- KPIs: Total comprado, Total recibido (`cant_recibida × precio_unitario`, sumado), Total pendiente
-  (`cant_pendiente × precio_unitario`), % completado, cantidad de OC abiertas vs. cerradas.
-- Una OC se considera **cerrada** cuando la suma de `cant_pendiente × precio_unitario` de todas sus
-  líneas es ~0 (tolerancia por redondeo), **abierta** en caso contrario.
-- Filtros: proveedor, mes (derivado de `fecha`), estado (abierta/cerrada). Los KPIs se recalculan sobre
-  lo filtrado, no sobre el total.
-- No hay vista de detalle por línea/artículo todavía (se agrega si hace falta más adelante) — hoy es
-  agregado por orden, que es como el usuario piensa el problema ("que se me vayan cerrando OC").
+- **Dashboard** (`oc-dash`) — panorama general sin filtros: los 7 KPIs (total comprado, total recibido,
+  total pendiente, % completado, cantidad de OC pendientes/parciales/completadas) + 3 accesos rápidos
+  ("Ver pendientes (N)", "Ver parciales (N)", "Ver completadas (N)") que llevan a la sub-vista
+  correspondiente, más un acceso a "Ver todas / cargar archivo".
+- **Pendientes / Parciales / Completadas** (`oc-pend` / `oc-parc` / `oc-comp`) — misma tabla agrupada
+  por OC que Dashboard, pero pre-filtrada a un estado fijo (no hay selector de estado acá, es implícito
+  por la sección); cada una tiene sus propios filtros de proveedor/comprador/mes y un resumen chico
+  (cantidad de OC + importe total de esa sección).
+- **Todas** (`oc-todas`) — la vista completa sin recortar por estado: los 4 filtros (proveedor,
+  comprador, mes, estado) + el checkbox "Ocultar completadas" + los 7 KPIs + la tabla. Acá vive el
+  botón **"Cargar archivo (.xlsx)"** — es el único lugar de todo el módulo donde se sube el Excel de
+  Tango, justamente porque es la vista de "administrar todo", no una de las sub-vistas de solo lectura.
+- La tabla es la misma en las 4 sub-vistas (Dashboard no tiene tabla): agrupada por **orden de compra**
+  (no por línea), con la fila resumen desplegable mostrando el detalle de artículos (cantidad
+  pedida/recibida/pendiente, precio unitario e importe por línea).
+- Estado de una OC — **PENDIENTE** (nada recibido todavía), **PARCIAL** (llegó parte), **COMPLETADA**
+  (llegó todo) — se calcula por cantidades, no por dinero (ver `estadoOC()` en `js/modules/oc.js`).
+- `js/modules/oc.js` es un único módulo que expone `render(secId)`: internamente decide qué sub-vista
+  pintar según el `secId` recibido (todas comparten las mismas funciones internas de parseo, agrupado
+  y cálculo de estado — no hay lógica duplicada entre sub-vistas, solo IDs de DOM distintos por
+  prefijo: `ocd_`, `ocp_`, `ocpa_`, `occ_`, `oc_`).
 
 ### 5.4 Modelo de datos
 

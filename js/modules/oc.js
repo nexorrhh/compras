@@ -139,7 +139,7 @@ async function cargarArchivo(file) {
     if (error) { toast('Error insertando: ' + error.message, 'er'); return; }
   }
   toast(`✓ ${lineas.length} líneas cargadas (${ordenes.length} órdenes)`);
-  render();
+  render('oc-todas');
 }
 
 // ------------------------------------------------------------
@@ -186,22 +186,25 @@ function estadoOC(g) {
 const ESTADO_LABEL = { PENDIENTE: 'Pendiente', PARCIAL: 'Parcial', COMPLETADA: 'Completada' };
 const ESTADO_CLASE = { PENDIENTE: 'vencido', PARCIAL: 'porvencer', COMPLETADA: 'vigente' };
 
-function poblarFiltros() {
-  const provSel = document.getElementById('oc_f_prov');
+// Filtros de proveedor/comprador/mes se repiten en varias sub-vistas
+// (Todas, Pendientes, Parciales, Completadas) — mismo comportamiento,
+// solo cambia el prefijo de ids según la sección.
+function poblarFiltrosPrefijo(prefix) {
+  const provSel = document.getElementById(`${prefix}_f_prov`);
   if (provSel) {
     const cur = provSel.value;
     const provs = [...new Set(LINEAS.map(l => l.proveedor_nombre).filter(Boolean))].sort();
     provSel.innerHTML = '<option value="">Todos los proveedores</option>' + provs.map(p => `<option value="${p}">${p}</option>`).join('');
     if (provs.includes(cur)) provSel.value = cur;
   }
-  const compSel = document.getElementById('oc_f_comp');
+  const compSel = document.getElementById(`${prefix}_f_comp`);
   if (compSel) {
     const cur = compSel.value;
     const comps = [...new Set(LINEAS.map(l => l.comprador_nombre).filter(Boolean))].sort();
     compSel.innerHTML = '<option value="">Todos los compradores</option>' + comps.map(c => `<option value="${c}">${c}</option>`).join('');
     if (comps.includes(cur)) compSel.value = cur;
   }
-  const mesSel = document.getElementById('oc_f_mes');
+  const mesSel = document.getElementById(`${prefix}_f_mes`);
   if (mesSel) {
     const cur = mesSel.value;
     const nombres = { '01': 'Enero', '02': 'Febrero', '03': 'Marzo', '04': 'Abril', '05': 'Mayo', '06': 'Junio', '07': 'Julio', '08': 'Agosto', '09': 'Septiembre', '10': 'Octubre', '11': 'Noviembre', '12': 'Diciembre' };
@@ -211,7 +214,7 @@ function poblarFiltros() {
   }
 }
 
-function renderKPIs(grupos, lineas) {
+function renderKPIs(prefix, grupos, lineas) {
   const totalComprado = lineas.reduce((s, l) => s + (l.importe || 0), 0);
   const totalRecibido = lineas.reduce((s, l) => s + (l.cant_recibida || 0) * (l.precio_unitario || 0), 0);
   const totalPendiente = lineas.reduce((s, l) => s + (l.cant_pendiente || 0) * (l.precio_unitario || 0), 0);
@@ -219,13 +222,13 @@ function renderKPIs(grupos, lineas) {
   const porEstado = { PENDIENTE: 0, PARCIAL: 0, COMPLETADA: 0 };
   grupos.forEach(g => porEstado[estadoOC(g)]++);
   const set = (id, val, full) => { const el = document.getElementById(id); if (!el) return; el.textContent = val; if (full !== undefined) el.title = full; };
-  set('oc_k_comprado', fmtCompacto(totalComprado), fmtPesos(totalComprado));
-  set('oc_k_recibido', fmtCompacto(totalRecibido), fmtPesos(totalRecibido));
-  set('oc_k_pendiente', fmtCompacto(totalPendiente), fmtPesos(totalPendiente));
-  set('oc_k_pct', pct + '%');
-  set('oc_k_pendientes', porEstado.PENDIENTE);
-  set('oc_k_parciales', porEstado.PARCIAL);
-  set('oc_k_completadas', porEstado.COMPLETADA);
+  set(`${prefix}_k_comprado`, fmtCompacto(totalComprado), fmtPesos(totalComprado));
+  set(`${prefix}_k_recibido`, fmtCompacto(totalRecibido), fmtPesos(totalRecibido));
+  set(`${prefix}_k_pendiente`, fmtCompacto(totalPendiente), fmtPesos(totalPendiente));
+  set(`${prefix}_k_pct`, pct + '%');
+  set(`${prefix}_k_pendientes`, porEstado.PENDIENTE);
+  set(`${prefix}_k_parciales`, porEstado.PARCIAL);
+  set(`${prefix}_k_completadas`, porEstado.COMPLETADA);
 }
 
 // Tabla agrupada por OC: una fila resumen por orden (con totales) que
@@ -233,8 +236,9 @@ function renderKPIs(grupos, lineas) {
 // pedida/recibida/pendiente — ahí es donde tiene sentido ver
 // cantidades, no en la fila resumen (una OC puede mezclar artículos
 // de distinta unidad, no se pueden sumar cantidades entre sí).
-function renderTabla(grupos) {
-  const tb = document.getElementById('t-oc');
+function renderTabla(tbodyId, grupos) {
+  const tb = document.getElementById(tbodyId);
+  if (!tb) return;
   const ordenadas = [...grupos].sort((a, b) => (b.fecha || '').localeCompare(a.fecha || ''));
   if (!ordenadas.length) { tb.innerHTML = '<tr><td colspan="7" style="text-align:center;padding:18px;color:var(--muted)">Sin órdenes</td></tr>'; return; }
   tb.innerHTML = ordenadas.map(g => {
@@ -265,8 +269,8 @@ function renderTabla(grupos) {
   }).join('');
 }
 
-function initExpandCollapse() {
-  document.getElementById('t-oc')?.addEventListener('click', e => {
+function initExpandCollapse(tbodyId) {
+  document.getElementById(tbodyId)?.addEventListener('click', e => {
     const row = e.target.closest('.oc-row');
     if (!row) return;
     const detailRow = row.nextElementSibling;
@@ -294,7 +298,7 @@ function aplicarFiltrosYRender() {
   const ordenesVisibles = new Set(grupos.map(g => g.orden_compra));
   const lineasVisibles = lineas.filter(l => ordenesVisibles.has(l.orden_compra));
 
-  renderKPIs(grupos, lineasVisibles);
+  renderKPIs('oc', grupos, lineasVisibles);
 
   // "Ocultar completadas" solo recorta lo que se ve en la tabla (para
   // no tener que scrollear entre decenas de OC ya cerradas) — no toca
@@ -303,16 +307,69 @@ function aplicarFiltrosYRender() {
   const gruposTabla = (ocultarCompletadas && estSel !== 'COMPLETADA')
     ? grupos.filter(g => estadoOC(g) !== 'COMPLETADA')
     : grupos;
-  renderTabla(gruposTabla);
+  renderTabla('t-oc', gruposTabla);
 }
 
-export async function render() {
-  document.getElementById('t-oc').innerHTML = '<tr><td colspan="7" class="loading">Cargando...</td></tr>';
+// Dashboard: panorama general (sin filtros) + accesos rápidos a cada
+// sub-vista filtrada por estado.
+function renderDashboard() {
+  const grupos = agruparPorOrden(LINEAS);
+  renderKPIs('ocd', grupos, LINEAS);
+  const porEstado = { PENDIENTE: 0, PARCIAL: 0, COMPLETADA: 0 };
+  grupos.forEach(g => porEstado[estadoOC(g)]++);
+  const setTxt = (id, val) => { const el = document.getElementById(id); if (el) el.textContent = val; };
+  setTxt('ocd-ir-pend', `🕐 Ver pendientes (${porEstado.PENDIENTE})`);
+  setTxt('ocd-ir-parc', `🟡 Ver parciales (${porEstado.PARCIAL})`);
+  setTxt('ocd-ir-comp', `✅ Ver completadas (${porEstado.COMPLETADA})`);
+}
+
+// Sub-vistas Pendientes / Parciales / Completadas: mismo componente
+// (filtros de proveedor/comprador/mes + resumen chico + tabla agrupada),
+// el estado viene fijo por sección en vez de ser un filtro más.
+const SECCIONES_ESTADO = [
+  { prefix: 'ocp', tbodyId: 't-oc-pend', estado: 'PENDIENTE' },
+  { prefix: 'ocpa', tbodyId: 't-oc-parc', estado: 'PARCIAL' },
+  { prefix: 'occ', tbodyId: 't-oc-comp', estado: 'COMPLETADA' },
+];
+
+function renderSeccionEstado(prefix, tbodyId, estadoFijo) {
+  poblarFiltrosPrefijo(prefix);
+  const prov = document.getElementById(`${prefix}_f_prov`)?.value || '';
+  const comp = document.getElementById(`${prefix}_f_comp`)?.value || '';
+  const mes = document.getElementById(`${prefix}_f_mes`)?.value || '';
+
+  let lineas = LINEAS;
+  if (prov) lineas = lineas.filter(l => l.proveedor_nombre === prov);
+  if (comp) lineas = lineas.filter(l => l.comprador_nombre === comp);
+  if (mes) lineas = lineas.filter(l => l.fecha?.slice(0, 7) === mes);
+
+  const grupos = agruparPorOrden(lineas).filter(g => estadoOC(g) === estadoFijo);
+  const importeTotal = grupos.reduce((s, g) => s + g.importe, 0);
+  const cantEl = document.getElementById(`${prefix}_k_cant`);
+  if (cantEl) cantEl.textContent = grupos.length;
+  const impEl = document.getElementById(`${prefix}_k_importe`);
+  if (impEl) { impEl.textContent = fmtCompacto(importeTotal); impEl.title = fmtPesos(importeTotal); }
+
+  renderTabla(tbodyId, grupos);
+}
+
+const TBODY_POR_SECCION = { 'oc-pend': 't-oc-pend', 'oc-parc': 't-oc-parc', 'oc-comp': 't-oc-comp', 'oc-todas': 't-oc' };
+
+export async function render(secId) {
+  const tbodyId = TBODY_POR_SECCION[secId];
+  if (tbodyId) { const tb = document.getElementById(tbodyId); if (tb) tb.innerHTML = '<tr><td colspan="7" class="loading">Cargando...</td></tr>'; }
+
   const { data, error } = await SB.from('compras_oc_lineas').select('*').limit(20000);
-  if (error) { document.getElementById('t-oc').innerHTML = `<tr><td colspan="7" style="color:var(--red);padding:12px">${error.message}</td></tr>`; return; }
+  if (error) {
+    if (tbodyId) { const tb = document.getElementById(tbodyId); if (tb) tb.innerHTML = `<tr><td colspan="7" style="color:var(--red);padding:12px">${error.message}</td></tr>`; }
+    return;
+  }
   LINEAS = data || [];
-  poblarFiltros();
-  aplicarFiltrosYRender();
+
+  const seccion = SECCIONES_ESTADO.find(s => s.tbodyId === tbodyId);
+  if (seccion) { renderSeccionEstado(seccion.prefix, seccion.tbodyId, seccion.estado); return; }
+  if (secId === 'oc-todas') { poblarFiltrosPrefijo('oc'); aplicarFiltrosYRender(); return; }
+  renderDashboard();
 }
 
 export function init() {
@@ -322,5 +379,15 @@ export function init() {
     if (file) cargarArchivo(file);
   });
   ['oc_f_prov', 'oc_f_comp', 'oc_f_mes', 'oc_f_est', 'oc_f_ocultar_completadas'].forEach(id => document.getElementById(id)?.addEventListener('change', aplicarFiltrosYRender));
-  initExpandCollapse();
+  initExpandCollapse('t-oc');
+
+  SECCIONES_ESTADO.forEach(({ prefix, tbodyId, estado }) => {
+    ['prov', 'comp', 'mes'].forEach(k => document.getElementById(`${prefix}_f_${k}`)?.addEventListener('change', () => renderSeccionEstado(prefix, tbodyId, estado)));
+    initExpandCollapse(tbodyId);
+  });
+
+  document.getElementById('ocd-ir-pend')?.addEventListener('click', () => document.querySelector('.nav-item[data-sec="oc-pend"]')?.click());
+  document.getElementById('ocd-ir-parc')?.addEventListener('click', () => document.querySelector('.nav-item[data-sec="oc-parc"]')?.click());
+  document.getElementById('ocd-ir-comp')?.addEventListener('click', () => document.querySelector('.nav-item[data-sec="oc-comp"]')?.click());
+  document.getElementById('ocd-ir-todas')?.addEventListener('click', () => document.querySelector('.nav-item[data-sec="oc-todas"]')?.click());
 }

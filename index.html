@@ -178,7 +178,7 @@
 
 <div class="layout">
 <nav>
-  <div class="nav-group" id="nav-flota">
+  <div class="nav-group" id="nav-flota" data-default-sec="dash">
     <div class="nav-parent"><span>🚗</span> Flota <span class="nav-chevron">▾</span></div>
     <div class="nav-children">
       <div class="nav-item" data-sec="dash"><span>📊</span> Dashboard</div>
@@ -192,7 +192,16 @@
     </div>
   </div>
 
-  <div class="nav-item" data-sec="oc"><span>🧾</span> Órdenes de Compra</div>
+  <div class="nav-group" id="nav-oc" data-default-sec="oc-dash">
+    <div class="nav-parent"><span>🧾</span> Órdenes de Compra <span class="nav-chevron">▾</span></div>
+    <div class="nav-children">
+      <div class="nav-item" data-sec="oc-dash"><span>📊</span> Dashboard</div>
+      <div class="nav-item" data-sec="oc-pend"><span>🕐</span> Pendientes</div>
+      <div class="nav-item" data-sec="oc-parc"><span>🟡</span> Parciales</div>
+      <div class="nav-item" data-sec="oc-comp"><span>✅</span> Completadas</div>
+      <div class="nav-item" data-sec="oc-todas"><span>📋</span> Todas</div>
+    </div>
+  </div>
 
   <div class="nav-sec">Otros módulos (TBD)</div>
   <div class="nav-item disabled" title="Todavía no desarrollado"><span>🏭</span> Proveedores</div>
@@ -312,10 +321,89 @@
   </table></div>
 </div>
 
-<!-- ============ ÓRDENES DE COMPRA ============ -->
-<div class="sec" id="s-oc">
-  <div class="ptitle">Órdenes de Compra</div>
+<!-- ============ ÓRDENES DE COMPRA — DASHBOARD ============ -->
+<div class="sec" id="s-oc-dash">
+  <div class="ptitle">Órdenes de Compra — Dashboard</div>
   <div class="psub">Indicador de compras — importado del export de OC de Tango Gestión</div>
+  <div class="kpi-grid">
+    <div class="kpi"><div class="kpi-val text-accent" id="ocd_k_comprado">–</div><div class="kpi-lbl">Total comprado</div></div>
+    <div class="kpi"><div class="kpi-val text-green" id="ocd_k_recibido">–</div><div class="kpi-lbl">Total recibido</div></div>
+    <div class="kpi"><div class="kpi-val text-yellow" id="ocd_k_pendiente">–</div><div class="kpi-lbl">Total pendiente</div></div>
+    <div class="kpi"><div class="kpi-val" id="ocd_k_pct">–</div><div class="kpi-lbl">% completado</div></div>
+    <div class="kpi"><div class="kpi-val text-red" id="ocd_k_pendientes">–</div><div class="kpi-lbl">OC pendientes</div></div>
+    <div class="kpi"><div class="kpi-val text-orange" id="ocd_k_parciales">–</div><div class="kpi-lbl">OC parciales</div></div>
+    <div class="kpi"><div class="kpi-val text-green" id="ocd_k_completadas">–</div><div class="kpi-lbl">OC completadas</div></div>
+  </div>
+  <div class="sh"><h2>Accesos rápidos</h2></div>
+  <div style="display:flex;gap:10px;flex-wrap:wrap">
+    <button class="btn" id="ocd-ir-pend">🕐 Ver pendientes</button>
+    <button class="btn" id="ocd-ir-parc">🟡 Ver parciales</button>
+    <button class="btn" id="ocd-ir-comp">✅ Ver completadas</button>
+    <button class="btn p" id="ocd-ir-todas">📋 Ver todas / cargar archivo</button>
+  </div>
+</div>
+
+<!-- ============ ÓRDENES DE COMPRA — PENDIENTES ============ -->
+<div class="sec" id="s-oc-pend">
+  <div class="ptitle">Órdenes de Compra — Pendientes</div>
+  <div class="psub">Órdenes sin nada recibido todavía</div>
+  <div class="filters">
+    <select id="ocp_f_prov"><option value="">Todos los proveedores</option></select>
+    <select id="ocp_f_comp"><option value="">Todos los compradores</option></select>
+    <select id="ocp_f_mes"><option value="">Todos los meses</option></select>
+  </div>
+  <div class="kpi-grid" style="grid-template-columns:repeat(2,minmax(140px,1fr));max-width:420px">
+    <div class="kpi"><div class="kpi-val text-red" id="ocp_k_cant">–</div><div class="kpi-lbl">Órdenes pendientes</div></div>
+    <div class="kpi"><div class="kpi-val text-accent" id="ocp_k_importe">–</div><div class="kpi-lbl">Importe total</div></div>
+  </div>
+  <div class="tw"><table>
+    <thead><tr><th>N° OC</th><th>Fecha</th><th>Proveedor</th><th>Comprador</th><th>Artículos</th><th>Estado</th><th>Importe OC</th></tr></thead>
+    <tbody id="t-oc-pend"></tbody>
+  </table></div>
+</div>
+
+<!-- ============ ÓRDENES DE COMPRA — PARCIALES ============ -->
+<div class="sec" id="s-oc-parc">
+  <div class="ptitle">Órdenes de Compra — Parciales</div>
+  <div class="psub">Órdenes con parte de lo pedido recibido</div>
+  <div class="filters">
+    <select id="ocpa_f_prov"><option value="">Todos los proveedores</option></select>
+    <select id="ocpa_f_comp"><option value="">Todos los compradores</option></select>
+    <select id="ocpa_f_mes"><option value="">Todos los meses</option></select>
+  </div>
+  <div class="kpi-grid" style="grid-template-columns:repeat(2,minmax(140px,1fr));max-width:420px">
+    <div class="kpi"><div class="kpi-val text-orange" id="ocpa_k_cant">–</div><div class="kpi-lbl">Órdenes parciales</div></div>
+    <div class="kpi"><div class="kpi-val text-accent" id="ocpa_k_importe">–</div><div class="kpi-lbl">Importe total</div></div>
+  </div>
+  <div class="tw"><table>
+    <thead><tr><th>N° OC</th><th>Fecha</th><th>Proveedor</th><th>Comprador</th><th>Artículos</th><th>Estado</th><th>Importe OC</th></tr></thead>
+    <tbody id="t-oc-parc"></tbody>
+  </table></div>
+</div>
+
+<!-- ============ ÓRDENES DE COMPRA — COMPLETADAS ============ -->
+<div class="sec" id="s-oc-comp">
+  <div class="ptitle">Órdenes de Compra — Completadas</div>
+  <div class="psub">Órdenes con todo lo pedido ya recibido</div>
+  <div class="filters">
+    <select id="occ_f_prov"><option value="">Todos los proveedores</option></select>
+    <select id="occ_f_comp"><option value="">Todos los compradores</option></select>
+    <select id="occ_f_mes"><option value="">Todos los meses</option></select>
+  </div>
+  <div class="kpi-grid" style="grid-template-columns:repeat(2,minmax(140px,1fr));max-width:420px">
+    <div class="kpi"><div class="kpi-val text-green" id="occ_k_cant">–</div><div class="kpi-lbl">Órdenes completadas</div></div>
+    <div class="kpi"><div class="kpi-val text-accent" id="occ_k_importe">–</div><div class="kpi-lbl">Importe total</div></div>
+  </div>
+  <div class="tw"><table>
+    <thead><tr><th>N° OC</th><th>Fecha</th><th>Proveedor</th><th>Comprador</th><th>Artículos</th><th>Estado</th><th>Importe OC</th></tr></thead>
+    <tbody id="t-oc-comp"></tbody>
+  </table></div>
+</div>
+
+<!-- ============ ÓRDENES DE COMPRA — TODAS ============ -->
+<div class="sec" id="s-oc-todas">
+  <div class="ptitle">Órdenes de Compra — Todas</div>
+  <div class="psub">Listado completo con filtros — acá se carga el archivo de Tango</div>
   <div class="sh">
     <div class="filters">
       <select id="oc_f_prov"><option value="">Todos los proveedores</option></select>

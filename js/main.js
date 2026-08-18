@@ -16,14 +16,17 @@ import * as vtv from './modules/flota-vtv.js';
 import * as documentos from './modules/flota-documentos.js';
 import * as oc from './modules/oc.js';
 
-const MODULES = { dash: dashboard, vcs: vehiculos, sols: solicitudes, movs: movimientos, gantt, mant: mantenimiento, vtv, doc: documentos, oc };
+const MODULES = {
+  dash: dashboard, vcs: vehiculos, sols: solicitudes, movs: movimientos, gantt, mant: mantenimiento, vtv, doc: documentos,
+  'oc-dash': oc, 'oc-pend': oc, 'oc-parc': oc, 'oc-comp': oc, 'oc-todas': oc,
+};
 
 function go(secId) {
   document.querySelectorAll('.sec').forEach(s => s.classList.remove('on'));
   document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
   document.getElementById('s-' + secId)?.classList.add('on');
   document.querySelector(`.nav-item[data-sec="${secId}"]`)?.classList.add('active');
-  MODULES[secId]?.render?.();
+  MODULES[secId]?.render?.(secId);
 }
 
 function wireNav() {
@@ -31,11 +34,13 @@ function wireNav() {
     el.addEventListener('click', () => go(el.dataset.sec));
   });
 
-  const flotaGroup = document.getElementById('nav-flota');
-  flotaGroup?.querySelector('.nav-parent')?.addEventListener('click', () => {
-    const wasCollapsed = flotaGroup.classList.contains('collapsed');
-    flotaGroup.classList.toggle('collapsed');
-    if (wasCollapsed) go('dash');
+  document.querySelectorAll('.nav-group').forEach(group => {
+    group.querySelector('.nav-parent')?.addEventListener('click', () => {
+      const wasCollapsed = group.classList.contains('collapsed');
+      group.classList.toggle('collapsed');
+      const defaultSec = group.dataset.defaultSec;
+      if (wasCollapsed && defaultSec) go(defaultSec);
+    });
   });
 }
 
@@ -53,7 +58,7 @@ function startAutoRefresh() {
 }
 
 async function onConnected() {
-  Object.values(MODULES).forEach(m => m.init?.());
+  [...new Set(Object.values(MODULES))].forEach(m => m.init?.());
   wireNav();
   startClock();
   startAutoRefresh();
