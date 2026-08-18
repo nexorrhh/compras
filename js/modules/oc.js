@@ -240,7 +240,7 @@ function renderTabla(tbodyId, grupos) {
   const tb = document.getElementById(tbodyId);
   if (!tb) return;
   const ordenadas = [...grupos].sort((a, b) => (b.fecha || '').localeCompare(a.fecha || ''));
-  if (!ordenadas.length) { tb.innerHTML = '<tr><td colspan="7" style="text-align:center;padding:18px;color:var(--muted)">Sin órdenes</td></tr>'; return; }
+  if (!ordenadas.length) { tb.innerHTML = '<tr><td colspan="8" style="text-align:center;padding:18px;color:var(--muted)">Sin órdenes</td></tr>'; return; }
   tb.innerHTML = ordenadas.map(g => {
     const est = estadoOC(g);
     const lineasOrdenadas = [...g.lineas].sort((a, b) => (a.articulo_desc || a.articulo_cod).localeCompare(b.articulo_desc || b.articulo_cod));
@@ -264,13 +264,15 @@ function renderTabla(tbodyId, grupos) {
       <td>${g.lineas.length}</td>
       <td><span class="badge ${ESTADO_CLASE[est]}">${ESTADO_LABEL[est]}</span></td>
       <td>${fmtPesos(g.importe)}</td>
+      <td><button class="bsm d oc-del" title="Eliminar esta OC del tablero (no afecta a Tango)" onclick="window.oc.eliminarOrden('${g.orden_compra}')">🗑️</button></td>
     </tr>
-    <tr class="oc-detail" style="display:none"><td colspan="7">${detalle}</td></tr>`;
+    <tr class="oc-detail" style="display:none"><td colspan="8">${detalle}</td></tr>`;
   }).join('');
 }
 
 function initExpandCollapse(tbodyId) {
   document.getElementById(tbodyId)?.addEventListener('click', e => {
+    if (e.target.closest('.oc-del')) return;
     const row = e.target.closest('.oc-row');
     if (!row) return;
     const detailRow = row.nextElementSibling;
@@ -280,6 +282,21 @@ function initExpandCollapse(tbodyId) {
     const chevron = row.querySelector('.oc-chevron');
     if (chevron) chevron.textContent = isOpen ? '▸' : '▾';
   });
+}
+
+// Borrado manual de una OC completa (todas sus líneas) — para casos
+// como una OC cargada por error o anulada/reemplazada en Tango: como
+// la carga de archivo solo reemplaza las órdenes presentes en el
+// Excel subido, una orden anulada que ya no aparece en los archivos
+// nuevos NUNCA se borra sola (no hay nada que la reemplace), queda
+// pisada en el tablero para siempre hasta que se borre a mano acá.
+async function eliminarOrden(orden) {
+  if (!confirm(`¿Eliminar la OC ${orden} de este tablero?\n\nEsto borra sus líneas de este indicador (no afecta nada en Tango). Usalo para OC cargadas por error o anuladas/reemplazadas que ya no deberían figurar.`)) return;
+  const { error } = await SB.from('compras_oc_lineas').delete().eq('orden_compra', orden);
+  if (error) { toast(error.message, 'er'); return; }
+  toast(`✓ OC ${orden} eliminada del tablero`);
+  const secId = document.querySelector('.sec.on')?.id?.replace(/^s-/, '');
+  if (secId) render(secId);
 }
 
 function aplicarFiltrosYRender() {
@@ -524,4 +541,6 @@ export function init() {
   document.getElementById('ocd-ir-abiertas')?.addEventListener('click', () => document.querySelector('.nav-item[data-sec="oc-abiertas"]')?.click());
   document.getElementById('ocd-ir-comp')?.addEventListener('click', () => document.querySelector('.nav-item[data-sec="oc-comp"]')?.click());
   document.getElementById('ocd-ir-todas')?.addEventListener('click', () => document.querySelector('.nav-item[data-sec="oc-todas"]')?.click());
+
+  window.oc = { eliminarOrden };
 }

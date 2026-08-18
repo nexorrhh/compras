@@ -270,6 +270,20 @@ Esto permite las dos formas de trabajar que describió el usuario sin ningún ca
 Antes de efectivamente borrar/insertar, se le muestra al usuario un `confirm()` con el resumen ("se
 leyeron X líneas de Y órdenes...") para que no sea una carga a ciegas.
 
+**Limitación conocida — OC anuladas/reemplazadas en Tango:** el reemplazo es por orden *presente en el
+archivo subido*, así que una orden que se anula en Tango (se emitió mal, se anuló, se generó una OC
+nueva) y **deja de aparecer** en los archivos siguientes nunca se borra sola en este tablero — no hay
+nada en el archivo nuevo que la reemplace, así que queda pisada para siempre con sus cantidades viejas
+(caso real que le pasó al usuario: una OC con el importe mal cargado, anulada en Tango, seguía
+figurando como pendiente acá). Por eso cada fila de OC tiene un botón 🗑️ **"Eliminar esta OC del
+tablero"** (en Abiertas/Completadas/Todas, `eliminarOrden()` en `js/modules/oc.js`) que borra a mano
+todas las líneas de esa orden — no toca Tango, solo el indicador. Es la vía para corregir este caso
+hoy. Automatizar la detección ("esta orden estaba antes y ya no aparece en el archivo nuevo, hay que
+borrarla") no es seguro mientras se suba **un archivo por mes**: la ausencia de una orden en el archivo
+de agosto no distingue entre "es de julio, no le corresponde estar" y "se anuló". Si en algún momento
+se pasa al esquema ideal de subir **el año completo** cada vez (ver arriba), ahí sí se podría comparar
+contra el archivo completo y detectar automáticamente qué OC desaparecieron.
+
 ### 5.3 Qué muestra el tablero
 
 Igual que Flota, el módulo es un **grupo de nav colapsable** ("🧾 Órdenes de Compra ▾") con un
