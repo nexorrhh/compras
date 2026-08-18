@@ -27,7 +27,15 @@ function go(secId) {
   document.querySelectorAll('.sec').forEach(s => s.classList.remove('on'));
   document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
   document.getElementById('s-' + secId)?.classList.add('on');
-  document.querySelector(`.nav-item[data-sec="${secId}"]`)?.classList.add('active');
+  const navItem = document.querySelector(`.nav-item[data-sec="${secId}"]`);
+  navItem?.classList.add('active');
+
+  // Acordeón: al navegar, solo queda desplegado el grupo que contiene la
+  // sección activa — el resto se colapsa solo, para no tener varios
+  // grupos abiertos a la vez sin razón.
+  const activeGroup = navItem?.closest('.nav-group');
+  document.querySelectorAll('.nav-group').forEach(g => g.classList.toggle('collapsed', g !== activeGroup));
+
   MODULES[secId]?.render?.(secId);
 }
 
