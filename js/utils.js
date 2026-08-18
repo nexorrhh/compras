@@ -34,3 +34,31 @@ export function estadoVencimiento(fechaISO) {
   if (dias <= 30) return { cls: 'porvencer', label: `Vence en ${dias}d (${fmt(fechaISO)})` };
   return { cls: 'vigente', label: fmt(fechaISO) };
 }
+
+// ------------------------------------------------------------
+// Parseo de Excel — compartido por los módulos que importan
+// exports de sistemas externos (Órdenes de Compra ← Tango,
+// Stock ← Capataz). Header matching case/acento-insensible porque
+// cada sistema exporta sus columnas con capitalización distinta.
+// ------------------------------------------------------------
+export function norm(s) {
+  return String(s ?? '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toUpperCase().trim();
+}
+
+export function fechaISO(v) {
+  if (v instanceof Date && !isNaN(v)) {
+    const y = v.getFullYear(), m = String(v.getMonth() + 1).padStart(2, '0'), d = String(v.getDate()).padStart(2, '0');
+    return `${y}-${m}-${d}`;
+  }
+  if (typeof v === 'string') {
+    const s = v.trim();
+    const dmy = s.match(/^(\d{1,2})[\/-](\d{1,2})[\/-](\d{4})$/);
+    if (dmy) return `${dmy[3]}-${dmy[2].padStart(2, '0')}-${dmy[1].padStart(2, '0')}`;
+    const ymd = s.match(/^\d{4}-\d{2}-\d{2}$/);
+    if (ymd) return s;
+  }
+  return null;
+}
+
+export const txt = v => { const s = String(v ?? '').trim(); return s || null; };
+export const num = v => { const n = Number(v); return isFinite(n) ? n : 0; };

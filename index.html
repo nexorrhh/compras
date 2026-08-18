@@ -168,6 +168,24 @@
   </form>
 </div></div>
 
+<!-- ============ MODAL — STOCK: SEGUIMIENTO ============ -->
+<div class="modal-ov" id="mSEGUI">
+<div class="modal">
+  <span class="mcls" onclick="cm('mSEGUI')">×</span>
+  <div class="mtitle">⭐ Seguimiento de artículo</div>
+  <form id="fSEGUI">
+    <div class="fg"><label>Código</label><div id="sg_codigo" style="font-weight:700"></div></div>
+    <div class="fg"><label>Descripción</label><div id="sg_desc" style="color:var(--muted);font-size:13px"></div></div>
+    <div class="fr">
+      <div class="fg"><label>Unidad</label><div id="sg_unidad" style="color:var(--muted);font-size:13px"></div></div>
+      <div class="fg"><label>Stock actual</label><div id="sg_saldo_actual" style="color:var(--muted);font-size:13px"></div></div>
+    </div>
+    <div class="fg"><label>Stock mínimo *</label><input type="number" id="sg_minimo" min="0" step="any" required placeholder="0"></div>
+    <div class="fg"><label>Notas</label><input id="sg_notas" placeholder="Opcional"></div>
+    <div class="brow"><button type="button" class="btn" onclick="cm('mSEGUI')">Cancelar</button><button type="submit" class="btn p">Guardar</button></div>
+  </form>
+</div></div>
+
 <header>
   <div class="logo"><div class="logo-icon">🛒</div><span>Tablero de Compras</span><span class="hbadge">CIMOMET</span></div>
   <div style="display:flex;align-items:center;gap:8px">
@@ -203,10 +221,19 @@
     </div>
   </div>
 
+  <div class="nav-group" id="nav-stock" data-default-sec="stock-dash">
+    <div class="nav-parent"><span>📦</span> Stock <span class="nav-chevron">▾</span></div>
+    <div class="nav-children">
+      <div class="nav-item" data-sec="stock-dash"><span>📊</span> Dashboard</div>
+      <div class="nav-item" data-sec="stock-comprar"><span>⚠️</span> A comprar</div>
+      <div class="nav-item" data-sec="stock-segui"><span>⭐</span> Seguimiento</div>
+      <div class="nav-item" data-sec="stock-todo"><span>📋</span> Todo el stock</div>
+    </div>
+  </div>
+
   <div class="nav-sec">Otros módulos (TBD)</div>
   <div class="nav-item disabled" title="Todavía no desarrollado"><span>🏭</span> Proveedores</div>
   <div class="nav-item disabled" title="Todavía no desarrollado"><span>💰</span> Presupuesto y gastos</div>
-  <div class="nav-item disabled" title="Todavía no desarrollado"><span>📦</span> Stock / insumos críticos</div>
   <div class="nav-item disabled" title="Todavía no desarrollado"><span>📑</span> Contratos y vencimientos</div>
   <div class="nav-item disabled" title="Todavía no desarrollado"><span>✅</span> Circuito de aprobaciones</div>
 </nav>
@@ -431,6 +458,74 @@
   <div class="tw"><table>
     <thead><tr><th>N° OC</th><th>Fecha</th><th>Proveedor</th><th>Comprador</th><th>Artículos</th><th>Estado</th><th>Importe OC</th><th>Acciones</th></tr></thead>
     <tbody id="t-oc"></tbody>
+  </table></div>
+</div>
+
+<!-- ============ STOCK — DASHBOARD ============ -->
+<div class="sec" id="s-stock-dash">
+  <div class="ptitle">Stock — Dashboard</div>
+  <div class="psub">Saldos por depósito (importado de Capataz) + artículos en seguimiento con stock mínimo</div>
+  <div class="kpi-grid">
+    <div class="kpi"><div class="kpi-val text-accent" id="sd_k_articulos">–</div><div class="kpi-lbl">Artículos con stock</div></div>
+    <div class="kpi"><div class="kpi-val" id="sd_k_depositos">–</div><div class="kpi-lbl">Depósitos cargados</div></div>
+    <div class="kpi"><div class="kpi-val text-yellow" id="sd_k_seguimiento">–</div><div class="kpi-lbl">En seguimiento</div></div>
+    <div class="kpi"><div class="kpi-val text-red" id="sd_k_bajo">–</div><div class="kpi-lbl">Bajo el mínimo</div></div>
+  </div>
+  <div class="psub" style="margin-top:-8px">El resumen de arriba considera Principal + Pañol — elegí otro alcance de depósito en cada sub-vista si hace falta.</div>
+  <div class="sh"><h2>Accesos rápidos</h2></div>
+  <div style="display:flex;gap:10px;flex-wrap:wrap">
+    <button class="btn" id="sd-ir-comprar">⚠️ Ver a comprar</button>
+    <button class="btn" id="sd-ir-segui">⭐ Ver seguimiento</button>
+    <button class="btn p" id="sd-ir-todo">📋 Ver todo el stock / cargar archivo</button>
+  </div>
+</div>
+
+<!-- ============ STOCK — A COMPRAR ============ -->
+<div class="sec" id="s-stock-comprar">
+  <div class="ptitle">Stock — A comprar</div>
+  <div class="psub">Artículos en seguimiento cuyo stock actual está por debajo del mínimo configurado</div>
+  <div class="filters">
+    <select id="stoc_f_dep"><option value="">Principal + Pañol (relevantes)</option><option value="TODOS">Todos los depósitos</option></select>
+  </div>
+  <div class="psub" id="stoc_resumen" style="margin-top:-8px"></div>
+  <div class="tw"><table>
+    <thead><tr><th>Código</th><th>Descripción</th><th>Stock actual</th><th>Mínimo</th><th>Estado</th><th>Acciones</th></tr></thead>
+    <tbody id="t-stock-comprar"></tbody>
+  </table></div>
+</div>
+
+<!-- ============ STOCK — SEGUIMIENTO ============ -->
+<div class="sec" id="s-stock-segui">
+  <div class="ptitle">Stock — Seguimiento</div>
+  <div class="psub">Todos los artículos marcados, estén o no por debajo del mínimo</div>
+  <div class="filters">
+    <select id="stos_f_dep"><option value="">Principal + Pañol (relevantes)</option><option value="TODOS">Todos los depósitos</option></select>
+  </div>
+  <div class="psub" id="stos_resumen" style="margin-top:-8px"></div>
+  <div class="tw"><table>
+    <thead><tr><th>Código</th><th>Descripción</th><th>Stock actual</th><th>Mínimo</th><th>Estado</th><th>Acciones</th></tr></thead>
+    <tbody id="t-stock-segui"></tbody>
+  </table></div>
+</div>
+
+<!-- ============ STOCK — TODO EL STOCK ============ -->
+<div class="sec" id="s-stock-todo">
+  <div class="ptitle">Stock — Todo el stock</div>
+  <div class="psub">Listado completo por artículo — acá se carga el archivo de Capataz</div>
+  <div class="sh">
+    <div class="filters">
+      <input placeholder="Buscar código / descripción..." id="sto_f_q">
+      <select id="sto_f_dep"><option value="">Principal + Pañol (relevantes)</option><option value="TODOS">Todos los depósitos</option></select>
+    </div>
+    <label class="btn p" style="cursor:pointer">
+      📤 Cargar archivo (.xlsx)
+      <input type="file" id="sto_file" accept=".xlsx,.xls" style="display:none">
+    </label>
+  </div>
+  <div class="psub" id="sto_resumen" style="margin-top:-8px"></div>
+  <div class="tw"><table>
+    <thead><tr><th>Código</th><th>Descripción</th><th>Stock (depósito elegido)</th><th>Unidad</th><th>Seguimiento</th><th>Acciones</th></tr></thead>
+    <tbody id="t-stock-todo"></tbody>
   </table></div>
 </div>
 

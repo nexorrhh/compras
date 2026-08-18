@@ -16,7 +16,7 @@
 // figura en el último archivo donde apareció.
 // ============================================================
 import { SB } from '../supabase-client.js';
-import { toast, fmt } from '../utils.js';
+import { toast, fmt, norm, fechaISO, txt, num } from '../utils.js';
 
 let LINEAS = [];
 
@@ -37,30 +37,8 @@ function fmtCompacto(n) {
 }
 
 // ------------------------------------------------------------
-// Parseo del Excel
+// Parseo del Excel (norm/fechaISO/txt/num viven en utils.js, compartidos con Stock)
 // ------------------------------------------------------------
-function norm(s) {
-  return String(s ?? '').normalize('NFD').replace(/[̀-ͯ]/g, '').toUpperCase().trim();
-}
-
-function fechaISO(v) {
-  if (v instanceof Date && !isNaN(v)) {
-    const y = v.getFullYear(), m = String(v.getMonth() + 1).padStart(2, '0'), d = String(v.getDate()).padStart(2, '0');
-    return `${y}-${m}-${d}`;
-  }
-  if (typeof v === 'string') {
-    const s = v.trim();
-    const dmy = s.match(/^(\d{1,2})[\/-](\d{1,2})[\/-](\d{4})$/);
-    if (dmy) return `${dmy[3]}-${dmy[2].padStart(2, '0')}-${dmy[1].padStart(2, '0')}`;
-    const ymd = s.match(/^\d{4}-\d{2}-\d{2}$/);
-    if (ymd) return s;
-  }
-  return null;
-}
-
-const txt = v => { const s = String(v ?? '').trim(); return s || null; };
-const num = v => { const n = Number(v); return isFinite(n) ? n : 0; };
-
 function parseWorkbook(arrayBuffer, filename) {
   const wb = XLSX.read(arrayBuffer, { type: 'array', cellDates: true });
   const sheet = wb.Sheets[wb.SheetNames[0]];

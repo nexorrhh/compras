@@ -15,10 +15,12 @@ import * as mantenimiento from './modules/flota-mantenimiento.js';
 import * as vtv from './modules/flota-vtv.js';
 import * as documentos from './modules/flota-documentos.js';
 import * as oc from './modules/oc.js';
+import * as stock from './modules/stock.js';
 
 const MODULES = {
   dash: dashboard, vcs: vehiculos, sols: solicitudes, movs: movimientos, gantt, mant: mantenimiento, vtv, doc: documentos,
   'oc-dash': oc, 'oc-abiertas': oc, 'oc-comp': oc, 'oc-todas': oc,
+  'stock-dash': stock, 'stock-comprar': stock, 'stock-segui': stock, 'stock-todo': stock,
 };
 
 function go(secId) {

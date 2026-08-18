@@ -43,7 +43,7 @@ seguros, permisos). El resto de los módulos se va a ir sumando a medida que se 
 | Proveedores | `[TBD]` | Catálogo de proveedores, historial de compras, evaluación/calificación |
 | **Órdenes de compra** | `[DETALLADO]` (sección 5) | No es alta/gestión de pedidos — es un indicador de compras (pendientes/recibidas/total) alimentado importando el export de OC de Tango Gestión |
 | Presupuesto y gastos de compras | `[TBD]` | Presupuestado vs. real por categoría/área, alertas de desvío |
-| Stock / insumos críticos | `[TBD]` | Niveles de stock, punto de reposición, insumos que no deben faltar |
+| **Stock / insumos críticos** | `[DETALLADO]` (sección 6) | Saldos por depósito importados de Capataz + lista de artículos en seguimiento con stock mínimo, para saber qué hay que reponer |
 | Contratos y vencimientos | `[TBD]` | Contratos de servicios, alquileres, licencias — no solo de vehículos |
 | Circuito de aprobaciones | `[TBD]` | Reglas de autorización de pagos/compras según monto |
 | Indicadores de compras (KPIs) | `[TBD]` | Tiempo de respuesta a proveedores, ahorro negociado, % compras por proveedor, etc. |
@@ -352,7 +352,84 @@ solo en la máquina local para poder probar el parseo.
 
 ---
 
-## 6. Stack técnico
+## 6. Módulo: Stock `[DETALLADO]`
+
+Sin relación con Flota ni con Órdenes de Compra — es su propio módulo. Nació de la necesidad de saber
+qué insumos hay que reponer, sin tener que revisar Capataz a mano artículo por artículo.
+
+### 6.1 De dónde viene el dato
+
+Se alimenta del **export de saldos de Capataz** (botón de exportar desde el propio Capataz). Columnas
+del archivo (nombres tal cual los pone Capataz): `id_xpress_sql`, `cod_articu`, `descripcio`,
+`desc_adic`, `estad_ela`, `estad_vta`, `n_partida`, `n_despacho`, `saldo`, `unidad_med`, `cod_deposi`,
+`nombre_suc`, `fecha`, `fecha_vto`, `coef_rendi`. A diferencia de Órdenes de Compra, cada fila acá es
+un **lote/partida**, no un artículo — el mismo `cod_articu` puede tener varias filas en el mismo
+depósito si hay más de un lote con saldo (identificado con el archivo real `Stock.xlsx` que pasó el
+usuario: 5983 filas, 3188 artículos únicos — o sea, en promedio casi el doble de filas que artículos).
+Para el stock total de un artículo hay que **sumar `saldo`** entre todas sus filas.
+
+- El archivo trae **16 depósitos** (`cod_deposi`): `01` PRINCIPAL, `90` PAÑOL, `11` MANTENIMIENTO, `22`/
+  `24`/`25` CONTENEDOR 3/5/6, `26` CALIDAD, `30` MONTAJE, `03` PINTURAS, `YP` YPF FILTRO, `ZZ` Depósito
+  Capataz, y varios con muy poco uso (COMEDOR, FABRICACION, CONTENEDOR 1/2). El usuario aclaró que solo
+  **Principal + Pañol** importan hoy para decidir qué comprar — el resto incluye cosas como un contenedor
+  armado para una obra específica (insumos de obra, microondas, etc.) que "no mueven la aguja". Por eso
+  se importan **todos los depósitos** (no se pierde información) pero el cálculo de "stock actual" contra
+  el mínimo usa por defecto solo Principal + Pañol — elegible en la UI (ver 6.3) si hace falta mirar otro
+  depósito puntual o todos juntos.
+- `estad_ela` trae dos valores (`LIB` / `LIR`) sin que quede claro que uno invalide el saldo — no se
+  filtra por este campo, se suma todo tal cual figura.
+
+### 6.2 Cómo se carga
+
+Igual que Órdenes de Compra: el `.xlsx` se parsea **en el navegador** con SheetJS y se sube directo a
+Supabase desde el cliente (`js/modules/stock.js`). La diferencia clave es que acá **no hay reemplazo
+parcial** — el archivo de Capataz ya es una **foto completa** del stock a esa fecha (no un incremental
+como el de Tango), así que cada carga borra toda la tabla `compras_stock_saldos` y la vuelve a llenar
+con el archivo nuevo entero. Antes de hacerlo se muestra un `confirm()` con el resumen (filas, artículos,
+depósitos) para que no sea una carga a ciegas. La idea es repetir esta carga cada tanto para mantener el
+indicador al día.
+
+### 6.3 Qué muestra el tablero
+
+Mismo patrón de nav colapsable que Flota y Órdenes de Compra ("📦 Stock ▾") con Dashboard + sub-vistas:
+
+- **Dashboard** (`stock-dash`) — 4 KPIs (artículos con stock, depósitos cargados, artículos en
+  seguimiento, artículos bajo el mínimo) calculados con el alcance por defecto (Principal + Pañol) +
+  accesos rápidos a las otras 3 sub-vistas.
+- **A comprar** (`stock-comprar`) — de los artículos en seguimiento, solo los que están **por debajo**
+  del mínimo configurado. Es el indicador de compra que pidió el usuario.
+- **Seguimiento** (`stock-segui`) — todos los artículos marcados, estén o no bajo el mínimo, con acciones
+  para editar el mínimo (✏️) o sacarlos de la lista (🗑️, no borra el stock, solo el seguimiento).
+- **Todo el stock** (`stock-todo`) — listado completo agrupado por artículo (sumando saldo entre lotes),
+  con búsqueda por código/descripción y filtro de depósito. Expandible por fila (mismo patrón que
+  Órdenes de Compra) para ver el desglose de saldo por depósito de ese artículo. Acá vive el botón
+  **"⭐ Agregar/✏️ Editar"** que abre el modal de seguimiento, y el botón **"Cargar archivo (.xlsx)"**.
+- **Filtro de depósito** (presente en las 3 sub-vistas con tabla): `""` = Principal + Pañol (relevantes,
+  default), `TODOS` = los 16 juntos, o un depósito puntual — nunca se oculta el resto de la información,
+  solo cambia qué cuenta para el total mostrado.
+- Un mínimo es **por artículo**, no por artículo+depósito (decisión tomada con el usuario: más simple de
+  cargar/leer, se compara contra la suma del saldo en los depósitos elegidos).
+
+### 6.4 Modelo de datos
+
+Dos tablas (ver [`sql/005_stock.sql`](sql/005_stock.sql) para la migración y `sql/schema.sql` para el
+estado final), sin RLS (mismo criterio que el resto de `compras_*`):
+
+- `compras_stock_saldos` — se reemplaza entera en cada carga (ver 6.2). Una fila por lote/partida.
+- `compras_stock_minimos` — la lista curada a mano por el usuario. `cod_articulo` es `unique` (un mínimo
+  por artículo); se hace `upsert` desde el modal de seguimiento. Si un artículo en seguimiento deja de
+  aparecer en el último archivo cargado (¿discontinuado? ¿typo en el código?), la UI lo marca como
+  "no está en el último archivo" y lo trata como saldo 0 (bajo mínimo) en vez de ocultarlo.
+
+### 6.5 Archivos Excel de ejemplo — no van al repo
+
+El archivo que pasó el usuario (`Excels/Stock.xlsx`) tiene datos reales de stock/depósitos y el repo de
+este tablero es **público** en GitHub — por eso, igual que los de Órdenes de Compra, `Excels/` está en
+`.gitignore` y no se sube. Queda solo en la máquina local para poder probar el parseo.
+
+---
+
+## 7. Stack técnico
 
 - **Frontend:** HTML/JS vanilla, mismo criterio que Nexo RRHH y CIMOMET v3.
 - **Diferencia respecto a Nexo RRHH:** en vez de un único archivo HTML, para este proyecto conviene
@@ -383,7 +460,7 @@ tablero-compras/
 ├── js/
 │   ├── main.js             (nav / routing / ciclo de vida de módulos)
 │   ├── supabase-client.js  (credenciales hardcodeadas, conexión automática sin login)
-│   ├── utils.js            (toast, formateo de fechas/montos, estado de vencimiento)
+│   ├── utils.js            (toast, formateo de fechas/montos, estado de vencimiento, parseo de Excel compartido por OC y Stock)
 │   └── modules/
 │       ├── flota-dashboard.js
 │       ├── flota-vehiculos.js
@@ -394,13 +471,15 @@ tablero-compras/
 │       ├── flota-vtv.js
 │       ├── flota-documentos.js  (Seguros + Permisos unificados, ver 4.4)
 │       ├── flota-personal.js  (lista de personal habilitado a manejar/solicitar, ver 4.4)
-│       └── oc.js  (Órdenes de Compra — módulo aparte, sin relación con Flota, ver sección 5)
-├── Excels/                (archivos de ejemplo de OC — en .gitignore, no se suben al repo)
+│       ├── oc.js  (Órdenes de Compra — módulo aparte, sin relación con Flota, ver sección 5)
+│       └── stock.js  (Stock — módulo aparte, sin relación con Flota ni OC, ver sección 6)
+├── Excels/                (archivos de ejemplo de OC y Stock — en .gitignore, no se suben al repo)
 └── sql/
     ├── schema.sql
     ├── 002_seguros_archivo.sql
     ├── 003_documentos_unificados.sql
-    └── 004_ordenes_compra.sql
+    ├── 004_ordenes_compra.sql
+    └── 005_stock.sql
 ```
 
 > `porteria.html` y `solicitud.html` son entry points separados (audiencias distintas: portero de
@@ -410,7 +489,7 @@ tablero-compras/
 > base) quedó sin tocar en la raíz como referencia — su funcionalidad ya está migrada a `index.html` +
 > los módulos `flota-*.js`; se puede borrar cuando lo confirmes.
 
-## 7. Notas específicas de entorno
+## 8. Notas específicas de entorno
 
 - Dijiste que vas a trabajar este proyecto en **Antigravity** (cuenta de la empresa). Ojo con un detalle
   que ya tenemos registrado de tu workflow: **Antigravity no carga `CLAUDE.md` automáticamente** — usa
@@ -420,7 +499,7 @@ tablero-compras/
   `CLAUDE.md`. Lo más simple: mantener el contenido en `CLAUDE.md` y tener una copia (o symlink) como
   `AGENTS.md`.
 
-## 8. Decisiones abiertas (TBD)
+## 9. Decisiones abiertas (TBD)
 
 Ya decidido al construir el módulo Flota (2026-08-04):
 - [x] Esquema de datos: se migró al diseño de la sección 4.4 (`compras_vehiculos` separado de
@@ -449,17 +528,19 @@ Todavía sin decidir:
 - [ ] Categorización de proveedores (ver 5.3): clasificarlos por tipo (materia prima, pintura, insumos,
   etc.) para poder adaptar/filtrar el Dashboard de OC según categoría — todavía no tiene tabla ni UI.
 
-## 9. Próximos pasos sugeridos
+## 10. Próximos pasos sugeridos
 
 1. Correr `sql/schema.sql` contra el proyecto Supabase real (ya hecho — tablas `compras_*` creadas).
 2. Correr [`sql/002_seguros_archivo.sql`](sql/002_seguros_archivo.sql) (ya hecho) y
    [`sql/003_documentos_unificados.sql`](sql/003_documentos_unificados.sql) (ya hecho — fusiona Seguros
    + Permisos en `compras_documentos`).
-3. Correr [`sql/004_ordenes_compra.sql`](sql/004_ordenes_compra.sql) para crear `compras_oc_lineas`
-   (todavía falta — sin esto el módulo Órdenes de Compra muestra error de "tabla no encontrada").
-4. Probar el circuito completo: pedir vehículo (solicitud.html) → aprobar y asignar (index.html) →
+3. Correr [`sql/004_ordenes_compra.sql`](sql/004_ordenes_compra.sql) (ya hecho — crea `compras_oc_lineas`).
+4. Correr [`sql/005_stock.sql`](sql/005_stock.sql) para crear `compras_stock_saldos` y
+   `compras_stock_minimos` (**todavía falta** — sin esto el módulo Stock muestra error de "tabla no
+   encontrada" en sus 4 sub-vistas).
+5. Probar el circuito completo: pedir vehículo (solicitud.html) → aprobar y asignar (index.html) →
    registrar salida/retorno (porteria.html) → ver el movimiento reflejado en el dashboard.
-5. Evaluar RLS (Row Level Security) en las tablas `compras_*` — hoy cualquiera con el link de
+6. Evaluar RLS (Row Level Security) en las tablas `compras_*` — hoy cualquiera con el link de
    `solicitud.html`/`porteria.html` puede leer/escribir todas las tablas, sin ningún login de por medio.
-6. Ir completando los módulos `[TBD]` de la sección 3 a medida que los necesites, usando el módulo
+7. Ir completando los módulos `[TBD]` de la sección 3 a medida que los necesites, usando el módulo
    Flota (carpeta `js/modules/`) como plantilla.

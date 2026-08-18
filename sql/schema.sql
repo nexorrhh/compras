@@ -152,6 +152,45 @@ create table compras_oc_lineas (
 );
 
 -- ------------------------------------------------------------
+-- STOCK — módulo aparte, sin relación con Flota ni con Órdenes de
+-- Compra. Alimentado por el export de saldos de Capataz: una foto del
+-- stock a la fecha, con una fila por lote/partida (para el total de
+-- un artículo hay que sumar `saldo` entre sus filas). Cada carga
+-- reemplaza la tabla entera (no es incremental como compras_oc_lineas
+-- — el archivo ya es la foto completa, no hace falta razonar qué
+-- tocar). compras_stock_minimos es la lista curada a mano de qué
+-- artículos trackear con un piso de stock.
+-- ------------------------------------------------------------
+create table compras_stock_saldos (
+  id uuid primary key default gen_random_uuid(),
+  cod_articulo text not null,
+  descripcion text,
+  desc_adicional text,
+  n_partida text,
+  n_despacho text,
+  saldo numeric not null default 0,
+  unidad_medida text,
+  cod_deposito text,
+  nombre_deposito text,
+  fecha date,
+  fecha_vto date,
+  archivo_origen text,
+  actualizado_en timestamptz not null default now(),
+  created_at timestamptz not null default now()
+);
+
+create table compras_stock_minimos (
+  id uuid primary key default gen_random_uuid(),
+  cod_articulo text not null unique,
+  descripcion text,
+  unidad_medida text,
+  stock_minimo numeric not null default 0,
+  notas text,
+  creado_en timestamptz not null default now(),
+  actualizado_en timestamptz not null default now()
+);
+
+-- ------------------------------------------------------------
 -- ÍNDICES
 -- ------------------------------------------------------------
 create index idx_compras_mantenimientos_vehiculo on compras_mantenimientos(vehiculo_id);
@@ -165,6 +204,8 @@ create index idx_compras_movimientos_fecha on compras_movimientos(fecha_hora);
 create index idx_compras_oc_orden on compras_oc_lineas(orden_compra);
 create index idx_compras_oc_fecha on compras_oc_lineas(fecha);
 create index idx_compras_oc_proveedor on compras_oc_lineas(proveedor_cod);
+create index idx_compras_stock_articulo on compras_stock_saldos(cod_articulo);
+create index idx_compras_stock_deposito on compras_stock_saldos(cod_deposito);
 
 -- ------------------------------------------------------------
 -- VISTAS — "último vencimiento vigente" por vehículo
