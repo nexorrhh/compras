@@ -13,7 +13,7 @@
 // donde derivar nada.
 // ============================================================
 import { SB } from '../supabase-client.js';
-import { toast, om, cm, fmt, fetchAll } from '../utils.js';
+import { toast, om, cm, fmt, fetchAll, escAttr, escJsArg } from '../utils.js';
 
 let GRUPOS = [];
 let ARTICULOS_GRUPO = [];
@@ -167,7 +167,7 @@ function renderContactosDetalle(proveedorId) {
 
 function filaAccionesProveedor(p) {
   return p.virtual
-    ? `<button class="bsm y sto-accion" onclick="window.proveedores.agregarCandidato('${p.cod_tango}', '${(p.nombre || '').replace(/'/g, "\\'")}')">➕ Completar datos</button>`
+    ? `<button class="bsm y sto-accion" onclick="window.proveedores.agregarCandidato('${escJsArg(p.cod_tango)}', '${escJsArg(p.nombre)}')">➕ Completar datos</button>`
     : `<button class="bsm sto-accion" onclick="window.proveedores.abrirProveedor('${p.id}')">✏️</button>
        <button class="bsm d sto-accion" onclick="window.proveedores.eliminarProveedor('${p.id}')">🗑️</button>`;
 }
@@ -279,10 +279,10 @@ function renderClasificar() {
     const actual = grupoMap.get(cod);
     const options = ['<option value="">Sin grupo</option>', ...GRUPOS.map(g => `<option value="${g.id}" ${actual?.grupo_id === g.id ? 'selected' : ''}>${g.nombre}</option>`)].join('');
     return `<tr>
-      <td><input type="checkbox" class="pvc-check-row" data-cod="${cod}" data-desc="${(desc || '').replace(/"/g, '&quot;')}" style="width:auto"></td>
+      <td><input type="checkbox" class="pvc-check-row" data-cod="${escAttr(cod)}" data-desc="${escAttr(desc)}" style="width:auto"></td>
       <td>${cod}</td>
       <td>${desc || ''}</td>
-      <td><select class="pvc-grupo-sel" data-cod="${cod}" data-desc="${(desc || '').replace(/"/g, '&quot;')}">${options}</select></td>
+      <td><select class="pvc-grupo-sel" data-cod="${escAttr(cod)}" data-desc="${escAttr(desc)}">${options}</select></td>
     </tr>`;
   }).join('');
 
@@ -451,7 +451,7 @@ function poblarDatalistProveedoresOC() {
   if (!dl) return;
   const vistos = new Map();
   for (const l of OC_LINEAS) if (l.proveedor_cod && !vistos.has(l.proveedor_cod)) vistos.set(l.proveedor_cod, l.proveedor_nombre);
-  dl.innerHTML = [...vistos.entries()].map(([cod, nom]) => `<option value="${cod}">${nom || cod}</option>`).join('');
+  dl.innerHTML = [...vistos.entries()].map(([cod, nom]) => `<option value="${escAttr(cod)}">${nom || cod}</option>`).join('');
 }
 
 function abrirProveedor(id, prefill) {

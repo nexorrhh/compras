@@ -63,6 +63,20 @@ export function fechaISO(v) {
 export const txt = v => { const s = String(v ?? '').trim(); return s || null; };
 export const num = v => { const n = Number(v); return isFinite(n) ? n : 0; };
 
+// Códigos de artículo (bulonería sobre todo) suelen traer comillas
+// literales — ej. `BUL5/8"X134A257`, la marca de pulgada. Sin escapar
+// esto, un onclick="fn('${cod}')" o un data-cod="${cod}" se corta en
+// la comilla y desalinea el resto del HTML generado. escAttr() es
+// para atributos comunes (data-*); escJsArg() es para cuando el valor
+// va DENTRO de un string JS de un solo entrecomillado dentro de un
+// atributo doble-entrecomillado, ej. onclick="fn('${escJsArg(cod)}')".
+export function escAttr(s) {
+  return String(s ?? '').replace(/"/g, '&quot;');
+}
+export function escJsArg(s) {
+  return String(s ?? '').replace(/\\/g, '\\\\').replace(/'/g, "\\'").replace(/"/g, '&quot;');
+}
+
 // ------------------------------------------------------------
 // Supabase (PostgREST) devuelve como máximo 1000 filas por request
 // sin importar qué `.limit()` se le pida del lado del cliente — un

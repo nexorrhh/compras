@@ -21,7 +21,7 @@
 // solo estos, los otros retiralos").
 // ============================================================
 import { SB } from '../supabase-client.js';
-import { toast, om, cm, norm, fechaISO, txt, num, fetchAll } from '../utils.js';
+import { toast, om, cm, norm, fechaISO, txt, num, fetchAll, escJsArg } from '../utils.js';
 
 let SALDOS = [];
 let MINIMOS = [];
@@ -205,7 +205,7 @@ function renderTodo() {
       <td>${a.saldo.toLocaleString('es-AR')}</td>
       <td>${a.unidad_medida || '–'}</td>
       <td>${badge}</td>
-      <td><button class="bsm sto-accion" onclick="window.stock.abrirSeguimiento('${a.cod_articulo}')">${min ? '✏️ Editar' : '⭐ Agregar'}</button></td>
+      <td><button class="bsm sto-accion" onclick="window.stock.abrirSeguimiento('${escJsArg(a.cod_articulo)}')">${min ? '✏️ Editar' : '⭐ Agregar'}</button></td>
     </tr>
     <tr class="oc-detail" style="display:none"><td colspan="6">${detalleArticulo(a)}</td></tr>`;
   }).join('');
@@ -261,8 +261,8 @@ function renderSeguimiento(prefix, tbodyId, soloBajoMinimo) {
       <td>${f.min.stock_minimo.toLocaleString('es-AR')} ${unidad}</td>
       <td><span class="badge ${f.estado === 'BAJO' ? 'vencido' : 'vigente'}">${f.estado === 'BAJO' ? '⚠️ Bajo mínimo' : '✓ OK'}</span></td>
       <td>
-        <button class="bsm" onclick="window.stock.abrirSeguimiento('${f.min.cod_articulo}')">✏️</button>
-        <button class="bsm d" onclick="window.stock.quitarSeguimiento('${f.min.cod_articulo}')">🗑️</button>
+        <button class="bsm" onclick="window.stock.abrirSeguimiento('${escJsArg(f.min.cod_articulo)}')">✏️</button>
+        <button class="bsm d" onclick="window.stock.quitarSeguimiento('${escJsArg(f.min.cod_articulo)}')">🗑️</button>
       </td>
     </tr>`;
   }).join('');

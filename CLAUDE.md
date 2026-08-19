@@ -594,6 +594,17 @@ Cuatro tablas (ver [`sql/006_proveedores.sql`](sql/006_proveedores.sql) para la 
   en `oc.js`/`stock.js`/`proveedores.js`). Los `.limit(100)`/`.limit(200)` de Flota (vistas acotadas a
   propósito, ej. "últimos 100 movimientos") no necesitan esto — el límite ahí es intencional y menor a
   1000. Si una tabla nueva puede crecer sin techo, hay que usar `fetchAll()` desde el principio.
+- **Escapar comillas en HTML generado dinámicamente:** los códigos de artículo de bulonería traen
+  comillas literales de verdad — ej. `BUL5/8"X134A257`, la marca de pulgada — no son un caso raro, están
+  por todo el catálogo. Un `data-cod="${cod}"` o un `onclick="fn('${cod}')"` sin escapar esa comilla
+  corta el atributo/string a la mitad y desalinea el HTML de ahí en adelante; en Clasificar Artículos
+  esto llegó a producir dos checkboxes con el mismo `data-cod`, y la asignación masiva mandaba ese código
+  duplicado en el mismo `upsert`, que Postgres rechaza con "ON CONFLICT DO UPDATE command cannot affect
+  row a second time" (500). `escAttr()`/`escJsArg()` en `js/utils.js` son los helpers para esto —
+  `escAttr()` para atributos comunes (`data-*`), `escJsArg()` para cuando el valor va dentro de un
+  string JS de un solo entrecomillado adentro de un atributo doble-entrecomillado (`onclick="fn('...')"`,
+  necesita escapar backslash, comilla simple *y* comilla doble). Cualquier `cod_articulo`/`articulo_cod`
+  insertado en un atributo HTML tiene que pasar por uno de los dos.
 - **Backend/datos:** Supabase — proyecto compartido con el sistema de legajos (ver 4.4), no uno dedicado.
 - **Conexión:** las credenciales de Supabase (URL + anon key) están **hardcodeadas** en
   `js/supabase-client.js`, `porteria.html` y `solicitud.html` — no hay pantalla de login ni credenciales
