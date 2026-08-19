@@ -21,7 +21,7 @@
 // solo estos, los otros retiralos").
 // ============================================================
 import { SB } from '../supabase-client.js';
-import { toast, om, cm, norm, fechaISO, txt, num } from '../utils.js';
+import { toast, om, cm, norm, fechaISO, txt, num, fetchAll } from '../utils.js';
 
 let SALDOS = [];
 let MINIMOS = [];
@@ -372,7 +372,7 @@ export async function render(secId) {
   if (tbodyId) { const tb = document.getElementById(tbodyId); if (tb) tb.innerHTML = '<tr><td colspan="6" class="loading">Cargando...</td></tr>'; }
 
   const [{ data: saldos, error: e1 }, { data: minimos, error: e2 }] = await Promise.all([
-    SB.from('compras_stock_saldos').select('*').limit(20000),
+    fetchAll(() => SB.from('compras_stock_saldos').select('*')),
     SB.from('compras_stock_minimos').select('*'),
   ]);
   const error = e1 || e2;

@@ -16,7 +16,7 @@
 // figura en el último archivo donde apareció.
 // ============================================================
 import { SB } from '../supabase-client.js';
-import { toast, fmt, norm, fechaISO, txt, num } from '../utils.js';
+import { toast, fmt, norm, fechaISO, txt, num, fetchAll } from '../utils.js';
 
 let LINEAS = [];
 
@@ -111,9 +111,9 @@ async function cargarArchivo(file) {
   // borrarla, en vez de dejarla pisada para siempre (ver CLAUDE.md 5.2).
   let desaparecidas = [];
   if (fechaMin && fechaMax) {
-    const { data: existentes, error: errExist } = await SB.from('compras_oc_lineas')
+    const { data: existentes, error: errExist } = await fetchAll(() => SB.from('compras_oc_lineas')
       .select('orden_compra, proveedor_nombre, importe')
-      .gte('fecha', fechaMin).lte('fecha', fechaMax).limit(20000);
+      .gte('fecha', fechaMin).lte('fecha', fechaMax));
     if (errExist) { toast(errExist.message, 'er'); return; }
     const mapa = new Map();
     for (const l of (existentes || [])) {
@@ -526,7 +526,7 @@ export async function render(secId) {
   const tbodyId = TBODY_POR_SECCION[secId];
   if (tbodyId) { const tb = document.getElementById(tbodyId); if (tb) tb.innerHTML = '<tr><td colspan="7" class="loading">Cargando...</td></tr>'; }
 
-  const { data, error } = await SB.from('compras_oc_lineas').select('*').limit(20000);
+  const { data, error } = await fetchAll(() => SB.from('compras_oc_lineas').select('*'));
   if (error) {
     if (tbodyId) { const tb = document.getElementById(tbodyId); if (tb) tb.innerHTML = `<tr><td colspan="7" style="color:var(--red);padding:12px">${error.message}</td></tr>`; }
     return;

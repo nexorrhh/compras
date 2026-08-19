@@ -62,3 +62,25 @@ export function fechaISO(v) {
 
 export const txt = v => { const s = String(v ?? '').trim(); return s || null; };
 export const num = v => { const n = Number(v); return isFinite(n) ? n : 0; };
+
+// ------------------------------------------------------------
+// Supabase (PostgREST) devuelve como máximo 1000 filas por request
+// sin importar qué `.limit()` se le pida del lado del cliente — un
+// `.select('*').limit(20000)` en una tabla con más de 1000 filas se
+// trunca en silencio a las primeras 1000 (sin orden garantizado).
+// Para traer una tabla completa hay que paginar con `.range()` hasta
+// que una página vuelva incompleta. `makeQuery` tiene que devolver
+// un query NUEVO cada vez (no se puede reusar un builder ya usado).
+// ------------------------------------------------------------
+export async function fetchAll(makeQuery, pageSize = 1000) {
+  let all = [];
+  let from = 0;
+  while (true) {
+    const { data, error } = await makeQuery().range(from, from + pageSize - 1);
+    if (error) return { data: null, error };
+    all = all.concat(data || []);
+    if (!data || data.length < pageSize) break;
+    from += pageSize;
+  }
+  return { data: all, error: null };
+}

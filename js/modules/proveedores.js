@@ -13,7 +13,7 @@
 // donde derivar nada.
 // ============================================================
 import { SB } from '../supabase-client.js';
-import { toast, om, cm, fmt } from '../utils.js';
+import { toast, om, cm, fmt, fetchAll } from '../utils.js';
 
 let GRUPOS = [];
 let ARTICULOS_GRUPO = [];
@@ -33,11 +33,11 @@ function fmtPesos(n) {
 async function cargarTodo() {
   const [g, ag, pv, ct, oc, sto] = await Promise.all([
     SB.from('compras_grupos').select('*').order('nombre'),
-    SB.from('compras_articulos_grupo').select('*'),
+    fetchAll(() => SB.from('compras_articulos_grupo').select('*')),
     SB.from('compras_proveedores').select('*').order('nombre'),
     SB.from('compras_proveedores_contactos').select('*'),
-    SB.from('compras_oc_lineas').select('proveedor_cod,proveedor_nombre,articulo_cod,articulo_desc,importe,fecha,orden_compra').limit(20000),
-    SB.from('compras_stock_saldos').select('cod_articulo,descripcion').limit(20000),
+    fetchAll(() => SB.from('compras_oc_lineas').select('proveedor_cod,proveedor_nombre,articulo_cod,articulo_desc,importe,fecha,orden_compra')),
+    fetchAll(() => SB.from('compras_stock_saldos').select('cod_articulo,descripcion')),
   ]);
   const error = g.error || ag.error || pv.error || ct.error || oc.error || sto.error;
   if (error) throw error;

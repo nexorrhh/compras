@@ -552,6 +552,18 @@ Cuatro tablas (ver [`sql/006_proveedores.sql`](sql/006_proveedores.sql) para la 
   archivo" cierra el modal y dispara el click del `<input type="file">` real (que sigue oculto). Se
   activa con `data-instructivo="oc"` / `data-instructivo="stock"` en el botón — agregar un módulo nuevo
   con carga de archivo implica sumar una entrada a `INSTRUCTIVOS` y el atributo en el botón, nada más.
+- **Límite de 1000 filas por consulta (Supabase/PostgREST):** el servidor devuelve como máximo 1000
+  filas por request **sin importar** qué `.limit()` se le pida del lado del cliente — un
+  `.select('*').limit(20000)` sobre una tabla con más de 1000 filas se trunca en silencio a las primeras
+  1000, sin orden garantizado. Esto pasó desapercibido mientras las tablas eran chicas, pero explotó en
+  producción cuando el usuario subió un archivo histórico de OC (5588 líneas): el Dashboard y "Abiertas"
+  de golpe mostraban datos parciales/incoherentes (0 pendientes, 100% completado) porque solo veían un
+  subconjunto arbitrario de la tabla. La solución es `fetchAll()` en `js/utils.js` — pagina con `.range()`
+  hasta que una página vuelve incompleta — usada en vez de `.select().limit(N)` en cualquier fetch que
+  necesite **la tabla completa** (`compras_oc_lineas`, `compras_stock_saldos`, `compras_articulos_grupo`
+  en `oc.js`/`stock.js`/`proveedores.js`). Los `.limit(100)`/`.limit(200)` de Flota (vistas acotadas a
+  propósito, ej. "últimos 100 movimientos") no necesitan esto — el límite ahí es intencional y menor a
+  1000. Si una tabla nueva puede crecer sin techo, hay que usar `fetchAll()` desde el principio.
 - **Backend/datos:** Supabase — proyecto compartido con el sistema de legajos (ver 4.4), no uno dedicado.
 - **Conexión:** las credenciales de Supabase (URL + anon key) están **hardcodeadas** en
   `js/supabase-client.js`, `porteria.html` y `solicitud.html` — no hay pantalla de login ni credenciales
