@@ -291,11 +291,15 @@ async function asignarGrupoArticulo(cod, desc, grupoId) {
 // ------------------------------------------------------------
 function renderCatalogo() {
   const q = (document.getElementById('pvp_f_q')?.value || '').trim().toUpperCase();
+  poblarSelectGrupos('pvp_f_grupo', { conVacio: true, vacioLabel: 'Todos los grupos' });
+  const grupoFiltroId = document.getElementById('pvp_f_grupo')?.value || '';
+  const grupoFiltroNombre = grupoFiltroId ? GRUPOS.find(g => g.id === grupoFiltroId)?.nombre : '';
   const derivado = derivarGruposPorProveedor();
   const ranking = new Map(calcularRanking().map(r => [r.proveedor_cod, r]));
 
-  let proveedores = obtenerTodosLosProveedores();
+  let proveedores = obtenerTodosLosProveedores().map(p => ({ ...p, _grupos: gruposDeProveedor(p, derivado) }));
   if (q) proveedores = proveedores.filter(p => (p.nombre || '').toUpperCase().includes(q) || (p.cod_tango || '').toUpperCase().includes(q));
+  if (grupoFiltroNombre) proveedores = proveedores.filter(p => p._grupos.includes(grupoFiltroNombre));
   proveedores.sort((a, b) => a.nombre.localeCompare(b.nombre));
 
   const resumen = document.getElementById('pvp_resumen');
@@ -309,7 +313,7 @@ function renderCatalogo() {
   if (!proveedores.length) { tb.innerHTML = '<tr><td colspan="6" style="text-align:center;padding:18px;color:var(--muted)">Sin proveedores todavía</td></tr>'; return; }
 
   tb.innerHTML = proveedores.map(p => {
-    const grupos = gruposDeProveedor(p, derivado);
+    const grupos = p._grupos;
     const r = p.cod_tango ? ranking.get(p.cod_tango) : null;
     const badgesGrupos = grupos.length ? grupos.map(g => `<span class="badge cat-permiso">${g}</span>`).join(' ') : '<span style="color:var(--muted)">–</span>';
     return `<tr class="oc-row">
@@ -345,6 +349,12 @@ function abrirProveedor(id, prefill) {
   document.getElementById('pv_codtango').value = p ? (p.cod_tango || '') : (prefill?.cod_tango || '');
   document.getElementById('pv_grupo_manual').value = p ? (p.grupo_manual_id || '') : '';
   document.getElementById('pv_notas').value = p ? (p.notas || '') : '';
+  // El bloque de contacto siempre arranca en blanco: representa "agregar
+  // un contacto nuevo", no edita ninguno existente (todavía no hay forma
+  // de editar un contacto puntual, solo agregar/quitar).
+  document.getElementById('pv_ct_nombre').value = '';
+  document.getElementById('pv_ct_telefono').value = '';
+  document.getElementById('pv_ct_email').value = '';
   om('mPROVEEDOR');
 }
 
@@ -360,9 +370,29 @@ async function guardarProveedor(e) {
     notas: document.getElementById('pv_notas').value.trim() || null,
     actualizado_en: new Date().toISOString(),
   };
-  const q = id ? SB.from('compras_proveedores').update(payload).eq('id', id) : SB.from('compras_proveedores').insert(payload);
-  const { error } = await q;
-  if (error) { toast(error.message, 'er'); return; }
+
+  let proveedorId = id;
+  if (id) {
+    const { error } = await SB.from('compras_proveedores').update(payload).eq('id', id);
+    if (error) { toast(error.message, 'er'); return; }
+  } else {
+    const { data, error } = await SB.from('compras_proveedores').insert(payload).select().single();
+    if (error) { toast(error.message, 'er'); return; }
+    proveedorId = data.id;
+  }
+
+  // Contacto opcional en el mismo paso — si cargaron algo, se agrega
+  // como un contacto más (no reemplaza a los que ya hubiera).
+  const ctNombre = document.getElementById('pv_ct_nombre').value.trim();
+  const ctTelefono = document.getElementById('pv_ct_telefono').value.trim();
+  const ctEmail = document.getElementById('pv_ct_email').value.trim();
+  if (ctNombre || ctTelefono || ctEmail) {
+    const { error: ctErr } = await SB.from('compras_proveedores_contactos').insert({
+      proveedor_id: proveedorId, nombre: ctNombre || null, telefono: ctTelefono || null, email: ctEmail || null,
+    });
+    if (ctErr) toast('Proveedor guardado, pero el contacto no se pudo guardar: ' + ctErr.message, 'er');
+  }
+
   toast(id ? '✓ Proveedor actualizado' : '✓ Proveedor agregado');
   cm('mPROVEEDOR');
   const secId = document.querySelector('.sec.on')?.id?.replace(/^s-/, '');
@@ -473,6 +503,7 @@ export function init() {
   });
 
   document.getElementById('pvp_f_q')?.addEventListener('input', renderCatalogo);
+  document.getElementById('pvp_f_grupo')?.addEventListener('change', renderCatalogo);
   document.getElementById('pvp_nuevo')?.addEventListener('click', () => abrirProveedor(null));
   initExpandCollapse('t-prov-catalogo');
 

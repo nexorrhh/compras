@@ -202,6 +202,13 @@
     </div>
     <div class="fg"><label>Grupo manual (solo si todavía no tiene OC)</label><select id="pv_grupo_manual"></select></div>
     <div class="fg"><label>Notas</label><input id="pv_notas" placeholder="Opcional"></div>
+    <hr class="divider">
+    <div class="psub" style="margin:0 0 10px">Agregar un contacto/vendedor (opcional)</div>
+    <div class="fg"><label>Nombre</label><input id="pv_ct_nombre" placeholder="Nombre del vendedor"></div>
+    <div class="fr">
+      <div class="fg"><label>Teléfono</label><input id="pv_ct_telefono" placeholder="341..."></div>
+      <div class="fg"><label>Email</label><input type="email" id="pv_ct_email" placeholder="nombre@proveedor.com"></div>
+    </div>
     <div class="brow"><button type="button" class="btn" onclick="cm('mPROVEEDOR')">Cancelar</button><button type="submit" class="btn p">Guardar</button></div>
   </form>
 </div></div>
@@ -660,6 +667,7 @@
   <div class="sh">
     <div class="filters">
       <input placeholder="Buscar proveedor / cód. Tango..." id="pvp_f_q">
+      <select id="pvp_f_grupo"></select>
     </div>
     <button class="btn p" id="pvp_nuevo">+ Nuevo proveedor</button>
   </div>

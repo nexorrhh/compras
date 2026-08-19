@@ -493,7 +493,13 @@ Mismo patrón de nav colapsable que Flota/OC/Stock ("🏭 Proveedores ▾") con 
 - **Catálogo** (`prov-catalogo`) — CRUD de proveedores: nombre, código Tango (opcional, con `<datalist>`
   de sugerencias sacadas de los proveedores vistos en OC, para no tipear mal el código), grupo manual,
   notas, y sus contactos (expandible por fila, mismo patrón que OC/Stock, con "👤+ Agregar contacto" en
-  el detalle).
+  el detalle). Filtro de grupo (`pvp_f_grupo`, mismo `<select>` poblado por `poblarSelectGrupos()` que
+  usa Agenda) además del buscador de texto — para poder ver de un vistazo, por ejemplo, todos los
+  proveedores de Pintura sin tener que ir a la Agenda. El modal de alta/edición (`mPROVEEDOR`) también
+  tiene un bloque opcional de "agregar un contacto" (nombre/teléfono/email) al final, para cargar el
+  proveedor y su primer vendedor en un solo paso en vez de tener que abrir el modal de contacto aparte
+  después — siempre agrega un contacto nuevo, no edita uno existente (todavía no hay edición de
+  contactos puntuales, solo alta y borrado).
 
 **Proveedores "detectados" (sin ficha propia todavía):** el Catálogo y la Agenda no muestran solo lo
 que hay en `compras_proveedores` — `obtenerTodosLosProveedores()` en `js/modules/proveedores.js` le suma
@@ -525,8 +531,12 @@ Cuatro tablas (ver [`sql/006_proveedores.sql`](sql/006_proveedores.sql) para la 
 
 - **Evaluación/calificación de proveedores** (mencionado en el mapa de módulos original, sección 3) — no
   hay ningún campo de rating/calificación hoy, solo `notas` libres.
-- **Envío directo de cotización** desde la Agenda (ej. un botón que abra un `mailto:` prellenado a los
-  contactos del grupo) — quedó mencionado en la charla de diseño pero no se pidió construir todavía.
+- **Circuito de cotizaciones** — la idea grande que planteó el usuario: subir un Excel con lo que hay que
+  cotizar, elegir un grupo (ej. Pintura) y "enviarlo" a los proveedores de ese grupo para que coticen,
+  para después comparar todas las cotizaciones recibidas y decidir la compra. Todavía no se armó nada de
+  esto (ni envío de mail, ni carga de cotizaciones, ni comparador) — es la razón por la que se agregó la
+  opción de cargar el email del contacto al completar los datos de un proveedor (ver 7.2), pensando en
+  que ese dato haga falta para ese flujo más adelante. Diseño pendiente de conversar en detalle.
 - El cruce `cod_tango` es por texto exacto — si Tango tiene el mismo proveedor con dos códigos distintos
   (por una migración vieja, un alta duplicada, etc.) el ranking/derivación lo va a tratar como dos
   proveedores separados. No se detectó ningún caso real de esto todavía.
