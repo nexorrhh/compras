@@ -222,6 +222,18 @@
   </form>
 </div></div>
 
+<!-- ============ MODAL — INSTRUCTIVO DE CARGA (genérico, ver js/main.js) ============ -->
+<div class="modal-ov" id="mINSTRUCTIVO">
+<div class="modal">
+  <span class="mcls" onclick="cm('mINSTRUCTIVO')">×</span>
+  <div class="mtitle" id="mINSTR_t">📤 Cómo bajar el archivo</div>
+  <ol id="mINSTR_pasos" style="margin:0 0 18px 20px;line-height:1.9;font-size:14px"></ol>
+  <div class="brow">
+    <button type="button" class="btn" onclick="cm('mINSTRUCTIVO')">Cancelar</button>
+    <button type="button" class="btn p" id="mINSTR_continuar">Ya lo tengo, elegir archivo</button>
+  </div>
+</div></div>
+
 <header>
   <div class="logo"><div class="logo-icon">🛒</div><span>Tablero de Compras</span><span class="hbadge">CIMOMET</span></div>
   <div style="display:flex;align-items:center;gap:8px">
@@ -488,10 +500,8 @@
         Ocultar completadas
       </label>
     </div>
-    <label class="btn p" style="cursor:pointer">
-      📤 Cargar archivo (.xlsx)
-      <input type="file" id="oc_file" accept=".xlsx,.xls" style="display:none">
-    </label>
+    <button type="button" class="btn p" data-instructivo="oc">📤 Cargar archivo (.xlsx)</button>
+    <input type="file" id="oc_file" accept=".xlsx,.xls" style="display:none">
   </div>
   <div class="kpi-grid">
     <div class="kpi"><div class="kpi-val text-accent" id="oc_k_comprado">–</div><div class="kpi-lbl">Total comprado</div></div>
@@ -567,10 +577,8 @@
       <input placeholder="Buscar código / descripción..." id="sto_f_q">
       <select id="sto_f_dep"><option value="">Principal + Pañol</option><option value="01">Principal</option><option value="90">Pañol</option></select>
     </div>
-    <label class="btn p" style="cursor:pointer">
-      📤 Cargar archivo (.xlsx)
-      <input type="file" id="sto_file" accept=".xlsx,.xls" style="display:none">
-    </label>
+    <button type="button" class="btn p" data-instructivo="stock">📤 Cargar archivo (.xlsx)</button>
+    <input type="file" id="sto_file" accept=".xlsx,.xls" style="display:none">
   </div>
   <div class="psub" id="sto_resumen" style="margin-top:-8px"></div>
   <div class="tw"><table>

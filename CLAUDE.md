@@ -540,6 +540,13 @@ Cuatro tablas (ver [`sql/006_proveedores.sql`](sql/006_proveedores.sql) para la 
   amarillo, etc.) quedan iguales en los dos temas. Los gráficos de Chart.js (Dashboard de OC) leen esas
   variables en cada `render()` (`getComputedStyle`) para adaptar el color de texto/grilla al tema activo
   — si se agregan gráficos a otro módulo, hay que hacer lo mismo en vez de hardcodear colores.
+- **Instructivo de carga:** en OC y Stock, el botón "Cargar archivo" no abre el selector de archivo
+  directo — primero abre un modal genérico (`mINSTRUCTIVO` en `index.html`, `INSTRUCTIVOS` en
+  `js/main.js`) con el paso a paso exacto para bajar el informe del sistema de origen (Tango Gestión
+  para OC, Capataz para Stock), para no depender de la memoria cada vez. El botón "Ya lo tengo, elegir
+  archivo" cierra el modal y dispara el click del `<input type="file">` real (que sigue oculto). Se
+  activa con `data-instructivo="oc"` / `data-instructivo="stock"` en el botón — agregar un módulo nuevo
+  con carga de archivo implica sumar una entrada a `INSTRUCTIVOS` y el atributo en el botón, nada más.
 - **Backend/datos:** Supabase — proyecto compartido con el sistema de legajos (ver 4.4), no uno dedicado.
 - **Conexión:** las credenciales de Supabase (URL + anon key) están **hardcodeadas** en
   `js/supabase-client.js`, `porteria.html` y `solicitud.html` — no hay pantalla de login ni credenciales

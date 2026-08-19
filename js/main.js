@@ -5,6 +5,7 @@
 // el resto de secciones del CLAUDE.md quedan como placeholder).
 // ============================================================
 import { initSupabaseConnection } from './supabase-client.js';
+import { om, cm } from './utils.js';
 
 import * as dashboard from './modules/flota-dashboard.js';
 import * as vehiculos from './modules/flota-vehiculos.js';
@@ -56,6 +57,50 @@ function wireNav() {
   });
 }
 
+// ------------------------------------------------------------
+// Instructivo de carga — antes de abrir el selector de archivo, un
+// modal recuerda el camino exacto en el sistema de origen para bajar
+// el informe (así no hay que acordarse el menú de memoria cada vez).
+// Se dispara desde cualquier botón con data-instructivo="<clave>".
+// ------------------------------------------------------------
+const INSTRUCTIVOS = {
+  oc: {
+    titulo: '📤 Cómo bajar el archivo de Órdenes de Compra',
+    pasos: [
+      'Abrí <strong>Tango Gestión</strong>.',
+      'Menú <strong>Compras → Informes → Órdenes de Compra → Emitidas</strong>.',
+      'Elegí el rango de fechas que quieras exportar.',
+      'Exportá el informe a Excel (.xlsx).',
+    ],
+    fileInputId: 'oc_file',
+  },
+  stock: {
+    titulo: '📤 Cómo bajar el archivo de Stock',
+    pasos: [
+      'Abrí <strong>Capataz Software</strong>.',
+      'Menú <strong>Stock → Movimientos → Gestión integral de Materiales → Por depósitos</strong>.',
+      'Tocá <strong>Exportar a XLS</strong>.',
+    ],
+    fileInputId: 'sto_file',
+  },
+};
+
+function wireInstructivos() {
+  document.querySelectorAll('[data-instructivo]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const cfg = INSTRUCTIVOS[btn.dataset.instructivo];
+      if (!cfg) return;
+      document.getElementById('mINSTR_t').textContent = cfg.titulo;
+      document.getElementById('mINSTR_pasos').innerHTML = cfg.pasos.map(p => `<li>${p}</li>`).join('');
+      document.getElementById('mINSTR_continuar').onclick = () => {
+        cm('mINSTRUCTIVO');
+        document.getElementById(cfg.fileInputId)?.click();
+      };
+      om('mINSTRUCTIVO');
+    });
+  });
+}
+
 const THEME_KEY = 'compras_tema';
 
 function aplicarTema(tema) {
@@ -89,6 +134,7 @@ function startAutoRefresh() {
 async function onConnected() {
   [...new Set(Object.values(MODULES))].forEach(m => m.init?.());
   wireNav();
+  wireInstructivos();
   initTheme();
   startClock();
   startAutoRefresh();
