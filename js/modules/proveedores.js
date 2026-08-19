@@ -241,11 +241,17 @@ function renderRanking() {
 // ------------------------------------------------------------
 function renderClasificar() {
   const q = (document.getElementById('pvc_f_q')?.value || '').trim().toUpperCase();
+  const soloSinClasificar = document.getElementById('pvc_f_sinclasificar')?.checked;
   const grupoMap = new Map(ARTICULOS_GRUPO.map(a => [a.cod_articulo, a]));
 
   let lista;
+  let totalSinClasificar = null;
   if (q.length >= 2) {
     lista = [...ARTICULOS_CONOCIDOS.entries()].filter(([cod, desc]) => cod.toUpperCase().includes(q) || (desc || '').toUpperCase().includes(q));
+    if (soloSinClasificar) lista = lista.filter(([cod]) => !grupoMap.has(cod));
+  } else if (soloSinClasificar) {
+    lista = [...ARTICULOS_CONOCIDOS.entries()].filter(([cod]) => !grupoMap.has(cod));
+    totalSinClasificar = lista.length;
   } else {
     lista = ARTICULOS_GRUPO.map(a => [a.cod_articulo, a.descripcion]);
   }
@@ -253,7 +259,17 @@ function renderClasificar() {
   lista = lista.slice(0, 300);
 
   const resumen = document.getElementById('pvc_resumen');
-  if (resumen) resumen.textContent = q.length >= 2 ? `${lista.length} resultado${lista.length === 1 ? '' : 's'}` : `${ARTICULOS_GRUPO.length} artículo${ARTICULOS_GRUPO.length === 1 ? '' : 's'} clasificados — buscá para ver más`;
+  if (resumen) {
+    if (totalSinClasificar !== null) {
+      resumen.textContent = totalSinClasificar > 300
+        ? `Mostrando 300 de ${totalSinClasificar} artículos sin clasificar todavía`
+        : `${totalSinClasificar} artículo${totalSinClasificar === 1 ? '' : 's'} sin clasificar todavía`;
+    } else if (q.length >= 2) {
+      resumen.textContent = `${lista.length} resultado${lista.length === 1 ? '' : 's'}`;
+    } else {
+      resumen.textContent = `${ARTICULOS_GRUPO.length} artículo${ARTICULOS_GRUPO.length === 1 ? '' : 's'} clasificados — buscá o tildá "Solo sin clasificar" para ver más`;
+    }
+  }
 
   const tb = document.getElementById('t-prov-clasificar');
   if (!tb) return;
@@ -496,10 +512,14 @@ export function init() {
   document.getElementById('pvr_f_q')?.addEventListener('input', renderRanking);
 
   document.getElementById('pvc_f_q')?.addEventListener('input', renderClasificar);
-  document.getElementById('t-prov-clasificar')?.addEventListener('change', e => {
+  document.getElementById('pvc_f_sinclasificar')?.addEventListener('change', renderClasificar);
+  document.getElementById('t-prov-clasificar')?.addEventListener('change', async e => {
     const sel = e.target.closest('.pvc-grupo-sel');
     if (!sel) return;
-    asignarGrupoArticulo(sel.dataset.cod, sel.dataset.desc, sel.value);
+    await asignarGrupoArticulo(sel.dataset.cod, sel.dataset.desc, sel.value);
+    // Re-renderiza para que la fila recién clasificada desaparezca de la
+    // lista de "sin clasificar" — así se puede ir descontando una por una.
+    renderClasificar();
   });
 
   document.getElementById('pvp_f_q')?.addEventListener('input', renderCatalogo);

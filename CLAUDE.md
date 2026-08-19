@@ -488,8 +488,13 @@ Mismo patrón de nav colapsable que Flota/OC/Stock ("🏭 Proveedores ▾") con 
   directo de `compras_oc_lineas` sin necesitar que el proveedor esté en el catálogo.
 - **Clasificar artículos** (`prov-clasificar`) — buscador de artículos (por código o descripción, fuente:
   distinct de `compras_oc_lineas.articulo_cod` + `compras_stock_saldos.cod_articulo`) con un `<select>`
-  de grupo por fila que hace `upsert`/`delete` inmediato al cambiar — sin buscar, muestra solo los ya
-  clasificados (para no renderizar miles de filas de una).
+  de grupo por fila que hace `upsert`/`delete` inmediato al cambiar — sin buscar ni tildar el checkbox de
+  abajo, muestra solo los ya clasificados (para no renderizar miles de filas de una; con ~3000 artículos
+  en el catálogo, siempre hay un tope de 300 filas por vista, avisado en el resumen si se corta). El
+  checkbox **"Solo sin clasificar"** (`pvc_f_sinclasificar`) invierte la vista por defecto: muestra los
+  que **no** tienen grupo todavía, para poder ir clasificando de a uno ("ir descontando", pedido del
+  usuario) — al asignarle un grupo a una fila, la lista se vuelve a pintar y esa fila desaparece sola
+  (ya no es "sin clasificar"), así el contador del resumen baja en tiempo real.
 - **Catálogo** (`prov-catalogo`) — CRUD de proveedores: nombre, código Tango (opcional, con `<datalist>`
   de sugerencias sacadas de los proveedores vistos en OC, para no tipear mal el código), grupo manual,
   notas, y sus contactos (expandible por fila, mismo patrón que OC/Stock, con "👤+ Agregar contacto" en
