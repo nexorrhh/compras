@@ -297,10 +297,15 @@ cualquier otro caso (cargada por error, duplicada, etc.) — no toca Tango, solo
 Igual que Flota, el módulo es un **grupo de nav colapsable** ("🧾 Órdenes de Compra ▾") con un
 Dashboard inicial (con gráficos) y sub-vistas de solo lectura, en vez de una sola pantalla:
 
-- **Dashboard** (`oc-dash`) — panorama general sin filtros: los 7 KPIs de siempre (total comprado,
-  recibido, pendiente, % completado, cantidad de OC pendientes/parciales/completadas) + 4 gráficos
-  (Chart.js, cargado por CDN en `index.html` junto a SheetJS) + 2 accesos rápidos ("Ver abiertas (N)",
-  "Ver completadas (N)") más un acceso a "Ver todas / cargar archivo". Los gráficos:
+- **Dashboard** (`oc-dash`) — panorama general con un único filtro de **año** (`ocd_f_anio`, "Todos los
+  años" por defecto — se agregó cuando el historial pasó a cubrir varios años y mezclar todo dejaba de
+  ser útil): los 7 KPIs de siempre (total comprado, recibido, pendiente, % completado, cantidad de OC
+  pendientes/parciales/completadas) + 4 gráficos (Chart.js, cargado por CDN en `index.html` junto a
+  SheetJS) + 2 accesos rápidos ("Ver abiertas (N)", "Ver completadas (N)", con el conteo del año elegido)
+  más un acceso a "Ver todas / cargar archivo". Al elegir un año, los 7 KPIs y los 4 gráficos se
+  recalculan sobre las líneas de ese año únicamente — `renderDashboard()` filtra `LINEAS` por
+  `fecha.slice(0,4)` antes de agrupar y se lo pasa tanto a `renderKPIs` como a `renderGraficosDashboard`.
+  Los gráficos:
   1. **Evolución mensual comprado vs. recibido** (barras por mes) — para ver tendencia y si el área se
      está atrasando en recibir lo comprado.
   2. **Distribución de OC por estado** (dona) — pendientes/parciales/completadas de un vistazo.

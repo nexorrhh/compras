@@ -229,6 +229,15 @@ function poblarFiltrosPrefijo(prefix) {
   }
 }
 
+function poblarFiltroAnio(selectId) {
+  const sel = document.getElementById(selectId);
+  if (!sel) return;
+  const cur = sel.value;
+  const anios = [...new Set(LINEAS.map(l => l.fecha?.slice(0, 4)).filter(Boolean))].sort().reverse();
+  sel.innerHTML = '<option value="">Todos los años</option>' + anios.map(a => `<option value="${a}">${a}</option>`).join('');
+  if (anios.includes(cur)) sel.value = cur;
+}
+
 function renderKPIs(prefix, grupos, lineas) {
   const totalComprado = lineas.reduce((s, l) => s + (l.importe || 0), 0);
   const totalRecibido = lineas.reduce((s, l) => s + (l.cant_recibida || 0) * (l.precio_unitario || 0), 0);
@@ -392,7 +401,7 @@ function datosTopCompradoresVolumen(grupos, n = 8) {
   return [...map.entries()].sort((a, b) => b[1] - a[1]).slice(0, n);
 }
 
-function renderGraficosDashboard(grupos) {
+function renderGraficosDashboard(grupos, lineas) {
   if (typeof Chart === 'undefined') return;
   const cssVars = getComputedStyle(document.documentElement);
   const colorMuted = cssVars.getPropertyValue('--muted').trim();
@@ -402,7 +411,7 @@ function renderGraficosDashboard(grupos) {
   Chart.defaults.borderColor = colorBorder;
   Chart.defaults.font.family = "'Segoe UI',system-ui,sans-serif";
 
-  const evol = datosEvolucionMensual(LINEAS);
+  const evol = datosEvolucionMensual(lineas);
   renderChart('evol', 'ocd_chart_evol', {
     type: 'bar',
     data: {
@@ -453,17 +462,22 @@ function renderGraficosDashboard(grupos) {
   });
 }
 
-// Dashboard: panorama general (sin filtros) + accesos rápidos a cada
-// sub-vista.
+// Dashboard: panorama general, con filtro opcional de año (útil una
+// vez que hay varios años de historial cargados) + accesos rápidos a
+// cada sub-vista.
 function renderDashboard() {
-  const grupos = agruparPorOrden(LINEAS);
-  renderKPIs('ocd', grupos, LINEAS);
+  poblarFiltroAnio('ocd_f_anio');
+  const anio = document.getElementById('ocd_f_anio')?.value || '';
+  const lineas = anio ? LINEAS.filter(l => l.fecha?.slice(0, 4) === anio) : LINEAS;
+
+  const grupos = agruparPorOrden(lineas);
+  renderKPIs('ocd', grupos, lineas);
   const porEstado = { PENDIENTE: 0, PARCIAL: 0, COMPLETADA: 0 };
   grupos.forEach(g => porEstado[estadoOC(g)]++);
   const setTxt = (id, val) => { const el = document.getElementById(id); if (el) el.textContent = val; };
   setTxt('ocd-ir-abiertas', `🕐 Ver abiertas (${porEstado.PENDIENTE + porEstado.PARCIAL})`);
   setTxt('ocd-ir-comp', `✅ Ver completadas (${porEstado.COMPLETADA})`);
-  renderGraficosDashboard(grupos);
+  renderGraficosDashboard(grupos, lineas);
 }
 
 // Abiertas: pendientes + parciales juntas (una orden con algo por
@@ -557,6 +571,7 @@ export function init() {
     initExpandCollapse(tbodyId);
   });
 
+  document.getElementById('ocd_f_anio')?.addEventListener('change', renderDashboard);
   document.getElementById('ocd-ir-abiertas')?.addEventListener('click', () => document.querySelector('.nav-item[data-sec="oc-abiertas"]')?.click());
   document.getElementById('ocd-ir-comp')?.addEventListener('click', () => document.querySelector('.nav-item[data-sec="oc-comp"]')?.click());
   document.getElementById('ocd-ir-todas')?.addEventListener('click', () => document.querySelector('.nav-item[data-sec="oc-todas"]')?.click());
