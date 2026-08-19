@@ -310,6 +310,41 @@ function actualizarBarraMasiva() {
   if (btn) btn.disabled = seleccionados === 0;
 }
 
+// Tocar y arrastrar sobre la columna de checkboxes para ir tildando
+// varias filas seguidas, en vez de click por click (pedido del
+// usuario). El estado del primer checkbox tocado define si el
+// arrastre tilda o destilda ("pintar" al estilo planilla de cálculo).
+// Se engancha una sola vez en init() — la delegación en el <tbody>
+// sigue funcionando aunque renderClasificar() reemplace las filas.
+function initArrastreSeleccion(tbodyId) {
+  const tb = document.getElementById(tbodyId);
+  if (!tb) return;
+  let modo = null; // null | 'tildar' | 'destildar'
+
+  tb.addEventListener('mousedown', e => {
+    const check = e.target.closest('.pvc-check-row');
+    if (!check) return;
+    e.preventDefault(); // evita que arrastrar seleccione texto de la fila
+    modo = check.checked ? 'destildar' : 'tildar';
+    check.checked = modo === 'tildar';
+    actualizarBarraMasiva();
+    document.body.style.userSelect = 'none';
+  });
+
+  tb.addEventListener('mouseover', e => {
+    if (!modo) return;
+    const check = e.target.closest('tr')?.querySelector('.pvc-check-row');
+    if (!check) return;
+    check.checked = modo === 'tildar';
+    actualizarBarraMasiva();
+  });
+
+  document.addEventListener('mouseup', () => {
+    modo = null;
+    document.body.style.userSelect = '';
+  });
+}
+
 // Asignar (o quitar) un grupo a todos los artículos tildados de una — para
 // no tener que tocar el <select> de a uno cuando son muchos del mismo
 // rubro (ej. filtrar por "BUL" y mandar los 200 resultados a Bulones).
@@ -577,6 +612,7 @@ export function init() {
     // lista de "sin clasificar" — así se puede ir descontando una por una.
     renderClasificar();
   });
+  initArrastreSeleccion('t-prov-clasificar');
   document.getElementById('pvc_check_all')?.addEventListener('change', e => {
     document.querySelectorAll('.pvc-check-row').forEach(c => { c.checked = e.target.checked; });
     actualizarBarraMasiva();

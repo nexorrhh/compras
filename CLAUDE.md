@@ -501,7 +501,10 @@ Mismo patrón de nav colapsable que Flota/OC/Stock ("🏭 Proveedores ▾") con 
   los 200 resultados a Bulones de una). El upsert masivo va en el body (sin límite práctico de filas);
   el "— Quitar grupo —" del mismo `<select>` borra en tandas de 100 códigos por request, porque un
   `in.(...)` con todos los códigos juntos puede generar una URL demasiado larga (mismo problema que se
-  corrigió en Órdenes de Compra, ver sección 5.2).
+  corrigió en Órdenes de Compra, ver sección 5.2). Los checkboxes también se pueden **tocar y arrastrar**
+  para ir tildando varias filas seguidas sin hacer click una por una (`initArrastreSeleccion()`,
+  mousedown+mouseover sobre la columna de checkboxes, al estilo "pintar" de una planilla de cálculo) —
+  pedido explícito del usuario, tildar de a uno no le convencía con listas de 100+ artículos.
 - **Catálogo** (`prov-catalogo`) — CRUD de proveedores: nombre, código Tango (opcional, con `<datalist>`
   de sugerencias sacadas de los proveedores vistos en OC, para no tipear mal el código), grupo manual,
   notas, y sus contactos (expandible por fila, mismo patrón que OC/Stock, con "👤+ Agregar contacto" en
