@@ -78,6 +78,25 @@ function gruposDeProveedor(p, derivado) {
 }
 
 // ------------------------------------------------------------
+// Si un proveedor ya tiene OC, tiene que aparecer dado de alta solo
+// — no tendría sentido que el Ranking lo muestre y el Catálogo no.
+// Esta función junta los proveedores con ficha propia
+// (compras_proveedores) con los que solo existen en compras_oc_lineas
+// (todavía sin ficha), marcando estos últimos como `virtual: true`.
+// ------------------------------------------------------------
+function obtenerTodosLosProveedores() {
+  const conFicha = [...PROVEEDORES];
+  const codTangoConFicha = new Set(PROVEEDORES.map(p => p.cod_tango).filter(Boolean));
+  const vistos = new Set();
+  for (const l of OC_LINEAS) {
+    if (!l.proveedor_cod || codTangoConFicha.has(l.proveedor_cod) || vistos.has(l.proveedor_cod)) continue;
+    vistos.add(l.proveedor_cod);
+    conFicha.push({ id: null, nombre: l.proveedor_nombre || l.proveedor_cod, cod_tango: l.proveedor_cod, grupo_manual_id: null, notas: null, virtual: true });
+  }
+  return conFicha;
+}
+
+// ------------------------------------------------------------
 // Ranking de compras por proveedor (sale directo de OC).
 // ------------------------------------------------------------
 function calcularRanking() {
@@ -126,7 +145,7 @@ async function crearGrupo() {
 function renderDashboard() {
   const ranking = calcularRanking();
   const setTxt = (id, v) => { const el = document.getElementById(id); if (el) el.textContent = v; };
-  setTxt('pvd_k_proveedores', PROVEEDORES.length);
+  setTxt('pvd_k_proveedores', obtenerTodosLosProveedores().length);
   setTxt('pvd_k_grupos', GRUPOS.length);
   setTxt('pvd_k_articulos', ARTICULOS_GRUPO.length);
   setTxt('pvd_k_top', ranking[0] ? `${ranking[0].nombre}` : '–');
@@ -146,62 +165,49 @@ function renderContactosDetalle(proveedorId) {
   return `${filas}<button class="bsm" style="margin-top:8px" onclick="window.proveedores.abrirContacto('${proveedorId}')">👤+ Agregar contacto</button>`;
 }
 
+function filaAccionesProveedor(p) {
+  return p.virtual
+    ? `<button class="bsm y sto-accion" onclick="window.proveedores.agregarCandidato('${p.cod_tango}', '${(p.nombre || '').replace(/'/g, "\\'")}')">➕ Completar datos</button>`
+    : `<button class="bsm sto-accion" onclick="window.proveedores.abrirProveedor('${p.id}')">✏️</button>
+       <button class="bsm d sto-accion" onclick="window.proveedores.eliminarProveedor('${p.id}')">🗑️</button>`;
+}
+
+function filaDetalleProveedor(p) {
+  if (p.virtual) return '<div style="color:var(--muted);font-size:13px;padding:4px 0">Detectado en Órdenes de Compra — todavía no tiene ficha propia. Tocá "Completar datos" para poder agregarle contactos.</div>';
+  return renderContactosDetalle(p.id);
+}
+
 function renderAgenda() {
   poblarSelectGrupos('pva_f_grupo', { conVacio: false });
   const grupoId = document.getElementById('pva_f_grupo')?.value;
   const tb = document.getElementById('t-prov-agenda');
-  const candidatosBox = document.getElementById('pva_candidatos');
   if (!tb) return;
 
   if (!GRUPOS.length) {
     tb.innerHTML = '<tr><td colspan="6" style="text-align:center;padding:18px;color:var(--muted)">Todavía no creaste ningún grupo</td></tr>';
-    if (candidatosBox) candidatosBox.innerHTML = '';
     return;
   }
 
   const derivado = derivarGruposPorProveedor();
-  const codTangoCatalogados = new Set(PROVEEDORES.map(p => p.cod_tango).filter(Boolean));
   const ranking = new Map(calcularRanking().map(r => [r.proveedor_cod, r]));
+  const proveedores = obtenerTodosLosProveedores().filter(p => (p.cod_tango && derivado.get(p.cod_tango)?.has(grupoId)) || p.grupo_manual_id === grupoId);
 
-  const catalogados = PROVEEDORES.filter(p => (p.cod_tango && derivado.get(p.cod_tango)?.has(grupoId)) || p.grupo_manual_id === grupoId);
-
-  if (!catalogados.length) {
-    tb.innerHTML = '<tr><td colspan="6" style="text-align:center;padding:18px;color:var(--muted)">Sin proveedores agendados en este grupo todavía</td></tr>';
-  } else {
-    tb.innerHTML = catalogados.map(p => {
-      const r = p.cod_tango ? ranking.get(p.cod_tango) : null;
-      return `<tr class="oc-row">
-        <td><span class="oc-chevron">▸</span> ${p.nombre}</td>
-        <td>${p.cod_tango || '–'}</td>
-        <td>${r ? fmtPesos(r.total) : '–'}</td>
-        <td>${r ? fmt(r.ultima) : '–'}</td>
-        <td>${CONTACTOS.filter(c => c.proveedor_id === p.id).length}</td>
-        <td>
-          <button class="bsm sto-accion" onclick="window.proveedores.abrirProveedor('${p.id}')">✏️</button>
-          <button class="bsm d sto-accion" onclick="window.proveedores.eliminarProveedor('${p.id}')">🗑️</button>
-        </td>
-      </tr>
-      <tr class="oc-detail" style="display:none"><td colspan="6">${renderContactosDetalle(p.id)}</td></tr>`;
-    }).join('');
+  if (!proveedores.length) {
+    tb.innerHTML = '<tr><td colspan="6" style="text-align:center;padding:18px;color:var(--muted)">Sin proveedores en este grupo todavía</td></tr>';
+    return;
   }
-
-  // Candidatos: proveedores que aparecieron en OC vendiendo algo de este
-  // grupo pero que todavía no están en la agenda (sin cod_tango catalogado).
-  const candidatos = [];
-  const vistos = new Set();
-  for (const [codProv, grupos] of derivado.entries()) {
-    if (!grupos.has(grupoId) || codTangoCatalogados.has(codProv) || vistos.has(codProv)) continue;
-    vistos.add(codProv);
-    const ejemplo = OC_LINEAS.find(l => l.proveedor_cod === codProv);
-    candidatos.push({ cod_tango: codProv, nombre: ejemplo?.proveedor_nombre || codProv });
-  }
-  if (candidatosBox) {
-    candidatosBox.innerHTML = !candidatos.length ? '' : `
-      <div class="sh"><h2>Detectados en OC, sin agendar todavía</h2></div>
-      <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:20px">
-        ${candidatos.map(c => `<button class="bsm y" onclick="window.proveedores.agregarCandidato('${c.cod_tango}', '${(c.nombre || '').replace(/'/g, "\\'")}')">+ ${c.nombre}</button>`).join('')}
-      </div>`;
-  }
+  tb.innerHTML = proveedores.map(p => {
+    const r = p.cod_tango ? ranking.get(p.cod_tango) : null;
+    return `<tr class="oc-row">
+      <td><span class="oc-chevron">▸</span> ${p.nombre}${p.virtual ? ' <span class="badge" style="opacity:.6">detectado</span>' : ''}</td>
+      <td>${p.cod_tango || '–'}</td>
+      <td>${r ? fmtPesos(r.total) : '–'}</td>
+      <td>${r ? fmt(r.ultima) : '–'}</td>
+      <td>${p.virtual ? '–' : CONTACTOS.filter(c => c.proveedor_id === p.id).length}</td>
+      <td>${filaAccionesProveedor(p)}</td>
+    </tr>
+    <tr class="oc-detail" style="display:none"><td colspan="6">${filaDetalleProveedor(p)}</td></tr>`;
+  }).join('');
 }
 
 function agregarCandidato(codTango, nombre) {
@@ -288,12 +294,15 @@ function renderCatalogo() {
   const derivado = derivarGruposPorProveedor();
   const ranking = new Map(calcularRanking().map(r => [r.proveedor_cod, r]));
 
-  let proveedores = PROVEEDORES;
+  let proveedores = obtenerTodosLosProveedores();
   if (q) proveedores = proveedores.filter(p => (p.nombre || '').toUpperCase().includes(q) || (p.cod_tango || '').toUpperCase().includes(q));
-  proveedores = [...proveedores].sort((a, b) => a.nombre.localeCompare(b.nombre));
+  proveedores.sort((a, b) => a.nombre.localeCompare(b.nombre));
 
   const resumen = document.getElementById('pvp_resumen');
-  if (resumen) resumen.textContent = `${proveedores.length} proveedor${proveedores.length === 1 ? '' : 'es'}`;
+  if (resumen) {
+    const detectados = proveedores.filter(p => p.virtual).length;
+    resumen.textContent = `${proveedores.length} proveedor${proveedores.length === 1 ? '' : 'es'}` + (detectados ? ` (${detectados} detectado${detectados === 1 ? '' : 's'} en OC, sin ficha propia todavía)` : '');
+  }
 
   const tb = document.getElementById('t-prov-catalogo');
   if (!tb) return;
@@ -304,17 +313,14 @@ function renderCatalogo() {
     const r = p.cod_tango ? ranking.get(p.cod_tango) : null;
     const badgesGrupos = grupos.length ? grupos.map(g => `<span class="badge cat-permiso">${g}</span>`).join(' ') : '<span style="color:var(--muted)">–</span>';
     return `<tr class="oc-row">
-      <td><span class="oc-chevron">▸</span> ${p.nombre}</td>
+      <td><span class="oc-chevron">▸</span> ${p.nombre}${p.virtual ? ' <span class="badge" style="opacity:.6">detectado</span>' : ''}</td>
       <td>${p.cod_tango || '–'}</td>
       <td>${badgesGrupos}</td>
       <td>${r ? fmtPesos(r.total) : '–'}</td>
-      <td>${CONTACTOS.filter(c => c.proveedor_id === p.id).length}</td>
-      <td>
-        <button class="bsm sto-accion" onclick="window.proveedores.abrirProveedor('${p.id}')">✏️</button>
-        <button class="bsm d sto-accion" onclick="window.proveedores.eliminarProveedor('${p.id}')">🗑️</button>
-      </td>
+      <td>${p.virtual ? '–' : CONTACTOS.filter(c => c.proveedor_id === p.id).length}</td>
+      <td>${filaAccionesProveedor(p)}</td>
     </tr>
-    <tr class="oc-detail" style="display:none"><td colspan="6">${renderContactosDetalle(p.id)}</td></tr>`;
+    <tr class="oc-detail" style="display:none"><td colspan="6">${filaDetalleProveedor(p)}</td></tr>`;
   }).join('');
 }
 

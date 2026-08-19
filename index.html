@@ -584,7 +584,7 @@
   <div class="ptitle">Proveedores — Dashboard</div>
   <div class="psub">Agenda de compras por rubro — el proveedor se agrupa solo según lo que le compraste por OC</div>
   <div class="kpi-grid">
-    <div class="kpi"><div class="kpi-val text-accent" id="pvd_k_proveedores">–</div><div class="kpi-lbl">Proveedores agendados</div></div>
+    <div class="kpi"><div class="kpi-val text-accent" id="pvd_k_proveedores">–</div><div class="kpi-lbl">Proveedores (con OC o agendados)</div></div>
     <div class="kpi"><div class="kpi-val" id="pvd_k_grupos">–</div><div class="kpi-lbl">Grupos creados</div></div>
     <div class="kpi"><div class="kpi-val text-yellow" id="pvd_k_articulos">–</div><div class="kpi-lbl">Artículos clasificados</div></div>
     <div class="kpi"><div class="kpi-val text-green" id="pvd_k_top" style="font-size:16px">–</div><div class="kpi-lbl">Top proveedor por compras</div></div>
@@ -612,7 +612,6 @@
     <thead><tr><th>Proveedor</th><th>Cód. Tango</th><th>Total comprado</th><th>Última compra</th><th>Contactos</th><th>Acciones</th></tr></thead>
     <tbody id="t-prov-agenda"></tbody>
   </table></div>
-  <div id="pva_candidatos"></div>
 </div>
 
 <!-- ============ PROVEEDORES — RANKING ============ -->
@@ -646,7 +645,7 @@
 <!-- ============ PROVEEDORES — CATÁLOGO ============ -->
 <div class="sec" id="s-prov-catalogo">
   <div class="ptitle">Proveedores — Catálogo</div>
-  <div class="psub">Todos los proveedores agendados, con su(s) grupo(s) y contactos</div>
+  <div class="psub">Todos los proveedores — los que ya tienen OC aparecen solos; completales los datos o agregá uno nuevo a mano</div>
   <div class="sh">
     <div class="filters">
       <input placeholder="Buscar proveedor / cód. Tango..." id="pvp_f_q">

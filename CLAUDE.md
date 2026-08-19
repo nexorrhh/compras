@@ -466,16 +466,13 @@ este diseño:
 
 Mismo patrón de nav colapsable que Flota/OC/Stock ("🏭 Proveedores ▾") con Dashboard + sub-vistas:
 
-- **Dashboard** (`prov-dash`) — 4 KPIs (proveedores agendados, grupos creados, artículos clasificados,
-  top proveedor por monto comprado) + accesos rápidos a las otras 4 sub-vistas.
+- **Dashboard** (`prov-dash`) — 4 KPIs (proveedores — con OC o agendados —, grupos creados, artículos
+  clasificados, top proveedor por monto comprado) + accesos rápidos a las otras 4 sub-vistas.
 - **Agenda** (`prov-agenda`) — elegís un grupo (select) y ves los proveedores que lo cubren, con total
   comprado/última compra (si tienen OC) y sus contactos/vendedores (nombre, teléfono, email) para saber
-  a quién escribirle a pedir cotización. Debajo de la tabla, una sección de **"detectados en OC, sin
-  agendar todavía"**: proveedores que vendieron algo de ese grupo pero que nunca se agregaron al
-  catálogo — un botón por cada uno para sumarlos con nombre y código Tango ya precompletados. El botón
-  "+ Nuevo grupo" (`crearGrupo()`, usa `prompt()` — es solo un nombre, no justifica un modal) está acá
-  porque es el punto de entrada natural: normalmente se te ocurre un rubro nuevo mientras estás buscando
-  a quién cotizarle algo.
+  a quién escribirle a pedir cotización. El botón "+ Nuevo grupo" (`crearGrupo()`, usa `prompt()` — es
+  solo un nombre, no justifica un modal) está acá porque es el punto de entrada natural: normalmente se
+  te ocurre un rubro nuevo mientras estás buscando a quién cotizarle algo.
 - **Ranking** (`prov-ranking`) — todos los proveedores que aparecen en OC (agendados o no) ordenados por
   total comprado, con cantidad de OC y última compra — el ranking de compras que pidió el usuario, sale
   directo de `compras_oc_lineas` sin necesitar que el proveedor esté en el catálogo.
@@ -483,10 +480,20 @@ Mismo patrón de nav colapsable que Flota/OC/Stock ("🏭 Proveedores ▾") con 
   distinct de `compras_oc_lineas.articulo_cod` + `compras_stock_saldos.cod_articulo`) con un `<select>`
   de grupo por fila que hace `upsert`/`delete` inmediato al cambiar — sin buscar, muestra solo los ya
   clasificados (para no renderizar miles de filas de una).
-- **Catálogo** (`prov-catalogo`) — CRUD completo de proveedores: nombre, código Tango (opcional, con
-  `<datalist>` de sugerencias sacadas de los proveedores vistos en OC, para no tipear mal el código),
-  grupo manual, notas, y sus contactos (expandible por fila, mismo patrón que OC/Stock, con
-  "👤+ Agregar contacto" en el detalle).
+- **Catálogo** (`prov-catalogo`) — CRUD de proveedores: nombre, código Tango (opcional, con `<datalist>`
+  de sugerencias sacadas de los proveedores vistos en OC, para no tipear mal el código), grupo manual,
+  notas, y sus contactos (expandible por fila, mismo patrón que OC/Stock, con "👤+ Agregar contacto" en
+  el detalle).
+
+**Proveedores "detectados" (sin ficha propia todavía):** el Catálogo y la Agenda no muestran solo lo
+que hay en `compras_proveedores` — `obtenerTodosLosProveedores()` en `js/modules/proveedores.js` le suma
+cualquier `proveedor_cod` de `compras_oc_lineas` que todavía no tenga fila propia, marcado con
+`virtual: true` y un badge "detectado". Esto es a propósito: "no tiene sentido que el Ranking me
+muestre proveedores y el Catálogo no" (feedback del usuario) — si ya le compraste algo por OC, tiene que
+aparecer solo, no requiere que lo agregues a mano primero. Un proveedor virtual muestra un botón
+"➕ Completar datos" en vez de ✏️/🗑️ (no hay nada que editar/borrar todavía, no existe la fila) que abre
+el mismo modal de alta con nombre y código Tango precompletados — al guardar, pasa a ser una fila real
+con ficha propia (contactos, notas, grupo manual) y deja de tener el badge.
 
 ### 7.3 Modelo de datos
 
