@@ -113,6 +113,8 @@ tr:hover td{background:var(--row-hover)}
 .stock-linea{display:grid;grid-template-columns:2fr 1fr;gap:10px;align-items:center;padding:7px 0;border-bottom:1px solid rgba(42,50,72,.5);font-size:12px;color:var(--muted)}
 .stock-linea:last-child{border-bottom:none}
 .stock-linea strong{color:var(--text)}
+.contacto-row{display:flex;justify-content:space-between;align-items:center;gap:10px;padding:6px 0;border-bottom:1px solid rgba(42,50,72,.5);font-size:13px}
+.contacto-row:last-child{border-bottom:none}
 
 /* ---------- MODALES ---------- */
 .modal-ov{display:none;position:fixed;inset:0;background:rgba(0,0,0,.65);z-index:200;align-items:center;justify-content:center;backdrop-filter:blur(2px)}

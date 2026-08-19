@@ -187,6 +187,41 @@
   </form>
 </div></div>
 
+<!-- ============ MODAL — PROVEEDOR (alta/edición) ============ -->
+<div class="modal-ov" id="mPROVEEDOR">
+<div class="modal">
+  <span class="mcls" onclick="cm('mPROVEEDOR')">×</span>
+  <div class="mtitle" id="mPROVEEDOR_t">+ Nuevo proveedor</div>
+  <form id="fPROVEEDOR">
+    <input type="hidden" id="pv_id">
+    <div class="fg"><label>Nombre *</label><input id="pv_nombre" required placeholder="Nombre del proveedor"></div>
+    <div class="fg">
+      <label>Código Tango (opcional)</label>
+      <input id="pv_codtango" list="pv_dl_oc" placeholder="Para cruzar con Órdenes de Compra">
+      <datalist id="pv_dl_oc"></datalist>
+    </div>
+    <div class="fg"><label>Grupo manual (solo si todavía no tiene OC)</label><select id="pv_grupo_manual"></select></div>
+    <div class="fg"><label>Notas</label><input id="pv_notas" placeholder="Opcional"></div>
+    <div class="brow"><button type="button" class="btn" onclick="cm('mPROVEEDOR')">Cancelar</button><button type="submit" class="btn p">Guardar</button></div>
+  </form>
+</div></div>
+
+<!-- ============ MODAL — CONTACTO (alta) ============ -->
+<div class="modal-ov" id="mCONTACTO">
+<div class="modal">
+  <span class="mcls" onclick="cm('mCONTACTO')">×</span>
+  <div class="mtitle">👤+ Agregar contacto</div>
+  <form id="fCONTACTO">
+    <div class="fg"><label>Nombre</label><input id="ct_nombre" placeholder="Nombre del vendedor/contacto"></div>
+    <div class="fr">
+      <div class="fg"><label>Teléfono</label><input id="ct_telefono" placeholder="341..."></div>
+      <div class="fg"><label>Email</label><input type="email" id="ct_email" placeholder="nombre@proveedor.com"></div>
+    </div>
+    <div class="fg"><label>Notas</label><input id="ct_notas" placeholder="Opcional"></div>
+    <div class="brow"><button type="button" class="btn" onclick="cm('mCONTACTO')">Cancelar</button><button type="submit" class="btn p">Guardar</button></div>
+  </form>
+</div></div>
+
 <header>
   <div class="logo"><div class="logo-icon">🛒</div><span>Tablero de Compras</span><span class="hbadge">CIMOMET</span></div>
   <div style="display:flex;align-items:center;gap:8px">
@@ -233,8 +268,18 @@
     </div>
   </div>
 
+  <div class="nav-group" id="nav-proveedores" data-default-sec="prov-dash">
+    <div class="nav-parent"><span>🏭</span> Proveedores <span class="nav-chevron">▾</span></div>
+    <div class="nav-children">
+      <div class="nav-item" data-sec="prov-dash"><span>📊</span> Dashboard</div>
+      <div class="nav-item" data-sec="prov-agenda"><span>📇</span> Agenda</div>
+      <div class="nav-item" data-sec="prov-ranking"><span>🏆</span> Ranking</div>
+      <div class="nav-item" data-sec="prov-clasificar"><span>🏷️</span> Clasificar artículos</div>
+      <div class="nav-item" data-sec="prov-catalogo"><span>📋</span> Catálogo</div>
+    </div>
+  </div>
+
   <div class="nav-sec">Otros módulos (TBD)</div>
-  <div class="nav-item disabled" title="Todavía no desarrollado"><span>🏭</span> Proveedores</div>
   <div class="nav-item disabled" title="Todavía no desarrollado"><span>💰</span> Presupuesto y gastos</div>
   <div class="nav-item disabled" title="Todavía no desarrollado"><span>📑</span> Contratos y vencimientos</div>
   <div class="nav-item disabled" title="Todavía no desarrollado"><span>✅</span> Circuito de aprobaciones</div>
@@ -531,6 +576,87 @@
   <div class="tw"><table>
     <thead><tr><th>Código</th><th>Descripción</th><th>Stock (depósito elegido)</th><th>Unidad</th><th>Seguimiento</th><th>Acciones</th></tr></thead>
     <tbody id="t-stock-todo"></tbody>
+  </table></div>
+</div>
+
+<!-- ============ PROVEEDORES — DASHBOARD ============ -->
+<div class="sec" id="s-prov-dash">
+  <div class="ptitle">Proveedores — Dashboard</div>
+  <div class="psub">Agenda de compras por rubro — el proveedor se agrupa solo según lo que le compraste por OC</div>
+  <div class="kpi-grid">
+    <div class="kpi"><div class="kpi-val text-accent" id="pvd_k_proveedores">–</div><div class="kpi-lbl">Proveedores agendados</div></div>
+    <div class="kpi"><div class="kpi-val" id="pvd_k_grupos">–</div><div class="kpi-lbl">Grupos creados</div></div>
+    <div class="kpi"><div class="kpi-val text-yellow" id="pvd_k_articulos">–</div><div class="kpi-lbl">Artículos clasificados</div></div>
+    <div class="kpi"><div class="kpi-val text-green" id="pvd_k_top" style="font-size:16px">–</div><div class="kpi-lbl">Top proveedor por compras</div></div>
+  </div>
+  <div class="sh"><h2>Accesos rápidos</h2></div>
+  <div style="display:flex;gap:10px;flex-wrap:wrap">
+    <button class="btn" id="pvd-ir-agenda">📇 Ver agenda</button>
+    <button class="btn" id="pvd-ir-ranking">🏆 Ver ranking</button>
+    <button class="btn" id="pvd-ir-clasificar">🏷️ Clasificar artículos</button>
+    <button class="btn p" id="pvd-ir-catalogo">📋 Ver catálogo</button>
+  </div>
+</div>
+
+<!-- ============ PROVEEDORES — AGENDA ============ -->
+<div class="sec" id="s-prov-agenda">
+  <div class="ptitle">Proveedores — Agenda</div>
+  <div class="psub">Elegí un rubro para ver qué proveedores lo cubren y a quién contactar para cotizar</div>
+  <div class="sh">
+    <div class="filters">
+      <select id="pva_f_grupo"></select>
+    </div>
+    <button class="btn" id="pva_nuevo_grupo">+ Nuevo grupo</button>
+  </div>
+  <div class="tw"><table>
+    <thead><tr><th>Proveedor</th><th>Cód. Tango</th><th>Total comprado</th><th>Última compra</th><th>Contactos</th><th>Acciones</th></tr></thead>
+    <tbody id="t-prov-agenda"></tbody>
+  </table></div>
+  <div id="pva_candidatos"></div>
+</div>
+
+<!-- ============ PROVEEDORES — RANKING ============ -->
+<div class="sec" id="s-prov-ranking">
+  <div class="ptitle">Proveedores — Ranking</div>
+  <div class="psub">Cuánto se le compró a cada proveedor, según las OC cargadas</div>
+  <div class="filters">
+    <input placeholder="Buscar proveedor..." id="pvr_f_q">
+  </div>
+  <div class="psub" id="pvr_resumen" style="margin-top:-8px"></div>
+  <div class="tw"><table>
+    <thead><tr><th>Proveedor</th><th>Total comprado</th><th>Cant. OC</th><th>Última compra</th></tr></thead>
+    <tbody id="t-prov-ranking"></tbody>
+  </table></div>
+</div>
+
+<!-- ============ PROVEEDORES — CLASIFICAR ARTÍCULOS ============ -->
+<div class="sec" id="s-prov-clasificar">
+  <div class="ptitle">Proveedores — Clasificar artículos</div>
+  <div class="psub">Asignale un grupo a un artículo y los proveedores que te lo vendieron quedan agrupados solos</div>
+  <div class="filters">
+    <input placeholder="Buscar artículo por código o descripción..." id="pvc_f_q">
+  </div>
+  <div class="psub" id="pvc_resumen" style="margin-top:-8px"></div>
+  <div class="tw"><table>
+    <thead><tr><th>Código</th><th>Descripción</th><th>Grupo</th></tr></thead>
+    <tbody id="t-prov-clasificar"></tbody>
+  </table></div>
+</div>
+
+<!-- ============ PROVEEDORES — CATÁLOGO ============ -->
+<div class="sec" id="s-prov-catalogo">
+  <div class="ptitle">Proveedores — Catálogo</div>
+  <div class="psub">Todos los proveedores agendados, con su(s) grupo(s) y contactos</div>
+  <div class="sh">
+    <div class="filters">
+      <input placeholder="Buscar proveedor / cód. Tango..." id="pvp_f_q">
+    </div>
+    <button class="btn p" id="pvp_nuevo">+ Nuevo proveedor</button>
+  </div>
+  <div class="psub" id="pvp_resumen" style="margin-top:-8px"></div>
+  <div class="tw"><table>
+    <thead><tr><th>Proveedor</th><th>Cód. Tango</th><th>Grupo(s)</th><th>Total comprado</th><th>Contactos</th><th>Acciones</th></tr></thead>
+    <tbody id="t-prov-catalogo"></tbody>
   </table></div>
 </div>
 

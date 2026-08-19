@@ -40,10 +40,10 @@ seguros, permisos). El resto de los módulos se va a ir sumando a medida que se 
 | Módulo | Estado | Descripción breve |
 |---|---|---|
 | **Flota** | `[DETALLADO]` (sección 4) | Vehículos, mantenimiento, VTV, seguros, permisos, combustible |
-| Proveedores | `[TBD]` | Catálogo de proveedores, historial de compras, evaluación/calificación |
 | **Órdenes de compra** | `[DETALLADO]` (sección 5) | No es alta/gestión de pedidos — es un indicador de compras (pendientes/recibidas/total) alimentado importando el export de OC de Tango Gestión |
-| Presupuesto y gastos de compras | `[TBD]` | Presupuestado vs. real por categoría/área, alertas de desvío |
 | **Stock / insumos críticos** | `[DETALLADO]` (sección 6) | Saldos por depósito importados de Capataz + lista de artículos en seguimiento con stock mínimo, para saber qué hay que reponer |
+| **Proveedores** | `[DETALLADO]` (sección 7) | Agenda de compras por rubro (grupo) + ranking de compras — el proveedor se agrupa solo según qué artículos le compraste por OC |
+| Presupuesto y gastos de compras | `[TBD]` | Presupuestado vs. real por categoría/área, alertas de desvío |
 | Contratos y vencimientos | `[TBD]` | Contratos de servicios, alquileres, licencias — no solo de vehículos |
 | Circuito de aprobaciones | `[TBD]` | Reglas de autorización de pagos/compras según monto |
 | Indicadores de compras (KPIs) | `[TBD]` | Tiempo de respuesta a proveedores, ahorro negociado, % compras por proveedor, etc. |
@@ -439,7 +439,84 @@ este tablero es **público** en GitHub — por eso, igual que los de Órdenes de
 
 ---
 
-## 7. Stack técnico
+## 7. Módulo: Proveedores `[DETALLADO]`
+
+Sin relación con Flota como tabla, pero **se alimenta de Órdenes de Compra**: nació de la idea de armar
+una agenda de compras por rubro (Pintura, Granalla, Ferretería, etc.) sin tener que clasificar cada
+proveedor a mano — el proveedor se agrupa solo según qué artículos le compraste, ya que si le hiciste
+una OC por algo, sabés que lo vende (se cotizó, si no no habría OC).
+
+### 7.1 La idea central: clasificar artículos, no proveedores
+
+En vez de asignarle un rubro a cada proveedor uno por uno, se clasifica el **artículo** (ej. "PINTURA
+EPOXI" → grupo Pintura) en `compras_articulos_grupo`. La pertenencia proveedor→grupo se **deriva** en el
+cliente (`js/modules/proveedores.js`, `derivarGruposPorProveedor()`), cruzando `compras_oc_lineas` (por
+`proveedor_cod` + `articulo_cod`) contra esa clasificación — no se guarda en ninguna tabla. Ventajas de
+este diseño:
+- Clasificar un puñado de artículos frecuentes alcanza para que la mayoría de los proveedores caigan
+  solos en su grupo — no hace falta clasificar los ~3000 artículos del catálogo.
+- Funciona para atrás (OC ya cargadas) y para adelante (cualquier OC nueva con ese artículo agrupa
+  automáticamente al proveedor que la emitió, sin volver a tocar nada).
+- Un proveedor puede caer en **varios grupos** si vendió artículos de rubros distintos — no es una
+  categoría única forzada.
+- Para proveedores sin ninguna OC todavía (solo cotizaron, nunca les compraste) no hay artículos de
+  donde derivar nada — por eso `compras_proveedores.grupo_manual_id` es el respaldo manual.
+
+### 7.2 Qué muestra el tablero
+
+Mismo patrón de nav colapsable que Flota/OC/Stock ("🏭 Proveedores ▾") con Dashboard + sub-vistas:
+
+- **Dashboard** (`prov-dash`) — 4 KPIs (proveedores agendados, grupos creados, artículos clasificados,
+  top proveedor por monto comprado) + accesos rápidos a las otras 4 sub-vistas.
+- **Agenda** (`prov-agenda`) — elegís un grupo (select) y ves los proveedores que lo cubren, con total
+  comprado/última compra (si tienen OC) y sus contactos/vendedores (nombre, teléfono, email) para saber
+  a quién escribirle a pedir cotización. Debajo de la tabla, una sección de **"detectados en OC, sin
+  agendar todavía"**: proveedores que vendieron algo de ese grupo pero que nunca se agregaron al
+  catálogo — un botón por cada uno para sumarlos con nombre y código Tango ya precompletados. El botón
+  "+ Nuevo grupo" (`crearGrupo()`, usa `prompt()` — es solo un nombre, no justifica un modal) está acá
+  porque es el punto de entrada natural: normalmente se te ocurre un rubro nuevo mientras estás buscando
+  a quién cotizarle algo.
+- **Ranking** (`prov-ranking`) — todos los proveedores que aparecen en OC (agendados o no) ordenados por
+  total comprado, con cantidad de OC y última compra — el ranking de compras que pidió el usuario, sale
+  directo de `compras_oc_lineas` sin necesitar que el proveedor esté en el catálogo.
+- **Clasificar artículos** (`prov-clasificar`) — buscador de artículos (por código o descripción, fuente:
+  distinct de `compras_oc_lineas.articulo_cod` + `compras_stock_saldos.cod_articulo`) con un `<select>`
+  de grupo por fila que hace `upsert`/`delete` inmediato al cambiar — sin buscar, muestra solo los ya
+  clasificados (para no renderizar miles de filas de una).
+- **Catálogo** (`prov-catalogo`) — CRUD completo de proveedores: nombre, código Tango (opcional, con
+  `<datalist>` de sugerencias sacadas de los proveedores vistos en OC, para no tipear mal el código),
+  grupo manual, notas, y sus contactos (expandible por fila, mismo patrón que OC/Stock, con
+  "👤+ Agregar contacto" en el detalle).
+
+### 7.3 Modelo de datos
+
+Cuatro tablas (ver [`sql/006_proveedores.sql`](sql/006_proveedores.sql) para la migración y
+`sql/schema.sql` para el estado final), sin RLS (mismo criterio que el resto de `compras_*`):
+
+- `compras_grupos` — solo `id` + `nombre` (único). Los crea el usuario a medida que los necesita.
+- `compras_articulos_grupo` — `cod_articulo` como PK (un grupo por artículo, no varios) + `grupo_id`.
+- `compras_proveedores` — el catálogo/agenda. `cod_tango` es opcional y sin `unique` (no hay garantía de
+  que Tango nunca reutilice/varíe un código, mejor no reventar un insert por eso); es lo que permite
+  cruzar con `compras_oc_lineas.proveedor_cod` para derivar grupos y ranking. `grupo_manual_id` referencia
+  `compras_grupos` con `on delete set null` (si se borra el grupo, el proveedor no se borra, solo pierde
+  esa clasificación manual).
+- `compras_proveedores_contactos` — vendedores/contactos por proveedor, `on delete cascade` desde
+  `compras_proveedores` (si se borra el proveedor, se borran sus contactos, tiene sentido acá porque no
+  son una entidad útil sin el proveedor).
+
+### 7.4 Ideas pendientes, no implementadas todavía
+
+- **Evaluación/calificación de proveedores** (mencionado en el mapa de módulos original, sección 3) — no
+  hay ningún campo de rating/calificación hoy, solo `notas` libres.
+- **Envío directo de cotización** desde la Agenda (ej. un botón que abra un `mailto:` prellenado a los
+  contactos del grupo) — quedó mencionado en la charla de diseño pero no se pidió construir todavía.
+- El cruce `cod_tango` es por texto exacto — si Tango tiene el mismo proveedor con dos códigos distintos
+  (por una migración vieja, un alta duplicada, etc.) el ranking/derivación lo va a tratar como dos
+  proveedores separados. No se detectó ningún caso real de esto todavía.
+
+---
+
+## 8. Stack técnico
 
 - **Frontend:** HTML/JS vanilla, mismo criterio que Nexo RRHH y CIMOMET v3.
 - **Diferencia respecto a Nexo RRHH:** en vez de un único archivo HTML, para este proyecto conviene
@@ -491,14 +568,16 @@ tablero-compras/
 │       ├── flota-documentos.js  (Seguros + Permisos unificados, ver 4.4)
 │       ├── flota-personal.js  (lista de personal habilitado a manejar/solicitar, ver 4.4)
 │       ├── oc.js  (Órdenes de Compra — módulo aparte, sin relación con Flota, ver sección 5)
-│       └── stock.js  (Stock — módulo aparte, sin relación con Flota ni OC, ver sección 6)
+│       ├── stock.js  (Stock — módulo aparte, sin relación con Flota ni OC, ver sección 6)
+│       └── proveedores.js  (Proveedores — se alimenta de OC, ver sección 7)
 ├── Excels/                (archivos de ejemplo de OC y Stock — en .gitignore, no se suben al repo)
 └── sql/
     ├── schema.sql
     ├── 002_seguros_archivo.sql
     ├── 003_documentos_unificados.sql
     ├── 004_ordenes_compra.sql
-    └── 005_stock.sql
+    ├── 005_stock.sql
+    └── 006_proveedores.sql
 ```
 
 > `porteria.html` y `solicitud.html` son entry points separados (audiencias distintas: portero de
@@ -508,7 +587,7 @@ tablero-compras/
 > base) quedó sin tocar en la raíz como referencia — su funcionalidad ya está migrada a `index.html` +
 > los módulos `flota-*.js`; se puede borrar cuando lo confirmes.
 
-## 8. Notas específicas de entorno
+## 9. Notas específicas de entorno
 
 - Dijiste que vas a trabajar este proyecto en **Antigravity** (cuenta de la empresa). Ojo con un detalle
   que ya tenemos registrado de tu workflow: **Antigravity no carga `CLAUDE.md` automáticamente** — usa
@@ -518,7 +597,7 @@ tablero-compras/
   `CLAUDE.md`. Lo más simple: mantener el contenido en `CLAUDE.md` y tener una copia (o symlink) como
   `AGENTS.md`.
 
-## 9. Decisiones abiertas (TBD)
+## 10. Decisiones abiertas (TBD)
 
 Ya decidido al construir el módulo Flota (2026-08-04):
 - [x] Esquema de datos: se migró al diseño de la sección 4.4 (`compras_vehiculos` separado de
@@ -547,7 +626,7 @@ Todavía sin decidir:
 - [ ] Categorización de proveedores (ver 5.3): clasificarlos por tipo (materia prima, pintura, insumos,
   etc.) para poder adaptar/filtrar el Dashboard de OC según categoría — todavía no tiene tabla ni UI.
 
-## 10. Próximos pasos sugeridos
+## 11. Próximos pasos sugeridos
 
 1. Correr `sql/schema.sql` contra el proyecto Supabase real (ya hecho — tablas `compras_*` creadas).
 2. Correr [`sql/002_seguros_archivo.sql`](sql/002_seguros_archivo.sql) (ya hecho) y
@@ -556,9 +635,12 @@ Todavía sin decidir:
 3. Correr [`sql/004_ordenes_compra.sql`](sql/004_ordenes_compra.sql) (ya hecho — crea `compras_oc_lineas`).
 4. Correr [`sql/005_stock.sql`](sql/005_stock.sql) (ya hecho — crea `compras_stock_saldos` y
    `compras_stock_minimos`; ya hay artículos reales cargados en seguimiento).
-5. Probar el circuito completo: pedir vehículo (solicitud.html) → aprobar y asignar (index.html) →
+5. Correr [`sql/006_proveedores.sql`](sql/006_proveedores.sql) para crear `compras_grupos`,
+   `compras_articulos_grupo`, `compras_proveedores` y `compras_proveedores_contactos` (**todavía
+   falta** — sin esto el módulo Proveedores muestra error de "tabla no encontrada" en sus 5 sub-vistas).
+6. Probar el circuito completo: pedir vehículo (solicitud.html) → aprobar y asignar (index.html) →
    registrar salida/retorno (porteria.html) → ver el movimiento reflejado en el dashboard.
-6. Evaluar RLS (Row Level Security) en las tablas `compras_*` — hoy cualquiera con el link de
+7. Evaluar RLS (Row Level Security) en las tablas `compras_*` — hoy cualquiera con el link de
    `solicitud.html`/`porteria.html` puede leer/escribir todas las tablas, sin ningún login de por medio.
-7. Ir completando los módulos `[TBD]` de la sección 3 a medida que los necesites, usando el módulo
+8. Ir completando los módulos `[TBD]` de la sección 3 a medida que los necesites, usando el módulo
    Flota (carpeta `js/modules/`) como plantilla.

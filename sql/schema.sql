@@ -191,6 +191,46 @@ create table compras_stock_minimos (
 );
 
 -- ------------------------------------------------------------
+-- PROVEEDORES — agenda de compras por rubro (grupo). La pertenencia
+-- proveedor→grupo se deriva en el cliente cruzando compras_oc_lineas
+-- con compras_articulos_grupo (ver sql/006_proveedores.sql) — no se
+-- guarda en una tabla. grupo_manual_id es el respaldo para
+-- proveedores sin OC todavía.
+-- ------------------------------------------------------------
+create table compras_grupos (
+  id uuid primary key default gen_random_uuid(),
+  nombre text not null unique,
+  created_at timestamptz not null default now()
+);
+
+create table compras_articulos_grupo (
+  cod_articulo text primary key,
+  descripcion text,
+  grupo_id uuid not null references compras_grupos(id) on delete cascade,
+  actualizado_en timestamptz not null default now()
+);
+
+create table compras_proveedores (
+  id uuid primary key default gen_random_uuid(),
+  nombre text not null,
+  cod_tango text,
+  grupo_manual_id uuid references compras_grupos(id) on delete set null,
+  notas text,
+  created_at timestamptz not null default now(),
+  actualizado_en timestamptz not null default now()
+);
+
+create table compras_proveedores_contactos (
+  id uuid primary key default gen_random_uuid(),
+  proveedor_id uuid not null references compras_proveedores(id) on delete cascade,
+  nombre text,
+  telefono text,
+  email text,
+  notas text,
+  created_at timestamptz not null default now()
+);
+
+-- ------------------------------------------------------------
 -- ÍNDICES
 -- ------------------------------------------------------------
 create index idx_compras_mantenimientos_vehiculo on compras_mantenimientos(vehiculo_id);
@@ -206,6 +246,9 @@ create index idx_compras_oc_fecha on compras_oc_lineas(fecha);
 create index idx_compras_oc_proveedor on compras_oc_lineas(proveedor_cod);
 create index idx_compras_stock_articulo on compras_stock_saldos(cod_articulo);
 create index idx_compras_stock_deposito on compras_stock_saldos(cod_deposito);
+create index idx_compras_articulos_grupo_grupo on compras_articulos_grupo(grupo_id);
+create index idx_compras_proveedores_cod_tango on compras_proveedores(cod_tango);
+create index idx_compras_proveedores_contactos_proveedor on compras_proveedores_contactos(proveedor_id);
 
 -- ------------------------------------------------------------
 -- VISTAS — "último vencimiento vigente" por vehículo
