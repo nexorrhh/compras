@@ -657,9 +657,16 @@
       Solo sin clasificar
     </label>
   </div>
-  <div class="psub" id="pvc_resumen" style="margin-top:-8px"></div>
+  <div class="sh" style="margin-top:-8px">
+    <div class="psub" id="pvc_resumen" style="margin:0"></div>
+    <div style="display:flex;gap:8px;align-items:center">
+      <span style="font-size:13px;color:var(--muted)" id="pvc_bulk_count">0 seleccionados</span>
+      <select id="pvc_bulk_grupo"><option value="">Elegí un grupo...</option></select>
+      <button class="btn p" id="pvc_bulk_aplicar" disabled>Aplicar a los seleccionados</button>
+    </div>
+  </div>
   <div class="tw"><table>
-    <thead><tr><th>Código</th><th>Descripción</th><th>Grupo</th></tr></thead>
+    <thead><tr><th><input type="checkbox" id="pvc_check_all" style="width:auto"></th><th>Código</th><th>Descripción</th><th>Grupo</th></tr></thead>
     <tbody id="t-prov-clasificar"></tbody>
   </table></div>
 </div>

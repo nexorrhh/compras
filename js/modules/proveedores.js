@@ -273,17 +273,72 @@ function renderClasificar() {
 
   const tb = document.getElementById('t-prov-clasificar');
   if (!tb) return;
-  if (!lista.length) { tb.innerHTML = '<tr><td colspan="3" style="text-align:center;padding:18px;color:var(--muted)">Sin resultados</td></tr>'; return; }
+  if (!lista.length) { tb.innerHTML = '<tr><td colspan="4" style="text-align:center;padding:18px;color:var(--muted)">Sin resultados</td></tr>'; return; }
 
   tb.innerHTML = lista.map(([cod, desc]) => {
     const actual = grupoMap.get(cod);
     const options = ['<option value="">Sin grupo</option>', ...GRUPOS.map(g => `<option value="${g.id}" ${actual?.grupo_id === g.id ? 'selected' : ''}>${g.nombre}</option>`)].join('');
     return `<tr>
+      <td><input type="checkbox" class="pvc-check-row" data-cod="${cod}" data-desc="${(desc || '').replace(/"/g, '&quot;')}" style="width:auto"></td>
       <td>${cod}</td>
       <td>${desc || ''}</td>
       <td><select class="pvc-grupo-sel" data-cod="${cod}" data-desc="${(desc || '').replace(/"/g, '&quot;')}">${options}</select></td>
     </tr>`;
   }).join('');
+
+  poblarSelectBulkGrupo();
+  document.getElementById('pvc_check_all').checked = false;
+  actualizarBarraMasiva();
+}
+
+function poblarSelectBulkGrupo() {
+  const sel = document.getElementById('pvc_bulk_grupo');
+  if (!sel) return;
+  const cur = sel.value;
+  sel.innerHTML = '<option value="">Elegí un grupo...</option>' +
+    GRUPOS.map(g => `<option value="${g.id}">${g.nombre}</option>`).join('') +
+    '<option value="__NONE__">— Quitar grupo —</option>';
+  const valores = ['', '__NONE__', ...GRUPOS.map(g => g.id)];
+  if (valores.includes(cur)) sel.value = cur;
+}
+
+function actualizarBarraMasiva() {
+  const seleccionados = document.querySelectorAll('.pvc-check-row:checked').length;
+  const cuenta = document.getElementById('pvc_bulk_count');
+  if (cuenta) cuenta.textContent = `${seleccionados} seleccionado${seleccionados === 1 ? '' : 's'}`;
+  const btn = document.getElementById('pvc_bulk_aplicar');
+  if (btn) btn.disabled = seleccionados === 0;
+}
+
+// Asignar (o quitar) un grupo a todos los artículos tildados de una — para
+// no tener que tocar el <select> de a uno cuando son muchos del mismo
+// rubro (ej. filtrar por "BUL" y mandar los 200 resultados a Bulones).
+async function aplicarGrupoMasivo() {
+  const grupoSel = document.getElementById('pvc_bulk_grupo')?.value || '';
+  const checks = Array.from(document.querySelectorAll('.pvc-check-row:checked'));
+  if (!checks.length) { toast('Seleccioná al menos un artículo', 'er'); return; }
+  if (!grupoSel) { toast('Elegí un grupo', 'er'); return; }
+
+  const cods = checks.map(c => c.dataset.cod);
+  if (grupoSel === '__NONE__') {
+    // Se borra en tandas de 100: con muchos códigos, un filtro in.(...)
+    // con todos juntos puede generar una URL demasiado larga (mismo
+    // problema que se corrigió en Órdenes de Compra).
+    for (let i = 0; i < cods.length; i += 100) {
+      const { error } = await SB.from('compras_articulos_grupo').delete().in('cod_articulo', cods.slice(i, i + 100));
+      if (error) { toast(error.message, 'er'); return; }
+    }
+    ARTICULOS_GRUPO = ARTICULOS_GRUPO.filter(a => !cods.includes(a.cod_articulo));
+    toast(`Grupo quitado de ${cods.length} artículo${cods.length === 1 ? '' : 's'}`);
+  } else {
+    const filas = checks.map(c => ({ cod_articulo: c.dataset.cod, descripcion: c.dataset.desc || null, grupo_id: grupoSel, actualizado_en: new Date().toISOString() }));
+    const { data, error } = await SB.from('compras_articulos_grupo').upsert(filas, { onConflict: 'cod_articulo' }).select();
+    if (error) { toast(error.message, 'er'); return; }
+    const nuevos = new Map((data || []).map(d => [d.cod_articulo, d]));
+    ARTICULOS_GRUPO = [...ARTICULOS_GRUPO.filter(a => !nuevos.has(a.cod_articulo)), ...nuevos.values()];
+    toast(`✓ ${cods.length} artículo${cods.length === 1 ? '' : 's'} asignados`);
+  }
+  renderClasificar();
 }
 
 async function asignarGrupoArticulo(cod, desc, grupoId) {
@@ -514,6 +569,7 @@ export function init() {
   document.getElementById('pvc_f_q')?.addEventListener('input', renderClasificar);
   document.getElementById('pvc_f_sinclasificar')?.addEventListener('change', renderClasificar);
   document.getElementById('t-prov-clasificar')?.addEventListener('change', async e => {
+    if (e.target.classList.contains('pvc-check-row')) { actualizarBarraMasiva(); return; }
     const sel = e.target.closest('.pvc-grupo-sel');
     if (!sel) return;
     await asignarGrupoArticulo(sel.dataset.cod, sel.dataset.desc, sel.value);
@@ -521,6 +577,11 @@ export function init() {
     // lista de "sin clasificar" — así se puede ir descontando una por una.
     renderClasificar();
   });
+  document.getElementById('pvc_check_all')?.addEventListener('change', e => {
+    document.querySelectorAll('.pvc-check-row').forEach(c => { c.checked = e.target.checked; });
+    actualizarBarraMasiva();
+  });
+  document.getElementById('pvc_bulk_aplicar')?.addEventListener('click', aplicarGrupoMasivo);
 
   document.getElementById('pvp_f_q')?.addEventListener('input', renderCatalogo);
   document.getElementById('pvp_f_grupo')?.addEventListener('change', renderCatalogo);

@@ -494,7 +494,14 @@ Mismo patrón de nav colapsable que Flota/OC/Stock ("🏭 Proveedores ▾") con 
   checkbox **"Solo sin clasificar"** (`pvc_f_sinclasificar`) invierte la vista por defecto: muestra los
   que **no** tienen grupo todavía, para poder ir clasificando de a uno ("ir descontando", pedido del
   usuario) — al asignarle un grupo a una fila, la lista se vuelve a pintar y esa fila desaparece sola
-  (ya no es "sin clasificar"), así el contador del resumen baja en tiempo real.
+  (ya no es "sin clasificar"), así el contador del resumen baja en tiempo real. **Asignación masiva:**
+  cada fila tiene un checkbox (+ "seleccionar todos los visibles" en el header) y una barra arriba de la
+  tabla con un `<select>` de grupo + botón "Aplicar a los seleccionados" (`aplicarGrupoMasivo()`) — para
+  no tener que tocar el `<select>` de a uno cuando son muchos del mismo rubro (ej. buscar "BUL" y mandar
+  los 200 resultados a Bulones de una). El upsert masivo va en el body (sin límite práctico de filas);
+  el "— Quitar grupo —" del mismo `<select>` borra en tandas de 100 códigos por request, porque un
+  `in.(...)` con todos los códigos juntos puede generar una URL demasiado larga (mismo problema que se
+  corrigió en Órdenes de Compra, ver sección 5.2).
 - **Catálogo** (`prov-catalogo`) — CRUD de proveedores: nombre, código Tango (opcional, con `<datalist>`
   de sugerencias sacadas de los proveedores vistos en OC, para no tipear mal el código), grupo manual,
   notas, y sus contactos (expandible por fila, mismo patrón que OC/Stock, con "👤+ Agregar contacto" en
