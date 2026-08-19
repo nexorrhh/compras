@@ -260,9 +260,14 @@ Al subir un archivo:
 3. El `confirm()` antes de cargar muestra el resumen de siempre ("se leyeron X líneas de Y órdenes...")
    y, si hay desaparecidas, una lista explícita de cuáles son (orden, proveedor, importe) avisando que
    se van a **eliminar** — para que el usuario las revise antes de aceptar, no es un borrado silencioso.
-4. Al confirmar, se **borran** las líneas de las órdenes del archivo *más* las desaparecidas
-   (`delete().in('orden_compra', [...])`) y se insertan todas las líneas del archivo nuevo. El resto del
-   historial (fuera del rango de fechas de este archivo) no se toca.
+4. Al confirmar, se **borran** las líneas existentes en ese rango de fechas (`delete().gte('fecha',
+   fechaMin).lte('fecha', fechaMax)`) y se insertan todas las líneas del archivo nuevo. El resto del
+   historial (fuera del rango de fechas de este archivo) no se toca. El borrado es por **rango de
+   fechas**, no por lista de números de OC (`delete().in('orden_compra', [...])`) — con un archivo
+   histórico grande (con un usuario real: +5000 filas) la lista de órdenes distintas puede ser enorme y
+   ese filtro genera una URL demasiado larga, que Supabase rechaza con 400 Bad Request. Borrar por fecha
+   da exactamente el mismo resultado (el set a borrar es "todo lo que había en ese rango") pero con una
+   URL que no crece con la cantidad de datos.
 
 Esto permite las dos formas de trabajar que describió el usuario sin ningún caso especial:
 - Un archivo por mes (`Julio OC.xlsx`, `Agosto OC.xlsx`) — subir el de agosto nunca toca julio, porque

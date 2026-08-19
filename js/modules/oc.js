@@ -113,7 +113,7 @@ async function cargarArchivo(file) {
   if (fechaMin && fechaMax) {
     const { data: existentes, error: errExist } = await SB.from('compras_oc_lineas')
       .select('orden_compra, proveedor_nombre, importe')
-      .gte('fecha', fechaMin).lte('fecha', fechaMax);
+      .gte('fecha', fechaMin).lte('fecha', fechaMax).limit(20000);
     if (errExist) { toast(errExist.message, 'er'); return; }
     const mapa = new Map();
     for (const l of (existentes || [])) {
@@ -135,8 +135,16 @@ async function cargarArchivo(file) {
   const ok = confirm(mensaje);
   if (!ok) return;
 
-  const ordenesABorrar = [...ordenesArchivo, ...desaparecidas.map(([orden]) => orden)];
-  const { error: delErr } = await SB.from('compras_oc_lineas').delete().in('orden_compra', ordenesABorrar);
+  // Se borra por rango de fechas (no por lista de números de OC): con un
+  // archivo histórico grande, la lista de órdenes puede tener miles de
+  // valores distintos y un filtro `in.(...)` con todos ellos genera una
+  // URL demasiado larga (Supabase responde 400 Bad Request). Borrar por
+  // fecha es equivalente acá — el set de OC a borrar (las del archivo +
+  // las desaparecidas) es exactamente "todo lo que ya había en ese rango
+  // de fechas" — y la URL queda chica sin importar cuántas órdenes sean.
+  let delQuery = SB.from('compras_oc_lineas').delete();
+  delQuery = (fechaMin && fechaMax) ? delQuery.gte('fecha', fechaMin).lte('fecha', fechaMax) : delQuery.in('orden_compra', [...ordenesArchivo]);
+  const { error: delErr } = await delQuery;
   if (delErr) { toast(delErr.message, 'er'); return; }
 
   const chunkSize = 500;
