@@ -324,7 +324,6 @@ function initArrastreSeleccion(tbodyId) {
   tb.addEventListener('mousedown', e => {
     const check = e.target.closest('.pvc-check-row');
     if (!check) return;
-    e.preventDefault(); // evita que arrastrar seleccione texto de la fila
     modo = check.checked ? 'destildar' : 'tildar';
     check.checked = modo === 'tildar';
     actualizarBarraMasiva();
@@ -337,6 +336,16 @@ function initArrastreSeleccion(tbodyId) {
     if (!check) return;
     check.checked = modo === 'tildar';
     actualizarBarraMasiva();
+  });
+
+  // El toggle ya se hizo a mano arriba (mousedown/mouseover) — sin esto,
+  // un click simple (mousedown+mouseup sobre el mismo checkbox SÍ dispara
+  // "click") deja que el navegador alterne el estado de nuevo por su
+  // cuenta y pisa lo que acabamos de hacer, especialmente notorio al
+  // destildar: quedaba tildado para siempre. preventDefault() en
+  // mousedown no alcanza para frenar esto — hay que frenarlo en el click.
+  tb.addEventListener('click', e => {
+    if (e.target.closest('.pvc-check-row')) e.preventDefault();
   });
 
   document.addEventListener('mouseup', () => {
