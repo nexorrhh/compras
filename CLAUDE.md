@@ -223,6 +223,17 @@ duplicada en tres lugares porque cada uno es una página distinta: `js/modules/f
 (usado por `index.html`), y el bloque `cargarPersonal()` dentro de `porteria.html` y `solicitud.html`.
 Si el criterio de quién puede manejar cambia, hay que tocar los tres lugares.
 
+**Alta manual temporal (`PERSONAL_MANUAL`):** cuando Compras necesita asignarle un vehículo a alguien
+que todavía no está cargado en Tango/legajos (`v_empleados_activos`), se agrega a mano a un array
+`PERSONAL_MANUAL` (mismo objeto `{legajo, empresa, apellido_y_nombre, desc_puesto}`, `legajo: null`) que
+se mezcla con la lista real en los tres lugares de arriba. `solicitante`/`conductor` se guardan como
+**texto libre** en `compras_solicitudes`/`compras_movimientos` (no hay FK a la lista de personal), así
+que no hay riesgo de duplicado en los datos ya cargados cuando la persona real aparezca en Tango — el
+único lugar que hay que limpiar a mano es este array, sacando la entrada para que no quede
+repetida en el desplegable. Caso real: `Leones, Juan Manuel` (Cimomet, puesto "Comercial"), agregado
+2026-08-19 mientras se tramitaba su alta en Tango — sacar de los tres archivos una vez que aparezca en
+`v_empleados_activos`.
+
 ---
 
 ## 5. Módulo: Órdenes de Compra `[DETALLADO]`

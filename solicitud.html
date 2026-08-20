@@ -237,14 +237,21 @@ const desc = v => v ? (v.marca ? `${v.marca} ${v.modelo||''}`.trim() : (v.modelo
 // "Camion". Viene de las tablas de legajos (mismo proyecto Supabase, ver
 // rrhh_puestos_config / v_empleados_activos) — no hay FK entre ellas, se cruzan por
 // desc_puesto en el cliente.
+// Alta manual temporal — gente que Compras necesita ya pero todavía no
+// está cargada en Tango/legajos (v_empleados_activos). Sacar cada
+// entrada en cuanto la persona real aparezca ahí, para no duplicar.
+//   - Leones, Juan Manuel (Cimomet) — de alta en Tango pendiente, pedido 2026-08-19.
+const PERSONAL_MANUAL = [
+  { legajo: null, empresa: 'Cimomet', apellido_y_nombre: 'Leones, Juan Manuel', desc_puesto: 'Comercial' },
+];
+
 async function cargarPersonal() {
   const [{data:puestos}, {data:empleados}] = await Promise.all([
     SB.from('rrhh_puestos_config').select('desc_puesto,tipo'),
     SB.from('v_empleados_activos').select('legajo,empresa,apellido_y_nombre,desc_puesto'),
   ]);
   const mensuales = new Set((puestos||[]).filter(p=>p.tipo==='mensual').map(p=>p.desc_puesto));
-  PERSONAL = (empleados||[])
-    .filter(e => mensuales.has(e.desc_puesto) || e.desc_puesto === 'Camion')
+  PERSONAL = [...(empleados||[]).filter(e => mensuales.has(e.desc_puesto) || e.desc_puesto === 'Camion'), ...PERSONAL_MANUAL]
     .sort((a,b)=>a.apellido_y_nombre.localeCompare(b.apellido_y_nombre,'es'));
   document.getElementById('s_sol').innerHTML = '<option value="">Seleccionar...</option>' +
     PERSONAL.map(p=>`<option value="${p.apellido_y_nombre}">${p.apellido_y_nombre} — ${p.empresa}</option>`).join('');
