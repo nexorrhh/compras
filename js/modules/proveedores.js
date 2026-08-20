@@ -49,8 +49,19 @@ async function cargarTodo() {
   OC_LINEAS = oc.data || [];
 
   ARTICULOS_CONOCIDOS = new Map();
-  for (const l of OC_LINEAS) if (l.articulo_cod) ARTICULOS_CONOCIDOS.set(l.articulo_cod, l.articulo_desc || ARTICULOS_CONOCIDOS.get(l.articulo_cod) || '');
+  for (const l of OC_LINEAS) {
+    if (!l.articulo_cod || esCodigoOT(l.articulo_desc)) continue;
+    ARTICULOS_CONOCIDOS.set(l.articulo_cod, l.articulo_desc || ARTICULOS_CONOCIDOS.get(l.articulo_cod) || '');
+  }
   for (const s of (sto.data || [])) if (s.cod_articulo && !ARTICULOS_CONOCIDOS.has(s.cod_articulo)) ARTICULOS_CONOCIDOS.set(s.cod_articulo, s.descripcion || '');
+}
+
+// Códigos "O/T ..." / "OTT ..." — trabajo tercerizado atado a una orden de
+// trabajo puntual, ya con un solo subcontratista asignado en Tango. No es
+// un artículo de catálogo real: se excluye de Clasificar artículos para
+// que no ensucie compras_articulos_grupo (pedido explícito del usuario).
+function esCodigoOT(desc) {
+  return /^O\/?TT?\s/i.test((desc || '').trim());
 }
 
 // ------------------------------------------------------------

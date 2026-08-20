@@ -498,7 +498,11 @@ Mismo patrón de nav colapsable que Flota/OC/Stock ("🏭 Proveedores ▾") con 
   total comprado, con cantidad de OC y última compra — el ranking de compras que pidió el usuario, sale
   directo de `compras_oc_lineas` sin necesitar que el proveedor esté en el catálogo.
 - **Clasificar artículos** (`prov-clasificar`) — buscador de artículos (por código o descripción, fuente:
-  distinct de `compras_oc_lineas.articulo_cod` + `compras_stock_saldos.cod_articulo`) con un `<select>`
+  distinct de `compras_oc_lineas.articulo_cod` + `compras_stock_saldos.cod_articulo`, **excluyendo los
+  códigos "O/T ..." / "OTT ..."** — trabajo tercerizado atado a una orden de trabajo puntual, con un solo
+  subcontratista ya asignado en Tango, no un artículo de catálogo real para agrupar por rubro; filtro
+  `esCodigoOT()` en `js/modules/proveedores.js`, pedido explícito del usuario para no ensuciar
+  `compras_articulos_grupo`) con un `<select>`
   de grupo por fila que hace `upsert`/`delete` inmediato al cambiar — sin buscar ni tildar el checkbox de
   abajo, muestra solo los ya clasificados (para no renderizar miles de filas de una; con ~3000 artículos
   en el catálogo, siempre hay un tope de 300 filas por vista, avisado en el resumen si se corta). El
