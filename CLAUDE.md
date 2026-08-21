@@ -308,9 +308,13 @@ cualquier otro caso (cargada por error, duplicada, etc.) — no toca Tango, solo
 Igual que Flota, el módulo es un **grupo de nav colapsable** ("🧾 Órdenes de Compra ▾") con un
 Dashboard inicial (con gráficos) y sub-vistas de solo lectura, en vez de una sola pantalla:
 
-- **Dashboard** (`oc-dash`) — panorama general con un único filtro de **año** (`ocd_f_anio`, "Todos los
-  años" por defecto — se agregó cuando el historial pasó a cubrir varios años y mezclar todo dejaba de
-  ser útil): los 7 KPIs de siempre (total comprado, recibido, pendiente, % completado, cantidad de OC
+- **Dashboard** (`oc-dash`) — panorama general con un único filtro de **año** (`ocd_f_anio` — se agregó
+  cuando el historial pasó a cubrir varios años y mezclar todo dejaba de ser útil; por defecto trae el
+  **año vigente** si hay datos de ese año, no "Todos los años" — `poblarFiltroAnio()` en `js/modules/oc.js`
+  usa `new Date().getFullYear()` la primera vez que se puebla el select; si el usuario elige otro año a
+  mano, `sel.dataset.tocado` marca esa elección para que no se pise sola al navegar a otra sección y
+  volver — solo se resetea al año vigente con una recarga completa de la página): los 7 KPIs de siempre
+  (total comprado, recibido, pendiente, % completado, cantidad de OC
   pendientes/parciales/completadas) + 4 gráficos (Chart.js, cargado por CDN en `index.html` junto a
   SheetJS) + 2 accesos rápidos ("Ver abiertas (N)", "Ver completadas (N)", con el conteo del año elegido)
   más un acceso a "Ver todas / cargar archivo". Al elegir un año, los 7 KPIs y los 4 gráficos se

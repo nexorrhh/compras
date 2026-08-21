@@ -232,10 +232,16 @@ function poblarFiltrosPrefijo(prefix) {
 function poblarFiltroAnio(selectId) {
   const sel = document.getElementById(selectId);
   if (!sel) return;
+  const yaElegido = sel.dataset.tocado === '1';
   const cur = sel.value;
   const anios = [...new Set(LINEAS.map(l => l.fecha?.slice(0, 4)).filter(Boolean))].sort().reverse();
   sel.innerHTML = '<option value="">Todos los años</option>' + anios.map(a => `<option value="${a}">${a}</option>`).join('');
-  if (anios.includes(cur)) sel.value = cur;
+  const anioVigente = String(new Date().getFullYear());
+  if (yaElegido && anios.includes(cur)) {
+    sel.value = cur;
+  } else if (anios.includes(anioVigente)) {
+    sel.value = anioVigente;
+  }
 }
 
 function renderKPIs(prefix, grupos, lineas) {
@@ -571,7 +577,7 @@ export function init() {
     initExpandCollapse(tbodyId);
   });
 
-  document.getElementById('ocd_f_anio')?.addEventListener('change', renderDashboard);
+  document.getElementById('ocd_f_anio')?.addEventListener('change', (e) => { e.target.dataset.tocado = '1'; renderDashboard(); });
   document.getElementById('ocd-ir-abiertas')?.addEventListener('click', () => document.querySelector('.nav-item[data-sec="oc-abiertas"]')?.click());
   document.getElementById('ocd-ir-comp')?.addEventListener('click', () => document.querySelector('.nav-item[data-sec="oc-comp"]')?.click());
   document.getElementById('ocd-ir-todas')?.addEventListener('click', () => document.querySelector('.nav-item[data-sec="oc-todas"]')?.click());
