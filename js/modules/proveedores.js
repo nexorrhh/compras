@@ -89,6 +89,24 @@ function gruposDeProveedor(p, derivado) {
 }
 
 // ------------------------------------------------------------
+// Qué artículos de compras_oc_lineas, comprados a este proveedor,
+// están clasificados en este grupo — el "por qué" de la Agenda.
+// ------------------------------------------------------------
+function articulosQueJustifican(codTango, grupoId) {
+  if (!codTango || !grupoId) return [];
+  const artGrupo = new Map(ARTICULOS_GRUPO.map(a => [a.cod_articulo, a.grupo_id]));
+  const vistos = new Map(); // cod_articulo -> { desc, count, importe }
+  for (const l of OC_LINEAS) {
+    if (l.proveedor_cod !== codTango || artGrupo.get(l.articulo_cod) !== grupoId) continue;
+    const cur = vistos.get(l.articulo_cod) || { desc: l.articulo_desc, count: 0, importe: 0 };
+    cur.count++;
+    cur.importe += l.importe || 0;
+    vistos.set(l.articulo_cod, cur);
+  }
+  return [...vistos.entries()].map(([cod, v]) => ({ cod, ...v })).sort((a, b) => b.importe - a.importe);
+}
+
+// ------------------------------------------------------------
 // Si un proveedor ya tiene OC, tiene que aparecer dado de alta solo
 // — no tendría sentido que el Ranking lo muestre y el Catálogo no.
 // Esta función junta los proveedores con ficha propia
@@ -183,9 +201,39 @@ function filaAccionesProveedor(p) {
        <button class="bsm d sto-accion" onclick="window.proveedores.eliminarProveedor('${p.id}')">🗑️</button>`;
 }
 
-function filaDetalleProveedor(p) {
-  if (p.virtual) return '<div style="color:var(--muted);font-size:13px;padding:4px 0">Detectado en Órdenes de Compra — todavía no tiene ficha propia. Tocá "Completar datos" para poder agregarle contactos.</div>';
-  return renderContactosDetalle(p.id);
+function bloqueMotivoArticulos(arts, esSoloManual) {
+  if (!arts.length) {
+    return esSoloManual
+      ? '<div style="color:var(--muted);font-size:13px;padding:4px 0 10px">Asignado a mano a este grupo — todavía no le compraste ningún artículo de esta categoría por OC. En cuanto le generes una orden de compra con un artículo clasificado acá, va a aparecer solo.</div>'
+      : '';
+  }
+  return `<div style="margin-bottom:10px">
+    <div style="font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.04em;margin-bottom:4px">Por qué está acá</div>
+    <ul style="margin:0;padding-left:18px;font-size:13px;line-height:1.6">
+      ${arts.map(a => `<li><code>${escAttr(a.cod)}</code> — ${escAttr(a.desc || '(sin descripción)')} <span style="color:var(--muted)">(${a.count} línea${a.count === 1 ? '' : 's'} de OC · ${fmtPesos(a.importe)})</span></li>`).join('')}
+    </ul>
+  </div>`;
+}
+
+// grupoIdCtx: si viene (Agenda, o Catálogo con filtro de grupo activo), muestra
+// el motivo solo para ese grupo. Si no viene (Catálogo sin filtro), desglosa
+// motivo por cada grupo al que pertenece el proveedor.
+function filaDetalleProveedor(p, derivado, grupoIdCtx) {
+  let motivoHtml = '';
+  if (grupoIdCtx) {
+    motivoHtml = bloqueMotivoArticulos(articulosQueJustifican(p.cod_tango, grupoIdCtx), p.grupo_manual_id === grupoIdCtx);
+  } else if (!p.virtual && derivado) {
+    const ids = new Set(derivado.get(p.cod_tango) || []);
+    if (p.grupo_manual_id) ids.add(p.grupo_manual_id);
+    const grupoNombre = new Map(GRUPOS.map(g => [g.id, g.nombre]));
+    motivoHtml = [...ids].map(gid => {
+      const bloque = bloqueMotivoArticulos(articulosQueJustifican(p.cod_tango, gid), gid === p.grupo_manual_id);
+      return bloque ? `<div><strong style="font-size:13px">${escAttr(grupoNombre.get(gid) || '')}</strong>${bloque}</div>` : '';
+    }).join('');
+  }
+
+  if (p.virtual) return motivoHtml + '<div style="color:var(--muted);font-size:13px;padding:4px 0">Detectado en Órdenes de Compra — todavía no tiene ficha propia. Tocá "Completar datos" para poder agregarle contactos.</div>';
+  return motivoHtml + renderContactosDetalle(p.id);
 }
 
 function renderAgenda() {
@@ -217,7 +265,7 @@ function renderAgenda() {
       <td>${p.virtual ? '–' : CONTACTOS.filter(c => c.proveedor_id === p.id).length}</td>
       <td>${filaAccionesProveedor(p)}</td>
     </tr>
-    <tr class="oc-detail" style="display:none"><td colspan="6">${filaDetalleProveedor(p)}</td></tr>`;
+    <tr class="oc-detail" style="display:none"><td colspan="6">${filaDetalleProveedor(p, derivado, grupoId)}</td></tr>`;
   }).join('');
 }
 
@@ -450,7 +498,7 @@ function renderCatalogo() {
       <td>${p.virtual ? '–' : CONTACTOS.filter(c => c.proveedor_id === p.id).length}</td>
       <td>${filaAccionesProveedor(p)}</td>
     </tr>
-    <tr class="oc-detail" style="display:none"><td colspan="6">${filaDetalleProveedor(p)}</td></tr>`;
+    <tr class="oc-detail" style="display:none"><td colspan="6">${filaDetalleProveedor(p, derivado, grupoFiltroId || null)}</td></tr>`;
   }).join('');
 }
 

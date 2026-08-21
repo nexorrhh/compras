@@ -493,7 +493,15 @@ Mismo patrón de nav colapsable que Flota/OC/Stock ("🏭 Proveedores ▾") con 
   comprado/última compra (si tienen OC) y sus contactos/vendedores (nombre, teléfono, email) para saber
   a quién escribirle a pedir cotización. El botón "+ Nuevo grupo" (`crearGrupo()`, usa `prompt()` — es
   solo un nombre, no justifica un modal) está acá porque es el punto de entrada natural: normalmente se
-  te ocurre un rubro nuevo mientras estás buscando a quién cotizarle algo.
+  te ocurre un rubro nuevo mientras estás buscando a quién cotizarle algo. Cada fila es expandible
+  (mismo patrón `.oc-row`/`.oc-detail` que OC/Stock) y en el detalle muestra **"Por qué está acá"**
+  (`articulosQueJustifican()` en `js/modules/proveedores.js`): los artículos concretos de
+  `compras_oc_lineas` comprados a ese proveedor que están clasificados en el grupo que estás mirando,
+  con código, descripción, cantidad de líneas de OC e importe. Si el proveedor está en el grupo solo por
+  `grupo_manual_id` (lo agendaste a mano) y todavía no le compraste nada de esa categoría por OC, en vez
+  de la lista se muestra un aviso de que va a aparecer solo en cuanto haya una OC — nunca se inventa un
+  motivo. El Catálogo (`prov-catalogo`) reusa la misma función: sin filtro de grupo activo, desglosa el
+  motivo por cada grupo al que pertenece el proveedor (puede estar en varios).
 - **Ranking** (`prov-ranking`) — todos los proveedores que aparecen en OC (agendados o no) ordenados por
   total comprado, con cantidad de OC y última compra — el ranking de compras que pidió el usuario, sale
   directo de `compras_oc_lineas` sin necesitar que el proveedor esté en el catálogo.
