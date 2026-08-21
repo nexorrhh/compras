@@ -483,6 +483,28 @@ este diseño:
 - Para proveedores sin ninguna OC todavía (solo cotizaron, nunca les compraste) no hay artículos de
   donde derivar nada — por eso `compras_proveedores.grupo_manual_id` es el respaldo manual.
 
+**Clasificación masiva inicial (2026-08-21):** se clasificaron a mano de a poco pero también, a pedido
+del usuario, en varias rondas automatizadas (script puntual contra la API de Supabase, no forma parte
+del código del repo) que armaron reglas por palabra clave sobre `articulo_desc`/`articulo_cod` para
+llegar de ~1750 artículos sin clasificar a **0** — los 2965 artículos conocidos (de OC + Stock, excluyendo
+códigos O/T) quedaron los 2965 clasificados en 28 grupos. La mayoría son rubros específicos del rubro de
+CIMOMET/CO.MO.ING (fabricación de estructuras metálicas y tanques lavadores de gases): Acero - Perfiles,
+Acero - Chapas, Soldadura, Consumibles de Corte por Plasma, Granalla, Pintura, Equipo de Pintura,
+Cañeria/Bridas/Valvulas, Rejillas y Pisos Industriales, Izaje y Elementos de Elevación, EPP, Ensayos No
+Destructivos, Rodamientos y Transmisiones, Herramientas Eléctricas (Repuestos), Herramientas Manuales,
+Mechas/Fresas y Herramientas de Corte, Material Eléctrico, Revestimientos y Plásticos Técnicos,
+Lubricantes y Aceites, Andamios y Accesos, Maquinaria y Equipos de Planta, Insumos de Embalaje y
+Señalética, Gases Industriales, Combustible y Lubricantes, Buloneria, Ropa. El último ~13% (394 artículos)
+que no encajó en ningún patrón específico —sin volumen ni consistencia como para justificar un rubro
+propio sin inventar categorías de un solo artículo— quedó en **"Varios / Ferretería General"**, creado
+recién en esa última ronda y a pedido explícito del usuario ("clasificalos a todos juntos") — es la
+única excepción al criterio de "nada genérico" del resto del módulo, y a propósito: sirve de bolsón para
+ir reclasificando de a uno a mano cuando aparezca un patrón claro, en vez de dejarlos eternamente "sin
+clasificar". **Cuidado si se repite este proceso:** varios de los nombres de grupo "canónicos" no
+coinciden exactamente con lo que un script nuevo podría generar por default (ej. la base tiene `"EPP"`,
+`"Equipo de Pintura"` singular, `"Aceros - Chapa"`, `"Cañeria, Bridas y Valvulas"` sin tildes) — comparar
+por nombre exacto antes de crear un grupo, si no se duplica.
+
 ### 7.2 Qué muestra el tablero
 
 Mismo patrón de nav colapsable que Flota/OC/Stock ("🏭 Proveedores ▾") con Dashboard + sub-vistas:
