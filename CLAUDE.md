@@ -43,6 +43,7 @@ seguros, permisos). El resto de los módulos se va a ir sumando a medida que se 
 | **Órdenes de compra** | `[DETALLADO]` (sección 5) | No es alta/gestión de pedidos — es un indicador de compras (pendientes/recibidas/total) alimentado importando el export de OC de Tango Gestión |
 | **Stock / insumos críticos** | `[DETALLADO]` (sección 6) | Saldos por depósito importados de Capataz + lista de artículos en seguimiento con stock mínimo, para saber qué hay que reponer |
 | **Proveedores** | `[DETALLADO]` (sección 7) | Agenda de compras por rubro (grupo) + ranking de compras — el proveedor se agrupa solo según qué artículos le compraste por OC |
+| **Notas de Pedido** | `[DETALLADO]` (sección 8) | Lo que se le manda al proveedor para confirmar una cotización urgente o un servicio — numeración automática, PDF descargable, seguimiento por vínculo con la Orden de Compra que las cierra |
 | Presupuesto y gastos de compras | `[TBD]` | Presupuestado vs. real por categoría/área, alertas de desvío |
 | Contratos y vencimientos | `[TBD]` | Contratos de servicios, alquileres, licencias — no solo de vehículos |
 | Circuito de aprobaciones | `[TBD]` | Reglas de autorización de pagos/compras según monto |
@@ -356,7 +357,8 @@ Dashboard inicial (con gráficos) y sub-vistas de solo lectura, en vez de una so
 - **Idea pendiente del usuario, no implementada todavía:** más adelante le gustaría poder clasificar
   proveedores por categoría (ej. materia prima, pintura, insumos) y adaptar el indicador del Dashboard
   según esa categoría — requeriría una tabla nueva (`compras_proveedores` o similar, con categoría) y
-  cruzarla por `proveedor_cod`/`proveedor_nombre`. Ver también sección 8.
+  cruzarla por `proveedor_cod`/`proveedor_nombre`. Ver también sección 7 (Proveedores), que termina
+  implementando exactamente esta idea.
 
 ### 5.4 Modelo de datos
 
@@ -607,7 +609,151 @@ Cuatro tablas (ver [`sql/006_proveedores.sql`](sql/006_proveedores.sql) para la 
 
 ---
 
-## 8. Stack técnico
+## 8. Módulo: Notas de Pedido `[DETALLADO]`
+
+Sin relación con Flota/OC/Stock como tablas. Nació de una necesidad puntual: cuando hay urgencia (no da
+tiempo el circuito normal de Orden de Compra) o se contrata un **servicio** (que internamente genera una
+OTT y termina en su propia OC, con un código tipo `P240086T025` — ver el filtro `esCodigoOT()` en
+sección 7.2), Compras le manda al proveedor una **Nota de Pedido** para confirmar la cotización. Antes
+esto se armaba a mano en Word (numeración manual, sin seguimiento — si el proveedor se colgaba, nadie se
+enteraba hasta que hacía falta el material). Este módulo numera las NP solas y arma el PDF para mandar,
+y les da seguimiento por vínculo con la OC que las cierra.
+
+### 8.1 Numeración
+
+`compras_notas_pedido.numero` sale de una **secuencia real de Postgres** (`compras_np_numero_seq`, ver
+[`sql/007_notas_pedido.sql`](sql/007_notas_pedido.sql)), arrancando en **8123** — el número siguiente al
+de la última NP real que se había generado en Word (NP-8122, 2026-08-24). Se usa una secuencia de
+Postgres y no un `max()+1` calculado en el cliente para que dos altas casi simultáneas nunca puedan
+chocar en el mismo número.
+
+### 8.2 Seguimiento — vínculo simple con Orden de Compra
+
+Decisión tomada con el usuario: el cierre de una NP es un **vínculo simple**, no una réplica del cálculo
+pendiente/parcial/completada que ya hace el módulo de Órdenes de Compra. Una NP nace en estado
+`PENDIENTE`; cuando el proveedor cumple y esa compra queda cargada como Orden de Compra (importada de
+Tango, ver sección 5), Compras la **vincula a mano** al N° de OC correspondiente. El flujo es un modal
+propio (`mVINCULAROC`, `vincularOC()`/`renderListaVincularOC()`/`confirmarVincularOC()` en
+`js/modules/notas-pedido.js`) — **no un `prompt()`** (versión anterior, cambiada a pedido explícito del
+usuario): buscador con las OC agrupadas por N° (`agruparOCPorOrden()`, mismo criterio que
+`agruparPorOrden()`/`estadoOC()` en `js/modules/oc.js`, duplicado a propósito) mostrando proveedor,
+fecha, importe y el mismo badge Pendiente/Parcial/Completada que el módulo de OC — precargado con el
+nombre del proveedor de la NP para que por defecto ya aparezcan sus OC, pero se puede buscar cualquier
+otra. Cada fila es expandible (mismo patrón `.oc-row`/`.oc-detail` que OC/Stock/Proveedores) y muestra qué
+artículos componen esa OC — para poder confirmar de un vistazo que es la orden correcta antes de
+vincular, en vez de adivinar por el importe total. Un click en "Vincular" de la fila elegida cierra el
+vínculo. Se puede desvincular si fue un error.
+En la lista, cada
+NP `PENDIENTE` muestra hace cuántos días se creó, con el mismo semáforo ámbar/rojo (5/10 días) que
+`estadoVencimiento()` en `utils.js` — para que una NP "colgada" salte a la vista en vez de perderse, que
+es justamente el problema que este módulo vino a resolver.
+
+No se distingue "Material" vs "Servicio" como campo propio — decisión del usuario: son pocas NP (Compras
+prefiere siempre que se pueda ir directo a Orden de Compra), no justifica un campo/filtro dedicado.
+
+### 8.3 Ítems y PDF
+
+Cada NP tiene un array `items` (jsonb: `[{cantidad, unidad, descripcion, precio}]`) cargado con filas
+dinámicas en el modal de alta (sin patrón previo en el resto del código para esto — tabla con "+ Agregar
+línea" y 🗑️ por fila). `cantidad` y `precio` son **numéricos** (no texto libre como en el diseño
+original — se cambió para poder calcular subtotales/total reales, ver más abajo); las NP viejas en
+Word mezclaban `$`/`U$s`/"c/u"/"el kg" sin formato fijo, pero eso quedó afuera a cambio de que el
+sistema haga la cuenta solo.
+
+El PDF se genera 100% en el cliente con **jsPDF + jspdf-autotable** (CDN, cargados en `index.html` junto
+a SheetJS/Chart.js — mismo criterio sin bundler) — `generarPdfNP()` en `js/modules/notas-pedido.js`. Es
+un **diseño nuevo, no una réplica del Word viejo**: el usuario pidió explícitamente actualizar el
+formato ("anticuado y feo... con información muy vieja e incierta"). Datos de membrete confirmados
+2026-08-24: **Cimomet S.A.**, dirección "Juan XXIII (ex Biedma) 7473, Rosario, Santa Fe, Argentina",
+emails `compras@cimomet.com.ar` / `vangulo@cimomet.com.ar` — **sin teléfono**, a pedido explícito. El
+logo (`Logo Cimomet HD.png`, 666×310px) va embebido como base64 directo en el módulo (constante
+`EMPRESA.logoBase64`, ~155.000 caracteres) — mismo criterio "todo client-side, sin pipeline de assets"
+que el resto del proyecto; si el logo cambia, hay que volver a generar el base64 y pegarlo ahí. Se
+mantiene el contenido legal del Word (cláusula de aceptación tácita a los 2 días corridos) — el usuario
+se quejó del diseño/datos viejos, no de esa parte. Nombre de archivo: `NP-{numero}.pdf`.
+
+**Ajustes de diseño pedidos tras la primera prueba real (2026-08-24):** más espacio entre el logo y la
+dirección/mail (quedaba muy pegado); el mail es clickeable (`doc.link()`) y abre un mail con las dos
+casillas como destinatarias a la vez (`mailto:compras@...,vangulo@...`); Fecha de entrega/Condiciones de
+pago/Lugar de entrega/Autorizado por (antes "Revisado por" — es el mismo campo, ver 8.2) se movieron a
+un bloque de dos columnas justo debajo de "Sres."/O.T., en vez de quedar sueltos al final — **orden
+exacto pedido por el usuario**: columna izquierda Entrega parcial → Fecha de entrega → Lugar de entrega,
+columna derecha Condiciones de pago → Autorizado por (`filaInfo()` en `generarPdfNP()`, soporta que
+cualquiera de los dos lados envuelva a varias líneas sin desalinear al otro); "Adjuntos" ya no se
+imprime en el PDF (sí sigue en el detalle de la lista, es información interna); la tabla de ítems suma
+una columna **Subtotal** (cantidad×precio, columnas Cantidad/Unidad/Precio/Subtotal centradas — pedido
+explícito, "ORDENADO TODO") y abajo un resumen de **Subtotal / Bonificación (si hay) / Total** con la
+leyenda "(+ IVA)" si corresponde — `calcularTotales()` en `js/modules/notas-pedido.js` hace esta cuenta
+y la reusan el PDF, el detalle de la lista y el modal de alta (que muestra los mismos tres números en
+vivo mientras se completan los ítems, para que el modal se vea como el resultado final, pedido explícito
+del usuario). Esto implicó que **`precio` (y `cantidad`) dejaron de ser texto libre** — ahora son
+inputs numéricos, porque no se puede calcular un subtotal real sobre "U$s 1,20 el kg".
+
+Para no perder la información de moneda que traía el texto libre viejo, se sumó un campo **`moneda`**
+(`ARS`/`USD`, select en el modal — ver
+[`sql/010_moneda.sql`](sql/010_moneda.sql)) que define el símbolo (`$` o `U$S`) usado en **todos** los
+importes de esa NP (ítems, subtotal, bonificación, total) vía `fmtPesos(monto, moneda)` — así queda
+claro en qué moneda está cotizado todo el documento sin tener que repetirlo en cada línea.
+
+El modal también muestra, al lado del título, el **número que va a tener la NP** (`np_numero_preview`,
+`— N° {numero} (estimado)`) — calculado como `max(numero)` de las NP ya cargadas + 1. Es una estimación,
+no una garantía: el número real lo asigna la secuencia de Postgres recién al guardar (ver 8.1), así que
+si otra persona crea una NP en el medio, el número real puede terminar siendo distinto al que se
+mostraba en el modal.
+
+**N°/código de cotización** (`cotizacion_ref`, ver [`sql/011_cotizacion_ref.sql`](sql/011_cotizacion_ref.sql))
+— campo opcional para la referencia que a veces pide el proveedor (la de ELLOS, distinta de nuestro N°
+de NP y del O.T. interno). En el PDF va debajo del bloque de Fecha de entrega/Condiciones de
+pago/Lugar de entrega/Autorizado por y arriba de la tabla de ítems — pedido explícito del usuario. Si
+está vacío, no se imprime ninguna línea.
+
+**Enter no manda la NP a medio completar:** el form tiene un listener de `keydown` que hace
+`preventDefault()` en Enter salvo que el foco esté en un `<textarea>` o en el botón de submit — sin esto,
+Enter en cualquier input (ej. tipeando el proveedor) dispara el envío implícito del navegador. Se agregó
+después de que una NP se creara así por accidente (NP-8125, borrada a mano).
+
+**Proveedor** — el input tiene un autocomplete propio (no `<datalist>` nativo: mezclaba con el
+historial de autocompletado del navegador y no se podía estilar) que sugiere tanto los proveedores con
+ficha propia (`compras_proveedores`) como los que solo aparecen en `compras_oc_lineas` — sigue siendo
+texto libre, si no coincide con nada se guarda tal cual se escriba.
+
+**Unidad** de cada ítem es un `<select>` fijo (`Unidad, KG, Mts, Lts, Mt2`, pedido del usuario) en vez de
+texto libre.
+
+**Bonificación** es un número (0-100, el `%` se agrega solo al mostrarlo/en el PDF, no se guarda en la
+columna) y **Condiciones de pago** es un `<select>` fijo (`Contado F/Factura, 7 días F/F, 15 días,
+30 días, 45 días`).
+
+**Fecha de entrega** es un date picker real (antes texto libre) — se guarda como fecha ISO en la
+columna `fecha_entrega` y se muestra formateada con `fmt()` de `utils.js`. Para "entrega parcial" hay un
+checkbox que revela un textarea libre (`entrega_parcial`, columna nueva — ver
+[`sql/009_entrega_parcial.sql`](sql/009_entrega_parcial.sql)) para describirla en texto (ej. "50% en 10
+días, resto en 20 días") — sin fechas múltiples ni nada más estructurado, a propósito, por pedido
+explícito de mantenerlo simple.
+
+**Foto adjunta** (`np_adjunto_foto`, input de archivo) — **nunca se guarda en Supabase**, decisión
+explícita del usuario tras comparar con integrar Google Drive (mucho más trabajo, requiere OAuth) y
+elegir la alternativa simple: la foto se lee con `FileReader` en el momento de guardar la NP, se mete
+como página aparte en el PDF que se descarga ahí mismo (`generarPdfNP(n, fotoDataUrl)`), y se descarta —
+no queda en ningún lado. La columna `adjuntos` (texto) sí guarda una nota tipo "foto adjunta:
+nombre.jpg" para que quede constancia de que existió, aunque volver a descargar el PDF de esa NP más
+adelante ya no va a incluir la imagen.
+
+### 8.4 Modelo de datos
+
+Dos migraciones (ver [`sql/007_notas_pedido.sql`](sql/007_notas_pedido.sql) y
+[`sql/009_entrega_parcial.sql`](sql/009_entrega_parcial.sql) — `sql/008_usuarios.sql` es el login, ver
+sección 9 — y `sql/schema.sql` para el estado final), sin RLS (mismo criterio que el resto de `compras_*`):
+
+- `compras_notas_pedido` — `proveedor_nombre` es texto libre (copiado al crear, igual que
+  `compras_oc_lineas.proveedor_nombre`) con `proveedor_id` opcional si coincide con una ficha real de
+  `compras_proveedores`; no ata la carga a que el proveedor ya exista en el catálogo.
+
+Es solo para **CIMOMET** (no Co.Mo.Ing) — membrete fijo, sin selector de empresa; decisión del usuario.
+
+---
+
+## 9. Stack técnico
 
 - **Frontend:** HTML/JS vanilla, mismo criterio que Nexo RRHH y CIMOMET v3.
 - **Diferencia respecto a Nexo RRHH:** en vez de un único archivo HTML, para este proyecto conviene
@@ -656,10 +802,25 @@ Cuatro tablas (ver [`sql/006_proveedores.sql`](sql/006_proveedores.sql) para la 
   insertado en un atributo HTML tiene que pasar por uno de los dos.
 - **Backend/datos:** Supabase — proyecto compartido con el sistema de legajos (ver 4.4), no uno dedicado.
 - **Conexión:** las credenciales de Supabase (URL + anon key) están **hardcodeadas** en
-  `js/supabase-client.js`, `porteria.html` y `solicitud.html` — no hay pantalla de login ni credenciales
-  para configurar, las 3 páginas conectan solas al cargar. La anon key es pública por diseño (va en el
-  front, se protege con RLS del lado de Supabase), por eso no hay problema en tenerla en el código. Si
-  falla la conexión (ej. falta correr `sql/schema.sql`), se muestra un cartel de error en vez de la app.
+  `js/supabase-client.js`, `porteria.html` y `solicitud.html` — no hay credenciales que configurar, las
+  3 páginas conectan solas al cargar. La anon key es pública por diseño (va en el front) y las tablas
+  `compras_*` **no tienen RLS** — están protegidas solo por no difundir el link/anon key, no por
+  autenticación real (ver aviso de seguridad al final de `sql/schema.sql`). Si falla la conexión (ej.
+  falta correr `sql/schema.sql`), se muestra un cartel de error en vez de la app.
+- **Login por PIN (`js/login.js`, `sql/008_usuarios.sql`):** después de conectar a Supabase, `index.html`
+  muestra una grilla de perfiles (`compras_usuarios`, hoy Cimolai/Angulo, diseño en tarjetas con avatar
+  de iniciales — pedido explícito del usuario, mirando una pantalla parecida del Tablero de RRHH) antes
+  de mostrar `#app` — **no es autenticación real**, mismo criterio de seguridad que el resto del
+  proyecto (el PIN se guarda en texto plano en la tabla, cualquiera con la anon key podría leerlo). Sirve
+  para saber **quién** está usando la sesión, principalmente para que `compras_notas_pedido.revisado_por`
+  (sección 8.2) quede con el nombre de quien autorizó cada Nota de Pedido en vez de tipearlo a mano.
+  `compras_usuarios.pin` arranca en `null` a propósito: un perfil sin PIN todavía muestra la etiqueta
+  "Crear PIN" y la propia persona lo define la primera vez que entra (se le pide dos veces para evitar
+  errores de tipeo) — no hace falta que un admin precargue PINs a mano por SQL, solo el nombre. Se pide
+  en **cada carga de página** a propósito (pedido explícito del usuario, no persiste en localStorage) —
+  por eso alcanza con guardar el usuario logueado en una variable de módulo (`getUsuarioActual()` en
+  `js/login.js`), dura toda la sesión de la SPA hasta el próximo reload. `porteria.html` y
+  `solicitud.html` no tienen este login (quedan fuera del SPA modular, ver 4.4).
 - **Hosting:** GitHub Pages, igual que Nexo RRHH (evaluar si necesita dominio propio o si alcanza con el
   subdominio de GitHub).
 
@@ -672,11 +833,13 @@ tablero-compras/
 ├── index.html             (tablero modular de Compras — nav con Flota + módulos TBD deshabilitados)
 ├── porteria.html          (página standalone para el portero — salidas/retornos, excepciones)
 ├── solicitud.html         (página standalone para cualquier empleado — pedir vehículo + historial)
+├── Logo Cimomet HD.png    (fuente del logo embebido en base64 en notas-pedido.js, ver 8.3)
 ├── css/
 │   └── styles.css         (sistema de diseño compartido por index.html)
 ├── js/
 │   ├── main.js             (nav / routing / ciclo de vida de módulos)
-│   ├── supabase-client.js  (credenciales hardcodeadas, conexión automática sin login)
+│   ├── supabase-client.js  (credenciales hardcodeadas, conexión automática + login por PIN)
+│   ├── login.js            (login por PIN — atribución, no seguridad real, ver sección 9)
 │   ├── utils.js            (toast, formateo de fechas/montos, estado de vencimiento, parseo de Excel compartido por OC y Stock)
 │   └── modules/
 │       ├── flota-dashboard.js
@@ -690,15 +853,21 @@ tablero-compras/
 │       ├── flota-personal.js  (lista de personal habilitado a manejar/solicitar, ver 4.4)
 │       ├── oc.js  (Órdenes de Compra — módulo aparte, sin relación con Flota, ver sección 5)
 │       ├── stock.js  (Stock — módulo aparte, sin relación con Flota ni OC, ver sección 6)
-│       └── proveedores.js  (Proveedores — se alimenta de OC, ver sección 7)
-├── Excels/                (archivos de ejemplo de OC y Stock — en .gitignore, no se suben al repo)
+│       ├── proveedores.js  (Proveedores — se alimenta de OC, ver sección 7)
+│       └── notas-pedido.js  (Notas de Pedido — numeración + PDF + vínculo con OC, ver sección 8)
+├── Excels/                (archivos de ejemplo de OC, Stock y NP — en .gitignore, no se suben al repo)
 └── sql/
     ├── schema.sql
     ├── 002_seguros_archivo.sql
     ├── 003_documentos_unificados.sql
     ├── 004_ordenes_compra.sql
     ├── 005_stock.sql
-    └── 006_proveedores.sql
+    ├── 006_proveedores.sql
+    ├── 007_notas_pedido.sql
+    ├── 008_usuarios.sql
+    ├── 009_entrega_parcial.sql
+    ├── 010_moneda.sql
+    └── 011_cotizacion_ref.sql
 ```
 
 > `porteria.html` y `solicitud.html` son entry points separados (audiencias distintas: portero de
@@ -708,7 +877,7 @@ tablero-compras/
 > base) quedó sin tocar en la raíz como referencia — su funcionalidad ya está migrada a `index.html` +
 > los módulos `flota-*.js`; se puede borrar cuando lo confirmes.
 
-## 9. Notas específicas de entorno
+## 10. Notas específicas de entorno
 
 - Dijiste que vas a trabajar este proyecto en **Antigravity** (cuenta de la empresa). Ojo con un detalle
   que ya tenemos registrado de tu workflow: **Antigravity no carga `CLAUDE.md` automáticamente** — usa
@@ -718,7 +887,7 @@ tablero-compras/
   `CLAUDE.md`. Lo más simple: mantener el contenido en `CLAUDE.md` y tener una copia (o symlink) como
   `AGENTS.md`.
 
-## 10. Decisiones abiertas (TBD)
+## 11. Decisiones abiertas (TBD)
 
 Ya decidido al construir el módulo Flota (2026-08-04):
 - [x] Esquema de datos: se migró al diseño de la sección 4.4 (`compras_vehiculos` separado de
@@ -731,13 +900,36 @@ Ya decidido al construir el módulo Flota (2026-08-04):
   chocar con las tablas de RRHH.
 - [x] Conexión: credenciales hardcodeadas (no hay pantalla de login/config) — ver sección 5.
 
+Ya decidido al construir el módulo Notas de Pedido (2026-08-24):
+- [x] Numeración: secuencia real de Postgres arrancando en 8123 (siguiendo la numeración real que
+  traían del Word) — ver sección 8.1.
+- [x] Seguimiento: vínculo simple con el N° de Orden de Compra que la cierra, sin replicar el cálculo
+  pendiente/parcial/completada de OC — ver sección 8.2.
+- [x] Sin campo "Material" vs "Servicio" — son pocas NP, no lo justifica.
+- [x] PDF con diseño nuevo (no réplica del Word viejo), membrete y logo actuales de Cimomet — ver 8.3.
+- [x] Solo para CIMOMET, sin selector de empresa.
+
+Ya decidido al construir el login por PIN (2026-08-24):
+- [x] Es solo atribución (saber quién hizo qué), no seguridad real — mismo criterio que el resto del
+  tablero (protegido por no compartir el link/anon key). Confirmado con el usuario.
+- [x] El PIN se pide al entrar a `index.html` (todo el tablero), no solo al crear una Nota de Pedido.
+- [x] Se pide en cada carga de página — no se persiste en localStorage.
+- [x] El "Revisado por" de la Nota de Pedido es el mismo campo que "quién autorizó" (el usuario
+  logueado), no dos campos separados.
+- [x] Diseño en grilla de tarjetas con avatar de iniciales (pedido explícito, mostrando de referencia
+  una pantalla parecida del Tablero de Control de RRHH) y creación de PIN self-service la primera vez
+  ("Crear PIN") en vez de que un admin precargue PINs por SQL.
+
 Todavía sin decidir:
 - [ ] ¿Se integra el combustible/YPF Ruta al módulo Flota o queda como módulo aparte?
 - [ ] ¿Las alertas de vencimiento se envían por mail (reutilizando Resend, ya integrado en Nexo RRHH) o solo se muestran en el tablero?
 - [ ] ¿Este tablero va a alimentar de datos a la sección "Flota" del Tablero de Control Ejecutivo, o van a ser fuentes de datos separadas?
 - [ ] Definir el siguiente módulo a desarrollar en detalle después de Flota (¿Proveedores? ¿Presupuesto?).
 - [ ] Dominio propio para hosting o alcanza con GitHub Pages por ahora.
-- [ ] Login/roles: ¿acceso solo para vos o para más personas del área de Compras? (hoy index.html, porteria.html y solicitud.html no tienen ningún control de acceso — cualquiera con el link y sin login puede leer/escribir todas las tablas `compras_*`, ya que la anon key va hardcodeada y sin RLS)
+- [ ] Login/roles real (RLS/autenticación) — `index.html` desde 2026-08-24 pide un PIN de 4 dígitos por
+  perfil (ver 9, `js/login.js`) pero es solo **atribución**, no seguridad: cualquiera con la anon key
+  sigue pudiendo leer/escribir todas las tablas `compras_*` sin pasar por ahí. `porteria.html` y
+  `solicitud.html` siguen sin ningún control de acceso.
 - [ ] ¿Se borra el `admin.html` original de la raíz ahora que su funcionalidad está migrada a `index.html`?
 - [ ] Documentación: hoy el archivo viejo de un documento reemplazado queda en el Storage (no se borra,
   ver 4.4). ¿Conviene borrarlo automáticamente al cargar el nuevo, o dejarlo como está por si sirve de
@@ -747,7 +939,7 @@ Todavía sin decidir:
 - [ ] Categorización de proveedores (ver 5.3): clasificarlos por tipo (materia prima, pintura, insumos,
   etc.) para poder adaptar/filtrar el Dashboard de OC según categoría — todavía no tiene tabla ni UI.
 
-## 11. Próximos pasos sugeridos
+## 12. Próximos pasos sugeridos
 
 1. Correr `sql/schema.sql` contra el proyecto Supabase real (ya hecho — tablas `compras_*` creadas).
 2. Correr [`sql/002_seguros_archivo.sql`](sql/002_seguros_archivo.sql) (ya hecho) y
@@ -756,12 +948,22 @@ Todavía sin decidir:
 3. Correr [`sql/004_ordenes_compra.sql`](sql/004_ordenes_compra.sql) (ya hecho — crea `compras_oc_lineas`).
 4. Correr [`sql/005_stock.sql`](sql/005_stock.sql) (ya hecho — crea `compras_stock_saldos` y
    `compras_stock_minimos`; ya hay artículos reales cargados en seguimiento).
-5. Correr [`sql/006_proveedores.sql`](sql/006_proveedores.sql) para crear `compras_grupos`,
-   `compras_articulos_grupo`, `compras_proveedores` y `compras_proveedores_contactos` (**todavía
-   falta** — sin esto el módulo Proveedores muestra error de "tabla no encontrada" en sus 5 sub-vistas).
-6. Probar el circuito completo: pedir vehículo (solicitud.html) → aprobar y asignar (index.html) →
+5. Correr [`sql/006_proveedores.sql`](sql/006_proveedores.sql) (ya hecho — crea `compras_grupos`,
+   `compras_articulos_grupo`, `compras_proveedores` y `compras_proveedores_contactos`; ya hay ~2965
+   artículos clasificados en 28 grupos, ver 7.1).
+6. Correr [`sql/007_notas_pedido.sql`](sql/007_notas_pedido.sql) (ya hecho — crea `compras_notas_pedido`
+   y la secuencia `compras_np_numero_seq`).
+7. Correr [`sql/008_usuarios.sql`](sql/008_usuarios.sql) (ya hecho — crea `compras_usuarios` y carga
+   Cimolai, Pablo Luis / Angulo, Valentín Eduardo sin PIN; cada uno lo crea solo al entrar).
+8. Correr [`sql/009_entrega_parcial.sql`](sql/009_entrega_parcial.sql) (ya hecho — agrega
+   `entrega_parcial` a `compras_notas_pedido`).
+9. Correr [`sql/010_moneda.sql`](sql/010_moneda.sql) (ya hecho — agrega `moneda` a
+   `compras_notas_pedido`).
+10. Correr [`sql/011_cotizacion_ref.sql`](sql/011_cotizacion_ref.sql) para agregar la columna
+    `cotizacion_ref` (**todavía falta**).
+11. Probar el circuito completo: pedir vehículo (solicitud.html) → aprobar y asignar (index.html) →
    registrar salida/retorno (porteria.html) → ver el movimiento reflejado en el dashboard.
-7. Evaluar RLS (Row Level Security) en las tablas `compras_*` — hoy cualquiera con el link de
+12. Evaluar RLS (Row Level Security) en las tablas `compras_*` — hoy cualquiera con el link de
    `solicitud.html`/`porteria.html` puede leer/escribir todas las tablas, sin ningún login de por medio.
-8. Ir completando los módulos `[TBD]` de la sección 3 a medida que los necesites, usando el módulo
+13. Ir completando los módulos `[TBD]` de la sección 3 a medida que los necesites, usando el módulo
    Flota (carpeta `js/modules/`) como plantilla.

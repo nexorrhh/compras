@@ -18,12 +18,14 @@ import * as documentos from './modules/flota-documentos.js';
 import * as oc from './modules/oc.js';
 import * as stock from './modules/stock.js';
 import * as proveedores from './modules/proveedores.js';
+import * as notasPedido from './modules/notas-pedido.js';
 
 const MODULES = {
   dash: dashboard, vcs: vehiculos, sols: solicitudes, movs: movimientos, gantt, mant: mantenimiento, vtv, doc: documentos,
   'oc-dash': oc, 'oc-abiertas': oc, 'oc-comp': oc, 'oc-todas': oc,
   'stock-dash': stock, 'stock-comprar': stock, 'stock-segui': stock, 'stock-todo': stock,
   'prov-dash': proveedores, 'prov-agenda': proveedores, 'prov-ranking': proveedores, 'prov-clasificar': proveedores, 'prov-catalogo': proveedores,
+  'np-lista': notasPedido,
 };
 
 function go(secId) {

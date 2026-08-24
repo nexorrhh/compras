@@ -231,6 +231,53 @@ create table compras_proveedores_contactos (
 );
 
 -- ------------------------------------------------------------
+-- NOTAS DE PEDIDO — lo que se le manda al proveedor para confirmar
+-- una cotización cuando hay urgencia o se contrata un servicio (ver
+-- sql/007_notas_pedido.sql). numero sale de una secuencia real de
+-- Postgres (arranca en 8123, siguiendo la numeración real que traían
+-- del Word). Vínculo simple con Orden de Compra para el seguimiento:
+-- PENDIENTE hasta que se la asocia a un N° de compras_oc_lineas.orden_compra.
+-- ------------------------------------------------------------
+create sequence compras_np_numero_seq start 8123;
+
+create table compras_notas_pedido (
+  id uuid primary key default gen_random_uuid(),
+  numero integer not null unique default nextval('compras_np_numero_seq'),
+  fecha date not null default current_date,
+  proveedor_id uuid references compras_proveedores(id) on delete set null,
+  proveedor_nombre text not null,
+  ot text,
+  cotizacion_ref text,
+  items jsonb not null default '[]',
+  moneda text not null default 'ARS' check (moneda in ('ARS', 'USD')),
+  mas_iva boolean not null default true,
+  bonificacion text,
+  fecha_entrega text,
+  entrega_parcial text,
+  condiciones_pago text,
+  lugar_entrega text,
+  adjuntos text,
+  revisado_por text,
+  estado text not null default 'PENDIENTE' check (estado in ('PENDIENTE', 'VINCULADA')),
+  orden_compra_vinculada text,
+  vinculada_en timestamptz,
+  created_at timestamptz not null default now()
+);
+
+-- ------------------------------------------------------------
+-- USUARIOS — login por PIN (no es autenticación real, ver
+-- sql/008_usuarios.sql). Sirve para saber quién autorizó cada Nota
+-- de Pedido (compras_notas_pedido.revisado_por).
+-- ------------------------------------------------------------
+create table compras_usuarios (
+  id uuid primary key default gen_random_uuid(),
+  nombre text not null unique,
+  pin text,
+  activo boolean not null default true,
+  created_at timestamptz not null default now()
+);
+
+-- ------------------------------------------------------------
 -- ÍNDICES
 -- ------------------------------------------------------------
 create index idx_compras_mantenimientos_vehiculo on compras_mantenimientos(vehiculo_id);
@@ -249,6 +296,8 @@ create index idx_compras_stock_deposito on compras_stock_saldos(cod_deposito);
 create index idx_compras_articulos_grupo_grupo on compras_articulos_grupo(grupo_id);
 create index idx_compras_proveedores_cod_tango on compras_proveedores(cod_tango);
 create index idx_compras_proveedores_contactos_proveedor on compras_proveedores_contactos(proveedor_id);
+create index idx_compras_np_estado on compras_notas_pedido(estado);
+create index idx_compras_np_proveedor on compras_notas_pedido(proveedor_id);
 
 -- ------------------------------------------------------------
 -- VISTAS — "último vencimiento vigente" por vehículo

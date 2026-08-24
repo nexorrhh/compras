@@ -8,6 +8,8 @@
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4/dist/chart.umd.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.2/dist/jspdf.umd.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/jspdf-autotable@3.8.2/dist/jspdf.plugin.autotable.min.js"></script>
 <link rel="stylesheet" href="css/styles.css">
 </head>
 <body>
@@ -23,6 +25,21 @@
     <div style="margin-top:16px;font-size:12px;color:var(--muted)">
       Verificá que las tablas <code>compras_*</code> existan en el proyecto (ver <code>sql/schema.sql</code>) y volvé a cargar la página.
     </div>
+  </div>
+</div>
+
+<!-- LOGIN POR PIN (no es autenticación real — ver CLAUDE.md sección 9) -->
+<div id="app-login" style="display:none;align-items:center;justify-content:center;min-height:100vh;padding:20px">
+  <div class="cfg-box" style="width:560px">
+    <div class="cfg-logo"><div class="cfg-logo-icon">🔒</div>Tablero de Compras</div>
+    <div class="cfg-sub" style="margin-bottom:22px">¿Quién está usando este tablero?</div>
+    <div id="login-perfiles" class="login-grid"></div>
+    <div id="login-pin-wrap" style="display:none;margin-top:20px">
+      <label id="login-pin-label" style="display:block;font-size:12px;color:var(--muted);margin-bottom:6px">PIN</label>
+      <input id="login-pin" type="password" inputmode="numeric" maxlength="4" placeholder="••••" style="width:100%;text-align:center;font-size:20px;letter-spacing:8px">
+      <button type="button" class="btn p" id="login-entrar" style="width:100%;margin-top:12px">Entrar</button>
+    </div>
+    <div class="alert-box red" id="login-error" style="display:none;margin-top:12px"></div>
   </div>
 </div>
 
@@ -241,6 +258,108 @@
   </div>
 </div></div>
 
+<!-- ============ MODAL — NOTA DE PEDIDO (alta) ============ -->
+<div class="modal-ov" id="mNOTAPEDIDO">
+<div class="modal" style="width:820px;max-width:95vw">
+  <span class="mcls" onclick="cm('mNOTAPEDIDO')">×</span>
+  <div class="mtitle">+ Nueva Nota de Pedido <span id="np_numero_preview" style="color:var(--muted);font-weight:400;font-size:13px"></span></div>
+  <form id="fNOTAPEDIDO">
+    <div class="fg" style="position:relative">
+      <label>Proveedor *</label>
+      <input id="np_proveedor" autocomplete="off" required placeholder="Nombre del proveedor">
+      <div class="ac-box" id="np_proveedor_sug" style="display:none"></div>
+    </div>
+    <div class="fr">
+      <div class="fg"><label>Fecha</label><input type="date" id="np_fecha"></div>
+      <div class="fg"><label>O.T. (opcional)</label><input id="np_ot" placeholder="N° de orden de trabajo"></div>
+    </div>
+    <hr class="divider">
+    <div class="psub" style="margin:0 0 8px">Ítems</div>
+    <div class="tw"><table>
+      <thead><tr><th style="text-align:center">Cantidad</th><th>Unidad</th><th>Descripción</th><th style="text-align:center">Precio</th><th style="text-align:center">Subtotal</th><th></th></tr></thead>
+      <tbody id="np_items_body"></tbody>
+    </table></div>
+    <button type="button" class="bsm" id="np_add_item" style="margin-top:6px">+ Agregar línea</button>
+    <label style="display:flex;align-items:center;gap:7px;font-size:13px;color:var(--muted);cursor:pointer;margin-top:10px">
+      <input type="checkbox" id="np_mas_iva" checked style="width:auto"> + IVA
+    </label>
+    <div class="fr" style="margin-top:10px;max-width:340px">
+      <div class="fg">
+        <label>Moneda</label>
+        <select id="np_moneda">
+          <option value="ARS">Pesos ($)</option>
+          <option value="USD">Dólares (U$S)</option>
+        </select>
+      </div>
+      <div class="fg">
+        <label>Bonificación</label>
+        <div style="position:relative">
+          <input id="np_bonificacion" type="number" min="0" max="100" step="0.01" placeholder="0" style="padding-right:28px">
+          <span style="position:absolute;right:11px;top:50%;transform:translateY(-50%);color:var(--muted);font-size:13px;pointer-events:none">%</span>
+        </div>
+      </div>
+    </div>
+    <div id="np_totales" style="margin-top:10px;padding:10px 14px;background:var(--bg3);border:1px solid var(--border);border-radius:8px;font-size:13px;display:flex;flex-direction:column;gap:4px">
+      <div style="display:flex;justify-content:space-between"><span>Subtotal</span><strong id="np_tot_subtotal">$0,00</strong></div>
+      <div id="np_tot_bonif_row" style="display:flex;justify-content:space-between;color:var(--muted)"><span>Bonificación (<span id="np_tot_bonif_pct">0</span>%)</span><span id="np_tot_bonif_monto">-$0,00</span></div>
+      <div style="display:flex;justify-content:space-between;font-size:15px;border-top:1px solid var(--border);padding-top:6px;margin-top:2px"><span>Total<span id="np_tot_iva_tag" style="color:var(--muted);font-weight:400"></span></span><strong id="np_tot_total">$0,00</strong></div>
+    </div>
+    <hr class="divider">
+    <div class="fr">
+      <div class="fg">
+        <label>Fecha de entrega</label>
+        <input type="date" id="np_fecha_entrega">
+        <label style="display:flex;align-items:center;gap:6px;font-size:12px;color:var(--muted);cursor:pointer;margin-top:8px">
+          <input type="checkbox" id="np_entrega_parcial_chk" style="width:auto"> ¿Entrega parcial?
+        </label>
+        <textarea id="np_entrega_parcial_detalle" placeholder="Ej: 50% en 10 días, resto en 20 días" style="display:none;margin-top:6px;min-height:44px"></textarea>
+      </div>
+      <div class="fg">
+        <label>Condiciones de pago</label>
+        <select id="np_condiciones_pago">
+          <option value=""></option>
+          <option value="Contado F/Factura">Contado F/Factura</option>
+          <option value="7 días F/F">7 días F/F</option>
+          <option value="15 días">15 días</option>
+          <option value="30 días">30 días</option>
+          <option value="45 días">45 días</option>
+        </select>
+      </div>
+    </div>
+    <div class="fr">
+      <div class="fg"><label>Lugar de entrega</label><input id="np_lugar_entrega" placeholder="Ej: Retira Cimomet"></div>
+      <div class="fg"><label>N°/código de cotización (opcional)</label><input id="np_cotizacion_ref" placeholder="El que a veces pide el proveedor"></div>
+    </div>
+    <div class="fr">
+      <div class="fg"><label>Adjuntos (nota)</label><input id="np_adjuntos" placeholder="Ej: croquis"></div>
+      <div class="fg">
+        <label>Foto adjunta (opcional)</label>
+        <input type="file" id="np_adjunto_foto" accept="image/*">
+        <div style="font-size:11px;color:var(--muted);margin-top:4px">Se incluye en el PDF que se descarga ahora — no se guarda en la base. Si más adelante volvés a bajar el PDF de esta NP, no va a tener la foto, solo el aviso de que tenía una adjunta.</div>
+      </div>
+    </div>
+    <div class="fg" style="max-width:340px">
+      <label>Autorizado por</label>
+      <div id="np_revisado_por" style="background:var(--bg3);border:1px solid var(--border);border-radius:7px;color:var(--muted);padding:7px 11px;font-size:13px">–</div>
+    </div>
+    <div class="brow"><button type="button" class="btn" onclick="cm('mNOTAPEDIDO')">Cancelar</button><button type="submit" class="btn p">Guardar y generar PDF</button></div>
+  </form>
+</div></div>
+
+<!-- ============ MODAL — VINCULAR NOTA DE PEDIDO CON OC ============ -->
+<div class="modal-ov" id="mVINCULAROC">
+<div class="modal" style="width:700px;max-width:95vw">
+  <span class="mcls" onclick="cm('mVINCULAROC')">×</span>
+  <div class="mtitle" id="mVOC_t">Vincular con Orden de Compra</div>
+  <input id="voc_f_q" placeholder="Buscar por proveedor o N° de OC...">
+  <div class="psub" id="voc_resumen" style="margin:6px 0 0"></div>
+  <div class="tw" style="max-height:360px;overflow-y:auto;margin-top:8px"><table>
+    <thead><tr><th>N° OC</th><th>Proveedor</th><th>Fecha</th><th>Importe</th><th>Estado</th><th></th></tr></thead>
+    <tbody id="voc_lista"></tbody>
+  </table></div>
+  <div class="brow"><button type="button" class="btn" onclick="cm('mVINCULAROC')">Cancelar</button></div>
+</div></div>
+
 <header>
   <div class="logo"><div class="logo-icon">🛒</div><span>Tablero de Compras</span><span class="hbadge">CIMOMET</span></div>
   <div style="display:flex;align-items:center;gap:8px">
@@ -295,6 +414,13 @@
       <div class="nav-item" data-sec="prov-ranking"><span>🏆</span> Ranking</div>
       <div class="nav-item" data-sec="prov-clasificar"><span>🏷️</span> Clasificar artículos</div>
       <div class="nav-item" data-sec="prov-catalogo"><span>📋</span> Catálogo</div>
+    </div>
+  </div>
+
+  <div class="nav-group" id="nav-np" data-default-sec="np-lista">
+    <div class="nav-parent"><span>📝</span> Notas de Pedido <span class="nav-chevron">▾</span></div>
+    <div class="nav-children">
+      <div class="nav-item" data-sec="np-lista"><span>📋</span> Notas de Pedido</div>
     </div>
   </div>
 
@@ -686,6 +812,28 @@
   <div class="tw"><table>
     <thead><tr><th>Proveedor</th><th>Cód. Tango</th><th>Grupo(s)</th><th>Total comprado</th><th>Contactos</th><th>Acciones</th></tr></thead>
     <tbody id="t-prov-catalogo"></tbody>
+  </table></div>
+</div>
+
+<!-- ============ NOTAS DE PEDIDO ============ -->
+<div class="sec" id="s-np-lista">
+  <div class="ptitle">Notas de Pedido</div>
+  <div class="psub">Lo que le mandás al proveedor para confirmar una cotización urgente o un servicio — quedan Pendientes hasta que las vinculás a la Orden de Compra que las cierra</div>
+  <div class="sh">
+    <div class="filters">
+      <select id="np_f_estado">
+        <option value="PENDIENTE">Pendientes</option>
+        <option value="VINCULADA">Vinculadas</option>
+        <option value="">Todas</option>
+      </select>
+      <input placeholder="Buscar proveedor..." id="np_f_q">
+    </div>
+    <button class="btn p" id="np_nuevo">+ Nueva Nota de Pedido</button>
+  </div>
+  <div class="psub" id="np_resumen" style="margin-top:-8px"></div>
+  <div class="tw"><table>
+    <thead><tr><th>N°</th><th>Fecha</th><th>Proveedor</th><th>O.T.</th><th>Estado</th><th>Acciones</th></tr></thead>
+    <tbody id="t-np-lista"></tbody>
   </table></div>
 </div>
 

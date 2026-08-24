@@ -6,13 +6,16 @@
 // RLS del lado de Supabase), por eso no hay problema en hardcodearla.
 // ============================================================
 
+import { mostrarLogin } from './login.js';
+
 const SUPABASE_URL = 'https://bmueojeeexheprteavay.supabase.co';
 const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImJtdWVvamVlZXhoZXBydGVhdmF5Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODA0MjEyMzQsImV4cCI6MjA5NTk5NzIzNH0.Rh_OGhhnWZwOil1Rp7261QETH9kFgSvylZVJS35e7-o';
 
 export const SB = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY, { auth: { persistSession: false } });
 
 /**
- * Conecta automáticamente (no hay credenciales que pedir) y muestra #app.
+ * Conecta automáticamente (no hay credenciales que pedir), pide el
+ * login por PIN (ver js/login.js) y recién ahí muestra #app.
  * Si la conexión falla (ej. tablas todavía no creadas en Supabase), se
  * muestra el error en #app-error en vez de dejar la pantalla en blanco.
  */
@@ -21,8 +24,10 @@ export async function initSupabaseConnection(onConnected) {
   try {
     const { error } = await SB.from('compras_vehiculos').select('id').limit(1);
     if (error) throw error;
-    app.style.display = 'block';
-    onConnected(SB);
+    await mostrarLogin(SB, () => {
+      app.style.display = 'block';
+      onConnected(SB);
+    });
   } catch (e) {
     document.getElementById('app-error-msg').textContent = e.message;
     document.getElementById('app-error').style.display = 'flex';
