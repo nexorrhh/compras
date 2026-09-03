@@ -101,10 +101,22 @@ function clasificarItemOT(it) {
 // '' agrupa los ítems sin OT (el archivo de Capataz no siempre trae la
 // columna N_OT completa) — quedan como su propio grupo "(Sin OT)" en
 // vez de perderse del total, para que se note que faltan etiquetar.
+// "OT1" es el cajón de compras de planta en general (ver CLAUDE.md
+// 10.1), no un trabajo puntual — se excluye del desglose por OT (Por
+// OT, Ranking, "OTs con datos") a pedido explícito del usuario, porque
+// mezclado con las OT reales no sirve para comparar. Sus ítems siguen
+// contando igual en los totales combinados del Dashboard (KPIs y dona
+// general), que no pasan por esta agrupación.
+function esOT1(otRaw) {
+  const f = formatOT(otRaw);
+  return f === '1' || String(f).toUpperCase() === 'OT1';
+}
+
 function agruparPorOT() {
   const grupos = new Map();
   for (const it of ITEMS) {
     const ot = (it.n_ot || '').trim();
+    if (esOT1(ot)) continue;
     if (!grupos.has(ot)) grupos.set(ot, []);
     grupos.get(ot).push(it);
   }
@@ -305,7 +317,7 @@ function renderDashboard() {
       porMonedaOT.get(m).set(ot || '(Sin OT)', v);
     }
   }
-  renderBarrasPorMoneda('otd_ranking_wrap', porMonedaOT, k => k, 'Ranking de OTs por monto');
+  renderBarrasPorMoneda('otd_ranking_wrap', porMonedaOT, k => k === '(Sin OT)' ? k : formatOT(k), 'Ranking de OTs por monto');
 }
 
 // ------------------------------------------------------------

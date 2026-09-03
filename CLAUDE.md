@@ -1047,8 +1047,13 @@ seguimiento por OT solo puede cubrir lo que pasa por una solicitud de Cotizacion
 van directo por Tango sin pasar por acá. El usuario lo aceptó como punto de partida ("me gustaría que
 todas las OC tengan una OT asignada pero tendría que ver...") en vez de esperar a tener OT en el 100% de
 las compras; también aclaró que **"OT1" es un cajón para compras de planta en general**, no un trabajo
-puntual — el módulo no le da ningún tratamiento especial, es simplemente una OT más que concentra más
-monto que el resto, a propósito.
+puntual. Al principio el módulo no le daba ningún tratamiento especial (era una OT más, que concentraba
+más monto que el resto a propósito) pero el usuario pidió después excluirla del desglose por OT
+(2026-09-03) — mezclada con las OT reales no sirve para comparar. `esOT1()` en `js/modules/ot.js`
+descarta cualquier ítem cuyo `n_ot` normalice a "1" (con o sin ceros a la izquierda) antes de agruparlo
+(`agruparPorOT()`), así que no aparece ni en "Por OT" ni en el Ranking ni cuenta para "OTs con datos" —
+sus ítems siguen sumando igual en los KPIs/dona combinados del Dashboard, que no pasan por esa
+agrupación por OT.
 
 ### 10.2 La idea central: distinguir comprado de asignado de stock
 
@@ -1071,10 +1076,12 @@ Los ítems sin OT (la columna `N_OT` de Capataz no siempre viene completa) se ag
 
 ### 10.3 Vistas
 
-- **Dashboard** (`ot-dash`) — 4 KPIs (OTs con datos, ítems comprados, ítems de stock, ítems sin OT) +
-  un gráfico de dona **Comprado vs. de stock** (todas las OT juntas, por cantidad de ítems — no por
-  monto, así no depende de la moneda) + un **Ranking de OTs por monto comprado** (barras horizontales,
-  top 10). Acceso rápido a "Ver por OT".
+- **Dashboard** (`ot-dash`) — 4 KPIs (OTs con datos, ítems comprados, ítems de stock, ítems sin OT,
+  estos dos últimos sobre el total de ítems sin excluir OT1 — ver 10.1) + **un gráfico de dona Comprado
+  vs. de stock por unidad** (todas las OT juntas, ver 10.3 más abajo) + un **Ranking de OTs por monto
+  comprado** (barras horizontales, top 10, etiquetas ya pasadas por `formatOT()` — sin esto mostraban el
+  N° crudo con ceros, ej. "000000000596" en vez de "596"; OT1 nunca aparece acá, ver 10.1). Acceso
+  rápido a "Ver por OT".
 - **Por OT** (`ot-cards`) — grilla de **tarjetas**, una por OT (`.ot-card`, clickeable), cada una con sus
   números de comprado (ítems + cantidad + monto) y de stock (ítems + cantidad) de un vistazo, más un
   buscador por OT. El N° de OT se muestra **sin los ceros a la izquierda** que trae el export de Capataz
