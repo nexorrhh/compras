@@ -178,6 +178,46 @@ select option{background:var(--bg3)}
 .alert-box{background:rgba(245,158,11,.08);border:1px solid rgba(245,158,11,.3);border-radius:8px;padding:10px 14px;margin-bottom:10px;font-size:13px;color:var(--yellow)}
 .alert-box.red{background:rgba(239,68,68,.08);border-color:rgba(239,68,68,.3);color:var(--red)}
 
+/* ---------- COTIZACIONES ---------- */
+.cot-chip{display:inline-flex;align-items:center;gap:4px;background:var(--bg3);border:1px solid var(--border);border-radius:999px;padding:4px 6px 4px 12px;font-size:13px}
+.cot-chip button{background:none;border:none;color:var(--muted);cursor:pointer;font-size:15px;line-height:1;padding:2px 6px}
+.cot-chip button:hover{color:var(--red)}
+.cot-precio-min{background:rgba(34,197,94,.12)}
+.cot-precio-min input{font-weight:700}
+.cot-precio-input{width:62px;font-size:12px;padding:5px 4px;text-align:right}
+.cot-resumen-card{background:var(--bg2);border:1px solid var(--border);border-radius:var(--r);padding:12px 14px}
+.ot-card{background:var(--bg2);border:1px solid var(--border);border-radius:var(--r);padding:14px;cursor:pointer;transition:border-color .15s}
+.ot-card:hover{border-color:var(--accent)}
+.cot-bloque-tabs{display:flex;gap:6px;flex-wrap:wrap}
+.cot-bloque-tab{padding:7px 14px;border-radius:8px;border:1px solid var(--border);background:var(--bg2);color:var(--text);cursor:pointer;font-size:13px;transition:all .15s}
+.cot-bloque-tab:hover{border-color:var(--accent)}
+.cot-bloque-tab.active{background:var(--accent);border-color:var(--accent);color:#fff;font-weight:600}
+/* Mismo patrón visual que .cot-bloque-tab, generalizado para cualquier
+   submódulo con sub-pestañas (ej. OT: Resumen/Detalle) que no es
+   específico de los bloques de Cotizaciones. */
+.subtabs{display:flex;gap:6px;flex-wrap:wrap}
+.subtab{padding:7px 14px;border-radius:8px;border:1px solid var(--border);background:var(--bg2);color:var(--text);cursor:pointer;font-size:13px;transition:all .15s}
+.subtab:hover{border-color:var(--accent)}
+.subtab.active{background:var(--accent);border-color:var(--accent);color:#fff;font-weight:600}
+/* La comparativa puede tener muchas filas — el encabezado (nombres de
+   proveedor) queda pegado arriba al scrollear, para saber en qué
+   columna se está cargando el precio. position:sticky contra el
+   scroll de toda la página no funciona de forma confiable cuando el
+   mismo contenedor también scrollea horizontalmente (.tw ya trae
+   overflow-x:auto) — por eso acá se le da altura acotada + scroll
+   vertical propio, el patrón que sí sostiene un sticky header cross-
+   browser. */
+#cot-tabla-wrap{max-height:65vh;overflow-y:auto}
+/* border-collapse:collapse (heredado de la regla `table` general) rompe
+   position:sticky en celdas de tabla en Chrome — hace falta "separate"
+   para que el header pegajoso funcione acá. */
+#cot-tabla-wrap table{border-collapse:separate;border-spacing:0}
+/* Columnas angostas (una por proveedor invitado, puede haber muchas) —
+   el padding general de th/td (9px/13px) es demasiado para esta tabla
+   puntual, apretaba los precios contra el borde de la celda. */
+#cot-tabla-wrap th,#cot-tabla-wrap td{padding:6px}
+#cot-tabla-wrap thead th{position:sticky;top:0;z-index:10;background:var(--bg3)}
+
 /* ---------- VARIOS ---------- */
 .pcard{background:var(--bg2);border:1px solid var(--border);border-radius:12px;padding:18px;margin-bottom:14px}
 .divider{border:none;border-top:1px solid var(--border);margin:18px 0}

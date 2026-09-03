@@ -424,6 +424,21 @@
     </div>
   </div>
 
+  <div class="nav-group" id="nav-cot" data-default-sec="cot-lista">
+    <div class="nav-parent"><span>🧮</span> Cotizaciones <span class="nav-chevron">▾</span></div>
+    <div class="nav-children">
+      <div class="nav-item" data-sec="cot-lista"><span>📋</span> Solicitudes</div>
+    </div>
+  </div>
+
+  <div class="nav-group" id="nav-ot" data-default-sec="ot-dash">
+    <div class="nav-parent"><span>🏷️</span> OT <span class="nav-chevron">▾</span></div>
+    <div class="nav-children">
+      <div class="nav-item" data-sec="ot-dash"><span>📊</span> Dashboard</div>
+      <div class="nav-item" data-sec="ot-cards"><span>🗂️</span> Por OT</div>
+    </div>
+  </div>
+
   <div class="nav-sec">Otros módulos (TBD)</div>
   <div class="nav-item disabled" title="Todavía no desarrollado"><span>💰</span> Presupuesto y gastos</div>
   <div class="nav-item disabled" title="Todavía no desarrollado"><span>📑</span> Contratos y vencimientos</div>
@@ -805,6 +820,7 @@
     <div class="filters">
       <input placeholder="Buscar proveedor / cód. Tango..." id="pvp_f_q">
       <select id="pvp_f_grupo"></select>
+      <label style="display:flex;align-items:center;gap:6px;font-size:13px"><input type="checkbox" id="pvp_f_ocultar_con_contacto"> Ocultar los que ya tienen contacto</label>
     </div>
     <button class="btn p" id="pvp_nuevo">+ Nuevo proveedor</button>
   </div>
@@ -836,6 +852,188 @@
     <tbody id="t-np-lista"></tbody>
   </table></div>
 </div>
+
+<!-- ============ COTIZACIONES ============ -->
+<div class="sec" id="s-cot-lista">
+  <div id="cot-vista-lista">
+    <div class="ptitle">Cotizaciones</div>
+    <div class="psub">Solicitudes de cotización armadas desde el export de Capataz — marcá qué no hace falta comprar, invitá proveedores, cargá precios y compará</div>
+    <div class="sh">
+      <div class="filters">
+        <select id="cot_f_estado">
+          <option value="ABIERTA">Abiertas</option>
+          <option value="CERRADA">Cerradas</option>
+          <option value="">Todas</option>
+        </select>
+        <input placeholder="Buscar por nombre..." id="cot_f_q">
+      </div>
+      <div style="display:flex;gap:8px;align-items:center">
+        <input id="cot_nombre_nueva" placeholder="Nombre de la nueva solicitud..." style="width:220px">
+        <button type="button" class="btn p" data-instructivo="cotizaciones">📤 Cargar solicitud (.xlsx)</button>
+        <input type="file" id="cot_file" accept=".xlsx,.xls" style="display:none">
+      </div>
+    </div>
+    <div class="tw"><table>
+      <thead><tr><th>Nombre</th><th>Fecha</th><th>A comprar</th><th>Proveedores</th><th>Estado</th></tr></thead>
+      <tbody id="t-cot-lista"></tbody>
+    </table></div>
+  </div>
+
+  <div id="cot-vista-detalle" style="display:none">
+    <button type="button" class="bsm" id="cot_det_volver">← Volver a la lista</button>
+    <div class="sh" style="margin-top:10px">
+      <div class="fg" style="max-width:340px;margin-bottom:0">
+        <input id="cot_det_nombre" style="font-size:18px;font-weight:700;padding:6px 10px">
+      </div>
+      <div style="display:flex;align-items:center;gap:10px">
+        <span id="cot_det_estado_badge" class="badge vigente">Abierta</span>
+        <span class="psub" id="cot_det_fecha" style="margin:0"></span>
+        <button type="button" class="bsm" id="cot_det_toggle_estado">Cerrar solicitud</button>
+      </div>
+    </div>
+
+    <div style="display:flex;gap:24px;flex-wrap:wrap;align-items:flex-end">
+      <div>
+        <div class="psub" style="margin:14px 0 6px">Bloque — Pañol y Despacho tienen cada uno su propia lista de proveedores invitados</div>
+        <div id="cot_f_bloque_tabs" class="cot-bloque-tabs"></div>
+      </div>
+      <div>
+        <div class="psub" style="margin:14px 0 6px">Tipo de cambio (referencia, no se guarda)</div>
+        <div style="display:flex;align-items:center;gap:6px">
+          <span style="font-size:13px;color:var(--muted)">U$S 1 =</span>
+          <input id="cot_tipo_cambio" type="text" inputmode="decimal" placeholder="ej: 1450" style="width:110px">
+        </div>
+      </div>
+    </div>
+
+    <div class="psub" style="margin:16px 0 6px">Proveedores invitados a este bloque</div>
+    <div class="fg" style="position:relative;max-width:340px">
+      <input id="cot_prov_buscar" autocomplete="off" placeholder="Buscar proveedor para invitar...">
+      <div class="ac-box" id="cot_prov_sug" style="display:none"></div>
+    </div>
+    <div id="cot_invitados_chips" style="display:flex;flex-wrap:wrap;gap:8px;margin:10px 0 18px"></div>
+
+    <div class="sh">
+      <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+        <span style="font-size:13px;color:var(--muted)" id="cot_bulk_count">0 seleccionados</span>
+        <button type="button" class="bsm g" id="cot_bulk_si" disabled>✅ Marcar A comprar</button>
+        <button type="button" class="bsm d" id="cot_bulk_no" disabled>🚫 Marcar NO comprar</button>
+        <button type="button" class="bsm" id="cot_bulk_bloque_panol" disabled>🏷️ Marcar como Pañol</button>
+        <button type="button" class="bsm" id="cot_bulk_bloque_despacho" disabled>🏷️ Marcar como Despacho</button>
+        <button type="button" class="bsm" id="cot_bulk_bloque_gral" disabled title="Vuelve a General (sin dividir)">↩️ Quitar bloque</button>
+      </div>
+      <div style="display:flex;gap:14px;align-items:center">
+        <select id="cot_f_grupo"><option value="">Todos los rubros</option></select>
+        <label style="display:flex;align-items:center;gap:7px;font-size:13px;color:var(--muted);cursor:pointer">
+          <input type="checkbox" id="cot_f_ocultar_no_comprar" checked style="width:auto">
+          Ocultar los que no se compran
+        </label>
+        <label style="display:flex;align-items:center;gap:7px;font-size:13px;color:var(--muted);cursor:pointer">
+          <input type="checkbox" id="cot_f_mostrar_confirmados" style="width:auto">
+          Mostrar confirmados
+        </label>
+        <button type="button" class="bsm" id="cot_exportar">📥 Exportar para cotizar (.xlsx)</button>
+      </div>
+    </div>
+    <div class="tw" id="cot-tabla-wrap"></div>
+
+    <div class="psub" style="margin:18px 0 8px">Resumen por proveedor</div>
+    <div id="cot_resumen_proveedores" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:10px"></div>
+
+    <button type="button" class="btn p" id="cot_informe_reparto" style="margin-top:18px">📄 Emitir informe de reparto (.xlsx)</button>
+  </div>
+</div>
+
+<!-- ============ OT — DASHBOARD ============ -->
+<div class="sec" id="s-ot-dash">
+  <div class="ptitle">OT — Dashboard</div>
+  <div class="psub">Comprado vs. asignado de stock por OT — se alimenta de los ítems de todas las solicitudes de Cotizaciones, agrupados según la OT que trae el archivo de Capataz</div>
+  <div class="kpi-grid">
+    <div class="kpi"><div class="kpi-val text-accent" id="otd_k_ot">–</div><div class="kpi-lbl">OTs con datos</div></div>
+    <div class="kpi"><div class="kpi-val text-green" id="otd_k_comprados">–</div><div class="kpi-lbl">Ítems comprados</div></div>
+    <div class="kpi"><div class="kpi-val" id="otd_k_stock">–</div><div class="kpi-lbl">Ítems de stock</div></div>
+    <div class="kpi"><div class="kpi-val text-yellow" id="otd_k_sinot">–</div><div class="kpi-lbl">Ítems sin OT</div></div>
+  </div>
+  <div class="psub" style="margin:4px 0 8px">Comprado vs. de stock — un gráfico por unidad (KGS, LTS, UNI, etc.)</div>
+  <div class="charts-grid" id="otd_chart_compstock_wrap"></div>
+  <div class="psub" style="margin:4px 0 8px">Ranking de OTs por monto comprado — un gráfico por moneda si hay más de una</div>
+  <div class="charts-grid" id="otd_ranking_wrap"></div>
+  <div class="sh"><h2>Accesos rápidos</h2></div>
+  <div style="display:flex;gap:10px;flex-wrap:wrap">
+    <button class="btn p" id="otd-ir-cards">🗂️ Ver por OT</button>
+  </div>
+</div>
+
+<!-- ============ OT — POR OT (tarjetas + detalle) ============ -->
+<div class="sec" id="s-ot-cards">
+  <div id="ot-vista-cards">
+    <div class="ptitle">OT — Por OT</div>
+    <div class="psub">Elegí una OT para ver el detalle completo — comprado vs. stock, gasto por proveedor y evolución en el tiempo</div>
+    <div class="sh">
+      <div class="filters">
+        <input placeholder="Buscar OT..." id="ot_f_q">
+      </div>
+    </div>
+    <div id="ot_cards_grid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:12px"></div>
+  </div>
+
+  <div id="ot-vista-detalle" style="display:none">
+    <button type="button" class="bsm" id="ot_det_volver">← Volver a Por OT</button>
+    <div class="ptitle" style="margin-top:10px" id="ot_det_titulo">OT</div>
+
+    <div class="subtabs" id="ot_det_tabs" style="margin:10px 0 16px">
+      <button type="button" class="subtab active" data-tab="resumen">📊 Resumen</button>
+      <button type="button" class="subtab" data-tab="detalle">📋 Detalle</button>
+    </div>
+
+    <div id="ot_det_panel_resumen">
+      <div class="kpi-grid">
+        <div class="kpi"><div class="kpi-val text-green" id="otdet_k_comprados">–</div><div class="kpi-lbl">Ítems comprados</div></div>
+        <div class="kpi"><div class="kpi-val" id="otdet_k_stock">–</div><div class="kpi-lbl">Ítems de stock</div></div>
+        <div class="kpi"><div class="kpi-val text-yellow" id="otdet_k_pendientes">–</div><div class="kpi-lbl">Pendientes</div></div>
+        <div class="kpi"><div class="kpi-val text-accent" id="otdet_k_sinconfirmar">–</div><div class="kpi-lbl">Comprados sin confirmar</div></div>
+      </div>
+      <div class="psub" style="margin:4px 0 8px">Comprado vs. de stock — un gráfico por unidad (KGS, LTS, UNI, etc.)</div>
+      <div class="charts-grid" id="otdet_chart_compstock_wrap"></div>
+      <div class="psub" style="margin:4px 0 8px">Gasto por proveedor</div>
+      <div class="charts-grid" id="otdet_prov_wrap"></div>
+      <div class="psub" style="margin:4px 0 8px">Evolución en el tiempo (por fecha de solicitud)</div>
+      <div class="charts-grid" id="otdet_evol_wrap"></div>
+    </div>
+
+    <div id="ot_det_panel_detalle" style="display:none">
+      <div class="tw"><table>
+        <thead><tr><th>Código</th><th>Descripción</th><th>Cantidad</th><th>Origen</th><th>Proveedor</th><th>Precio</th><th>Subtotal</th><th>Estado</th><th>Solicitud</th></tr></thead>
+        <tbody id="t-ot-detalle"></tbody>
+      </table></div>
+    </div>
+  </div>
+</div>
+
+<!-- ============ MODAL — CARGAR PRECIOS DE UN PROVEEDOR ============ -->
+<div class="modal-ov" id="mCOTPROV">
+<div class="modal" style="width:640px;max-width:95vw">
+  <span class="mcls" onclick="cm('mCOTPROV')">×</span>
+  <div class="mtitle" id="mCOTPROV_t">Cargar precios</div>
+  <div class="fg" style="max-width:280px;display:flex;align-items:flex-end;gap:8px">
+    <div style="flex:1">
+      <label>Moneda</label>
+      <select id="cotprov_moneda">
+        <option value="ARS">Pesos ($)</option>
+        <option value="USD">Dólares (U$S)</option>
+      </select>
+    </div>
+    <button type="button" class="bsm" id="cotprov_moneda_aplicar" title="Corregir a esta moneda los precios ya cargados que están en la otra">🔁 corregir cargados</button>
+  </div>
+  <div class="tw" style="max-height:55vh;overflow-y:auto;margin-top:8px"><table>
+    <thead><tr><th>Código</th><th>Descripción</th><th>Cantidad</th><th>Precio unit.</th><th>Subtotal</th></tr></thead>
+    <tbody id="cotprov_items"></tbody>
+  </table></div>
+  <div id="cotprov_total_row" style="margin-top:10px;padding:10px 14px;background:var(--bg3);border:1px solid var(--border);border-radius:8px;font-size:15px;display:flex;justify-content:space-between">
+    <span>Total</span><strong id="cotprov_total_val">$0,00</strong>
+  </div>
+  <div class="brow"><button type="button" class="btn p" onclick="cm('mCOTPROV')">Listo, comparar</button></div>
+</div></div>
 
 </main>
 </div><!-- /layout -->

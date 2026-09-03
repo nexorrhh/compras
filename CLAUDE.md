@@ -44,6 +44,8 @@ seguros, permisos). El resto de los módulos se va a ir sumando a medida que se 
 | **Stock / insumos críticos** | `[DETALLADO]` (sección 6) | Saldos por depósito importados de Capataz + lista de artículos en seguimiento con stock mínimo, para saber qué hay que reponer |
 | **Proveedores** | `[DETALLADO]` (sección 7) | Agenda de compras por rubro (grupo) + ranking de compras — el proveedor se agrupa solo según qué artículos le compraste por OC |
 | **Notas de Pedido** | `[DETALLADO]` (sección 8) | Lo que se le manda al proveedor para confirmar una cotización urgente o un servicio — numeración automática, PDF descargable, seguimiento por vínculo con la Orden de Compra que las cierra |
+| **Cotizaciones** | `[DETALLADO]` (sección 9) | Solicitudes de cotización armadas desde el export de Capataz — marcar qué artículos no hace falta comprar (ya hay stock), invitar proveedores, cargar precios y comparar, con un resumen por proveedor en kg/lts/uni para repartir la compra respetando mínimos |
+| **OT** | `[DETALLADO]` (sección 10) | Seguimiento de compras por orden de trabajo — tarjetas por OT + gráficos, distinguiendo lo comprado de lo asignado de stock; lee los datos de Cotizaciones, sin tablas propias |
 | Presupuesto y gastos de compras | `[TBD]` | Presupuestado vs. real por categoría/área, alertas de desvío |
 | Contratos y vencimientos | `[TBD]` | Contratos de servicios, alquileres, licencias — no solo de vehículos |
 | Circuito de aprobaciones | `[TBD]` | Reglas de autorización de pagos/compras según monto |
@@ -597,12 +599,11 @@ Cuatro tablas (ver [`sql/006_proveedores.sql`](sql/006_proveedores.sql) para la 
 
 - **Evaluación/calificación de proveedores** (mencionado en el mapa de módulos original, sección 3) — no
   hay ningún campo de rating/calificación hoy, solo `notas` libres.
-- **Circuito de cotizaciones** — la idea grande que planteó el usuario: subir un Excel con lo que hay que
-  cotizar, elegir un grupo (ej. Pintura) y "enviarlo" a los proveedores de ese grupo para que coticen,
-  para después comparar todas las cotizaciones recibidas y decidir la compra. Todavía no se armó nada de
-  esto (ni envío de mail, ni carga de cotizaciones, ni comparador) — es la razón por la que se agregó la
-  opción de cargar el email del contacto al completar los datos de un proveedor (ver 7.2), pensando en
-  que ese dato haga falta para ese flujo más adelante. Diseño pendiente de conversar en detalle.
+- ~~**Circuito de cotizaciones**~~ — implementado como el módulo **Cotizaciones** propio, ver sección 9.
+  No terminó siendo "enviar por mail a los proveedores de un grupo" como se planteó acá originalmente
+  (eso quedó descartado, ver 9.4) sino invitar una lista fija a mano y cargar los precios directo en el
+  sistema — el dato de email del contacto (ver 7.2) queda igual disponible para cuando se arme el envío
+  real por mail, si hace falta más adelante.
 - El cruce `cod_tango` es por texto exacto — si Tango tiene el mismo proveedor con dos códigos distintos
   (por una migración vieja, un alta duplicada, etc.) el ranking/derivación lo va a tratar como dos
   proveedores separados. No se detectó ningún caso real de esto todavía.
@@ -743,7 +744,7 @@ adelante ya no va a incluir la imagen.
 
 Dos migraciones (ver [`sql/007_notas_pedido.sql`](sql/007_notas_pedido.sql) y
 [`sql/009_entrega_parcial.sql`](sql/009_entrega_parcial.sql) — `sql/008_usuarios.sql` es el login, ver
-sección 9 — y `sql/schema.sql` para el estado final), sin RLS (mismo criterio que el resto de `compras_*`):
+sección 11 — y `sql/schema.sql` para el estado final), sin RLS (mismo criterio que el resto de `compras_*`):
 
 - `compras_notas_pedido` — `proveedor_nombre` es texto libre (copiado al crear, igual que
   `compras_oc_lineas.proveedor_nombre`) con `proveedor_id` opcional si coincide con una ficha real de
@@ -753,7 +754,390 @@ Es solo para **CIMOMET** (no Co.Mo.Ing) — membrete fijo, sin selector de empre
 
 ---
 
-## 9. Stack técnico
+## 9. Módulo: Cotizaciones `[DETALLADO]`
+
+Sin relación con Flota/OC/Stock/Notas de Pedido como tablas, pero resuelve una necesidad real del
+circuito de compras que las Notas de Pedido no cubren: cuando Ingeniería pide materiales, Compras baja
+de Capataz un Excel con todo lo solicitado y lo cotiza en paralelo en varios proveedores, comparando a
+mano en el Excel (con las filas de lo que ya hay en stock pintadas de amarillo) para decidir a quién
+comprarle cada cosa — un proceso que hasta ahora era 100% manual y sin registro.
+
+### 9.1 De dónde viene el dato
+
+Se alimenta del export de Capataz — **Venta y Compras → Movimientos → Gestión personalizada de ventas y
+compras** — exportado a Excel. Columnas (nombres tal cual los pone Capataz): `nro_solic, cod_articu,
+descripcio, desc_adic, cant_ums, UMS, cant_umc, UMC, t_comp, n_ot`. A diferencia de Órdenes de Compra o
+Stock, el archivo real trae bloques separados por filas en blanco (uno por cada sector al que Compras le
+pide que confirme stock — Pañol, Despacho); esas filas en blanco se saltean solas al parsear, no hace
+falta que el usuario las saque a mano. `cant_umc`/`UMC` ya viene calculado por Capataz en la unidad real
+de compra (kg para perfiles/chapas, litros para pintura, unidades para bulonería, etc. — no siempre
+coincide con `cant_ums`/`UMS`, que es la cantidad tal como la pidió Ingeniería) — el módulo usa
+`cant_umc`/`umc` como la cantidad de referencia en toda la comparativa y el resumen por proveedor,
+_sin_ inventar ninguna conversión propia entre unidades.
+
+### 9.2 Cómo se usa
+
+1. **Crear una solicitud**: se le pone un nombre (para poder encontrarla después — ej. "Estructura
+   agosto") y se carga el Excel de Capataz (mismo botón + instructivo de siempre, `data-instructivo=
+   "cotizaciones"` en `js/main.js`). Cada fila del archivo se guarda como una fila en
+   `compras_cotizaciones_items`, todas con `a_comprar = true` por defecto.
+2. **Marcar lo que ya hay en stock** (reemplaza el amarillo del Excel): en la ficha de la solicitud, se
+   tildan filas (tocar y arrastrar, mismo patrón que Clasificar Artículos en Proveedores) y se aplica en
+   bloque "✅ Marcar A comprar" / "🚫 Marcar NO comprar" — o se toca el badge Sí/No de una sola fila para
+   cambiarla individualmente. El checkbox "Ocultar los que no se compran" (tildado por defecto) enfoca
+   la tabla en lo que realmente hay que cotizar.
+3. **Dividir en Pañol / Despacho**: el usuario confirmó que la división de una solicitud es siempre esa
+   (no hace falta texto libre) — tildando filas y tocando "🏷️ Marcar como Pañol" / "🏷️ Marcar como
+   Despacho" (o "↩️ Quitar bloque" para volver a "General") se les asigna el bloque. Arriba de la tabla,
+   en vez de un `<select>`, hay **tabs** (`#cot_f_bloque_tabs`, `poblarTabsBloque()`) — uno por bloque,
+   con la cantidad de ítems entre paréntesis — que pasan a filtrar tanto las filas como los proveedores
+   invitados/columnas de precio de ahí en más. Solo se muestra el tab de un bloque si tiene al menos un
+   ítem: al abrir una solicitud nueva (todo en `bloque = ''`) solo aparece "General", y en cuanto se
+   etiqueta el primer ítem como Pañol o Despacho ese tab aparece solo (los botones "Marcar como..."
+   siempre están disponibles, aunque el tab correspondiente todavía no exista). Antes de etiquetar nada,
+   todo vive en el bloque implícito "General (sin dividir)" (`bloque = ''`), así que este paso es
+   opcional — solo hace falta cuando la solicitud realmente mezcla cosas que van a proveedores
+   distintos, que es el caso más común (ver 9.4).
+4. **Filtrar por rubro** (dentro del bloque elegido): una misma solicitud/bloque puede seguir mezclando
+   rubros (perfiles, bulonería, pintura...). El selector "Todos los rubros" (`poblarFiltroGrupo()`)
+   filtra las filas visibles por el grupo/rubro ya asignado a cada artículo en Proveedores → Clasificar
+   artículos (`compras_articulos_grupo`, mismo dato, no se reclasifica nada acá) — solo lista los rubros
+   que efectivamente aparecen en ESTA solicitud, más "Sin clasificar" si corresponde. A diferencia del
+   bloque, este filtro **no** separa proveedores/columnas, solo enfoca las filas.
+5. **Invitar proveedores** (al bloque que se esté viendo): buscador con autocomplete que sugiere tanto
+   los proveedores con ficha propia (`compras_proveedores`) como los "detectados" que solo aparecen en
+   Órdenes de Compra pero todavía no tienen ficha (mismo concepto que en Proveedores → Catálogo/Agenda,
+   ver 7.2) — no admite texto libre, porque invitar necesita un `id` real para guardar el vínculo. Al
+   elegir uno detectado, se le crea la ficha en el momento (mismo criterio que "➕ Completar datos" en
+   Proveedores → Catálogo) y recién ahí se invita. Esto importa en la práctica: la mayoría de los
+   proveedores reales de CIMOMET/CO.MO.ING todavía no tienen ficha propia (solo un puñado la tiene), así
+   que sin esto la lista de "para invitar" hubiera quedado casi vacía. Cada proveedor agregado suma una
+   columna a la tabla, pero solo mientras se esté viendo el bloque al que fue invitado. El nombre en el
+   encabezado se trunca con "…" (algunos son largos, ej. "VAZQUEZ HNOS SRL (FERRETERA SAN LUIS)" —
+   pasarle el mouse por encima muestra el nombre completo). La tabla comparativa tiene su propio scroll
+   vertical (`#cot-tabla-wrap`, `max-height:65vh`) con el encabezado fijo arriba (`position:sticky`) —
+   necesario porque un `position:sticky` contra el scroll de toda la página no sostiene de forma
+   confiable cuando el mismo contenedor también scrollea horizontalmente (la tabla puede tener muchas
+   columnas de proveedores); por eso se le dio altura acotada y scroll propio en vez de dejar crecer la
+   tabla con el resto de la página. También hizo falta `border-collapse:separate` en esa tabla puntual —
+   con `collapse` (el default heredado de la regla `table` general) el sticky de las celdas del header no
+   funciona en Chrome.
+6. **Cargar precios**: un input **de texto** (no `type="number"`, ver más abajo por qué) por celda
+   (artículo × proveedor), se guarda solo al salir del campo (sin botón "Guardar"), aceptando coma o
+   punto decimal (`guardarPrecio()`/`recalcularTotalModalProveedor()` reemplazan `,` por `.` antes de
+   `Number()` — el resto de la app siempre MUESTRA los precios con coma, así que tiene sentido aceptarla
+   también al tipear). Es texto y no número a propósito: un `type="number"` deja que las flechas de
+   incremento (visibles o no) y las teclas ↑/↓ del teclado le resten/sumen el `step` (0.01) al valor con
+   un solo click o toque de tecla sin que se note — bug real reportado por el usuario ("pongo 4500 y
+   después queda 4.499,99"), típico de mover el foco entre celdas al estilo planilla de cálculo (con el
+   mouse cerca de la flechita, o con la tecla ↓ por costumbre) — con texto libre esa clase entera de bug
+   deja de poder pasar. El selector $/U$S del encabezado de cada proveedor es el **default para
+   el próximo precio que se cargue** en esa columna, no una propiedad fija de la columna — si se cambia
+   a mitad de carga, un mismo proveedor puede terminar con precios en más de una moneda (caso real
+   detectado 2026-08-28). Por eso cada celda con precio muestra su propio símbolo ($ / U$S) a la
+   izquierda del número, **el de la moneda realmente guardada en esa celda**, no el del selector — así se
+   nota a simple vista si una celda quedó cargada en la moneda equivocada. Si una columna termina con
+   monedas mezcladas, su encabezado muestra un ⚠️ de aviso; si es una fila la que terminó con precios en
+   monedas distintas entre sí (por eso no tiene ganador sugerido ni resaltado, ver `cheapestForItem()`),
+   la celda de Ganador de esa fila muestra su propio aviso "⚠️ monedas mezcladas" — sin esto no se notaba
+   por qué esa fila puntual no sugería ganador solo. **Corregir una columna entera**
+   (`cambiarMonedaColumna()`): cambiar el selector del encabezado nunca pisa en silencio lo ya cargado
+   (a propósito, ver el caso real de monedas mezcladas de más arriba) — pero si el selector quedó sin
+   cambiar antes de arrancar a tipear y toda la columna terminó en la moneda equivocada (caso real
+   reportado por el usuario, 2026-08-31), corregir precio por precio es tedioso. Al cambiar el selector,
+   si hay precios ya guardados del bloque actual en la moneda vieja, un `confirm()` explícito ofrece
+   re-etiquetarlos todos de una — solo cambia la columna `moneda`, nunca el número cargado — y recalcula
+   el ganador automático de esas filas. Como el `change` del `<select>` no dispara si ya estaba en la
+   moneda elegida (típico si se lo cambió antes pero se rechazó el `confirm()`, o si quedó así de una
+   sesión anterior), cada columna tiene además un botón fijo **"🔁 corregir"** que dispara la misma
+   revisión a mano sin depender de tocar el selector — mismo botón ("🔁 corregir cargados") en el
+   selector de moneda del modal `mCOTPROV` (una sola columna). `renderTablaComparativa()` reconstruye toda
+   la tabla en cada guardado (para recalcular resaltados/ganador), lo que le hacía perder el foco a la
+   celda siguiente si el usuario ya había clickeado ahí para seguir cargando — la función guarda qué
+   celda estaba enfocada (y lo que llevaba tipeado) antes de reconstruir el HTML y se lo restaura al
+   input nuevo después, así se puede tipear precio tras precio sin tener que clickear dos veces cada
+   celda. **Enter/Tab bajan a la celda de abajo** (`enfocarPrecioAdyacente()`): en vez del comportamiento
+   nativo (Enter no hace nada en un input suelto, Tab salta a la columna siguiente), ambas teclas mueven
+   el foco a la misma columna de la fila de abajo (Shift+Enter/Shift+Tab suben) — pedido explícito del
+   usuario para cargar una lista larga de precios sin tocar el mouse, al estilo de completar una columna
+   en una planilla de cálculo. Mover el foco con `.focus()` ya dispara el `blur`/`change` de la celda
+   anterior solo, así el guardado (`guardarPrecio()`) sigue pasando igual que al clickear afuera; si no
+   hay celda siguiente (última fila), hace `blur()` para guardar igual. Mismo helper reusado en el modal
+   `mCOTPROV` (carga enfocada por proveedor, ver más abajo), donde "abajo" es simplemente el siguiente
+   ítem de la lista (una sola columna). **Carga enfocada por proveedor**: tocando el nombre de un proveedor en el encabezado (subrayado
+   punteado, cursor de mano) se abre el modal `mCOTPROV` — la misma lista de ítems pero en una sola
+   columna fija (sin el resto de los proveedores al lado, que "corren" la vista) con un **Total en vivo**
+   abajo, para poder chequear que se está transcribiendo bien la cotización que mandó ese proveedor
+   contra el total que figura en su presupuesto. El total se recalcula al tipear (evento `input`, sin
+   esperar el guardado) usando la moneda elegida en el modal para todas las filas por igual — el guardado
+   real en Supabase sigue pasando en el evento `change` (blur), igual que en la comparativa, y ambas
+   vistas comparten el mismo `PRECIOS`/`guardarPrecio()` así que lo que se carga en el modal ya aparece
+   en la comparativa al cerrarlo (botón "Listo, comparar").
+7. **Comparar y elegir**: la celda más barata de cada fila se resalta en verde, y una columna "Ganador"
+   sugiere automáticamente al proveedor más barato apenas hay precios cargados. **El resaltado y la
+   sugerencia automática solo se calculan cuando todos los precios de esa fila están en la misma moneda**
+   — si hay ARS y USD mezclados en una misma fila, no se resalta ni se sugiere nada (comparar eso a ojo,
+   no se inventa una cotización de cambio). Arriba de la tabla hay un campo opcional **"Tipo de cambio"**
+   (`tipoCambioActual()`) — puramente de referencia, no se guarda en ningún lado (se pierde al recargar
+   la página) y **no** participa en el resaltado/sugerencia automática (esa regla se mantiene: no se
+   inventa una cotización de cambio para decidir). Sirve solo para mostrar, en una línea chica abajo de
+   cada celda en dólares, a cuánto equivale en pesos ("≈ $X"), y en el panel "Resumen por proveedor", si
+   un proveedor terminó con monto en más de una moneda, una línea extra "≈ Total combinado" con la suma
+   de todo convertido a pesos — para poder chequear de un vistazo si conviene sin tener que sacar la
+   cuenta a mano.
+8. **Repartir para cumplir mínimos de compra**: acá está el punto que motivó el módulo — muchas compras
+   tienen mínimos por proveedor (no se puede comprar 100kg a uno, 10 a otro, 2000 a otro), así que la
+   decisión final no siempre es "el más barato por artículo". Por eso el "Ganador" de cada fila se puede
+   **elegir a mano** (no solo aceptar la sugerencia): en cuanto se cambia a mano, esa fila queda con
+   `ganador_manual = true` y deja de recalcularse sola al cargar más precios (con un botón 🔄 para volver
+   a automático si hace falta). El panel **"Resumen por proveedor"**, debajo de la tabla, se recalcula en
+   vivo cada vez que cambia un ganador: por cada proveedor invitado muestra cuántos ítems ganó y la
+   cantidad total en las unidades reales del archivo (ej. "1.245 KGS · 80 LTS · 26 UNI" — sin convertir a
+   una unidad común) más el monto total agrupado por moneda. Es el número que hay que mirar para decidir
+   "le saco este ítem a Fulano y se lo doy a Mengano para llegar al mínimo de kg que negocié con él". Solo
+   suma ítems con `a_comprar = true` — cargar un precio en un ítem marcado "No" (ya hay stock) igual le
+   puede quedar un ganador sugerido/elegido, pero no tiene sentido que ensucie el resumen ni el botón
+   "Confirmar compra" de ese proveedor (bug real reportado por el usuario, 2026-09-02: antes tenía que
+   borrar el ganador a mano en cada ítem "No" para que no sumara) — el ganador queda guardado igual, por
+   si el ítem se vuelve a marcar "Sí" más adelante.
+9. **Confirmar la compra**: el botón "✅ Confirmar compra (N)" en cada tarjeta del resumen cierra la
+   decisión para ese proveedor — pasa los ítems que ganó (los que todavía no estaban confirmados) a
+   `confirmado = true` y los oculta de la comparativa (ya están resueltos, no hace falta seguir
+   mirándolos ahí; `itemsVisibles()` los filtra siempre, sin checkbox para mostrarlos de nuevo). No
+   depende de que haya sido el más barato — sirve para el caso real "a este proveedor, a pesar de los
+   precios, ya le compré": confirmás igual aunque el resaltado automático sugiriera a otro. Cantidad/
+   Monto de la tarjeta siguen sumando TODOS los ítems ganados (confirmados o no) — el número entre
+   paréntesis del botón es solo cuántos faltan confirmar. Cuando no queda ningún ítem "a comprar" sin
+   confirmar en NINGÚN bloque de la solicitud, esta se cierra sola (`verificarCierreAutomatico()`,
+   mismo `estado = 'CERRADA'` que el botón manual — se puede reabrir igual si hace falta corregir algo).
+   Retaguear un ítem a otro bloque o desinvitar a su proveedor ganador resetea `confirmado` a `false`
+   además de limpiar el ganador (ver 9.3/9.4), para que un ítem sin ganador nunca quede marcado como
+   confirmado. **Deshacer una confirmación puntual** (`deshacerConfirmacion()`): caso real del usuario —
+   el proveedor ganador de un ítem resultó no tener stock de eso después de todo, y hace falta volver a
+   ver quién más lo había cotizado. El checkbox **"Mostrar confirmados"** (`cot_f_mostrar_confirmados`,
+   desmarcado por defecto — mismo criterio que "Ocultar los que no se compran") trae de vuelta a la
+   comparativa los ítems ya confirmados, marcados con fondo gris y un "✅ Confirmada ↩️"; el botón ↩️
+   deshace la confirmación de ESE ítem puntual (no del proveedor entero) sin borrar el ganador ni los
+   precios ya cargados — si el mismo proveedor sigue siendo la mejor opción, no hay que volver a
+   elegirlo, solo queda "pendiente" de nuevo. Si la solicitud ya se había cerrado sola, se reabre
+   automáticamente (mismo criterio inverso a `verificarCierreAutomatico()`) para no dejarla marcada
+   CERRADA con un ítem sin confirmar adentro.
+
+**Exportar para cotizar** (`📥 Exportar para cotizar (.xlsx)`, `exportarParaCotizar()`): baja exactamente
+lo que se está viendo en la tabla (mismos filtros de bloque/rubro/"ocultar los que no se compran" que la
+pantalla — mismo criterio que el export de Stock → A comprar) a un Excel con columnas Código /
+Descripción / Detalle / **Cantidad** / **Unidad** (en la unidad original de la solicitud, `cant_ums`/
+`ums` — ej. metros para perfiles, m2 para chapas) / **Equivalencia** / **Unidad** (en unidad de compra,
+`cant_umc`/`umc` — ej. kg). Dos columnas repiten el encabezado "Unidad" a propósito (pedido explícito del
+usuario, layout exacto) — como un objeto JS no puede tener dos claves iguales, se arma con
+`XLSX.utils.aoa_to_sheet()` (array de filas) en vez de `json_to_sheet()`. Las filas salen en el mismo
+orden que la tabla en pantalla — alfabético por **Descripción** (`itemsVisibles()` ordena así siempre,
+no solo al exportar; pedido explícito del usuario, es más fácil de recorrer tanto en pantalla como en el
+Excel que en el orden de carga original de Capataz). Es la lista ya desglosada (sin lo que hay en stock,
+ya separada por bloque/rubro) que se le manda al proveedor para que cotice — reemplaza el paso manual de
+armar ese Excel a mano desde el original de Capataz.
+
+**Emitir informe de reparto** (botón al final de la ficha, `emitirInformeReparto()`): el cierre del
+bloque una vez decididos los ganadores — un Excel con **una hoja por proveedor** (solo los que ganaron
+al menos un ítem) con lo que le corresponde comprarle (Código/Descripción/Detalle/Cantidad/Unidad/Precio
+unitario/Moneda/Subtotal/**Estado** — la lista lista para armarle la Nota de Pedido u OC a ese proveedor)
+más una hoja **"Sin ganador"** con lo que quedó sin asignar (mismas columnas que "Exportar para cotizar",
+sin precio — es lo que todavía hay que resolver antes de cerrar el bloque). A diferencia de "Exportar
+para cotizar", el alcance acá es **todo** el bloque con `a_comprar = true` — no los filtros de rubro/
+"ocultar los que no se compran" de la pantalla en ese momento, porque el informe tiene que cubrir el
+bloque completo. Los nombres de hoja se sanitizan (Excel no permite `[ ] * / \ ?` y los trunca a 31
+caracteres) y se desambiguan si dos quedan iguales tras el recorte. La columna **Estado** marca
+"✓ Compra confirmada" en las filas de un ítem ya cerrado con "✅ Confirmar compra" (ver 9.2 punto 9) —
+pedido explícito del usuario, para que quede claro en el Excel qué ya se compró de verdad y qué todavía
+es solo el ganador de la comparativa. Al final de cada hoja de proveedor se agrega una fila **TOTAL**
+(en la columna Descripción) con la suma de la columna Subtotal — una fila por moneda si ese proveedor
+terminó con precios en más de una (`TOTAL (ARS)` / `TOTAL (USD)`, mismo criterio de no mezclar monedas
+que el resto del módulo, ver 9.2 punto 7).
+
+**Seguimiento por OT:** vive en su propio módulo (**OT**, ver sección 10) y no acá — nació como una
+sub-vista de Cotizaciones (2026-09-02) pero el usuario pidió pasarlo a un módulo de nav propio con
+tarjetas por OT y gráficos de detalle en vez de una tabla más. El dato de OT (`n_ot`, columna 9.1) sigue
+viviendo en `compras_cotizaciones_items` — el módulo OT solo lo lee, no agrega tablas nuevas.
+
+### 9.3 Modelo de datos — `sql/013_cotizaciones.sql` + `sql/014_cotizaciones_bloques.sql` + `sql/015_cotizaciones_confirmado.sql`
+
+Cuatro tablas (ver `sql/schema.sql` para el estado final), sin RLS (mismo criterio que el resto de
+`compras_*`):
+
+- `compras_cotizaciones` — la solicitud en sí: nombre, fecha, estado (`ABIERTA`/`CERRADA` — un flag
+  simple para filtrar, no bloquea edición al cerrarla; se pone en `CERRADA` con el botón manual o solo,
+  cuando no queda ningún ítem a comprar sin confirmar, ver 9.2 punto 9).
+- `compras_cotizaciones_items` — una fila por artículo del Excel importado, con `a_comprar`, `bloque`
+  (columna de texto pero en la práctica solo tres valores: `''` = "General (sin dividir)" antes de
+  clasificar, `'Pañol'` o `'Despacho'` — el usuario confirmó que la división es siempre esa, así que la
+  UI ofrece un select fijo + dos botones en vez de texto libre, ver 9.2), el vínculo al ganador
+  (`ganador_proveedor_id` + `ganador_manual`, ver 9.2) y `confirmado` (compra ya decidida a ese
+  proveedor — se oculta de la comparativa, ver 9.2 punto 9).
+- `compras_cotizaciones_proveedores` — la lista de proveedores invitados, **por bloque**: un proveedor se
+  invita a un bloque puntual de la solicitud, no a toda la solicitud entera (`unique(cotizacion_id,
+  proveedor_id, bloque)` — permite invitar al mismo proveedor a más de un bloque si hiciera falta).
+  Decisión tomada con el usuario: se invita una lista fija a mano por bloque, no se sugiere
+  automáticamente por rubro/grupo de Proveedores (ver 9.4).
+- `compras_cotizaciones_precios` — el precio cargado por cada proveedor invitado para cada artículo
+  (`unique(item_id, proveedor_id)`, sin columna de bloque propia — se resuelve solo, porque el `item_id`
+  ya define a qué bloque pertenece), con su propia `moneda` (aunque la UI la fija por columna, ver 9.2).
+
+### 9.4 Decisiones tomadas y alcance actual
+
+- **La solicitud se divide en "bloques" — siempre Pañol o Despacho**: nació de un caso real — una misma
+  solicitud casi siempre mezcla artículos que en la práctica cotizan proveedores completamente distintos
+  (ej. lo que confirma Pañol lo cotiza un proveedor, lo que confirma Despacho otro; "eso va a pasar
+  siempre o en la mayoría de los casos", palabras del usuario). El usuario confirmó explícitamente que la
+  división **siempre** es esa (no un texto libre variable) — por eso, en vez de un input de texto, la UI
+  tiene tres botones fijos ("🏷️ Marcar como Pañol" / "🏷️ Marcar como Despacho" / "↩️ Quitar bloque") sobre
+  los ítems tildados (tocar y arrastrar). Los tres bloques posibles son siempre los mismos (General/
+  Pañol/Despacho, hardcodeados en el JS, no se pueblan desde ninguna tabla), pero arriba de la tabla se
+  muestran como **tabs** en vez de un `<select>`, y **el tab de un bloque aparece si tiene algún ítem O
+  algún proveedor invitado** (`poblarTabsBloque()`) — pedido explícito del usuario, para no ver
+  "Despacho" vacío en una solicitud que todavía no se dividió; en cuanto se etiqueta el primer ítem con
+  ese bloque, su tab aparece solo. **Bug real corregido (2026-09-03):** al principio el tab solo se
+  fijaba en si el bloque tenía ítems — si se reetiquetaban TODOS los ítems de "General" a "Despacho", el
+  tab de General desaparecía junto con los proveedores que se le habían invitado ahí, sin ítems de por
+  medio, dejándolos invisibles para siempre (el usuario lo reportó como "tengo proveedores pero no
+  aparece ninguno" — la lista mostraba 5 invitados en total mientras Despacho, el único tab visible, no
+  tenía ninguno). Por eso ahora también cuenta los proveedores invitados a la hora de decidir qué tabs
+  mostrar, no solo los ítems. El bloque filtra tanto las filas visibles como la lista de proveedores
+  invitados/columnas de precio, así cada bloque funciona como su propia mini-cotización dentro de la
+  misma solicitud. Retaguear un ítem a otro bloque le resetea el ganador
+  (`ganador_proveedor_id`/`ganador_manual`), porque el proveedor ganador del bloque viejo puede no estar
+  invitado al bloque nuevo.
+- **Invitar proveedores es manual, no por rubro**: se evaluó sugerir proveedores automáticamente según
+  el grupo/rubro de los artículos de la solicitud (reusando la clasificación de Proveedores, sección 7)
+  pero el usuario prefirió elegir a mano — es lo más parecido a cómo ya arma la lista hoy, y evita una
+  UI más compleja donde cada ítem podría tener candidatos distintos. El filtro de **rubro** (`cot_f_grupo`,
+  ver 9.2 punto 4) sigue existiendo aparte de bloque — es un segundo filtro, más fino, dentro del bloque
+  que se esté mirando (ej. dentro de "Despacho" ver solo "Bulonería").
+- **Sin envío de mail todavía**: el módulo no manda nada a los proveedores — invitar es solo un registro
+  interno. El email del contacto (Proveedores, sección 7.2) sigue disponible por si más adelante se arma
+  un envío real.
+- **Confirmar compra por proveedor, no por ítem individual**: se evaluó un checkbox de confirmar por
+  fila, pero el caso real del usuario es "ya le compré a este proveedor" como decisión de bloque
+  completo — un botón por tarjeta en el resumen es más rápido que tildar ítem por ítem. Confirmar no
+  exige que ese proveedor haya sido el más barato (el usuario puede tener mínimos de compra u otros
+  motivos para comprarle igual, mismo espíritu que `ganador_manual`).
+- **El cierre automático de la solicitud es reversible**: se decidió que se cierre sola (no solo avisar)
+  cuando no queda nada sin confirmar, para no depender de que el usuario se acuerde de tocar "Cerrar
+  solicitud" — pero sigue siendo un simple `estado`, no un lock: se puede reabrir con el mismo botón de
+  siempre si hace falta corregir algo después.
+- **Sin vínculo con Orden de Compra ni con Nota de Pedido todavía**: elegir un "ganador" por artículo no
+  genera ninguna OC/NP automáticamente — es una decisión registrada, el paso de comprar de verdad sigue
+  siendo manual (Tango o una Nota de Pedido aparte). Podría conectarse más adelante si hace falta.
+- **`Cotizar.xlsx`** (el archivo de ejemplo real que se usó para diseñar el parseo) queda en la raíz del
+  repo pero en `.gitignore` — tiene datos reales de compras/proveedores/precios, mismo criterio que
+  `Excels/` (ver 5.5/6.5).
+
+## 10. Módulo: OT `[DETALLADO]`
+
+Módulo de nav propio (grupo colapsable "🏷️ OT", como Flota/OC/Stock/Proveedores), pedido explícito del
+usuario (2026-09-02) para poder seguir el gasto de un trabajo puntual (orden de trabajo) con tarjetas
+por OT y gráficos de detalle — no es una tabla nueva, **lee y reagrupa los mismos datos de Cotizaciones**
+(`js/modules/ot.js`, sin tablas ni migraciones propias).
+
+### 10.1 De dónde sale el dato
+
+El número de OT **no sale de Tango** — `compras_oc_lineas` (el export de OC de Tango, sección 5) no trae
+ningún campo de OT — sino de la columna `N_OT` que ya trae el export de Capataz con el que se arma cada
+solicitud de **Cotizaciones** (sección 9.1), guardada en `compras_cotizaciones_items.n_ot`. Por eso el
+seguimiento por OT solo puede cubrir lo que pasa por una solicitud de Cotizaciones — no las compras que
+van directo por Tango sin pasar por acá. El usuario lo aceptó como punto de partida ("me gustaría que
+todas las OC tengan una OT asignada pero tendría que ver...") en vez de esperar a tener OT en el 100% de
+las compras; también aclaró que **"OT1" es un cajón para compras de planta en general**, no un trabajo
+puntual — el módulo no le da ningún tratamiento especial, es simplemente una OT más que concentra más
+monto que el resto, a propósito.
+
+### 10.2 La idea central: distinguir comprado de asignado de stock
+
+El pedido explícito del usuario fue diferenciar, dentro de cada OT, **qué se compró de verdad** de **qué
+se cubrió con stock existente** (el "purgado" que se hace en cada solicitud de Cotizaciones marcando
+ítems "No" porque ya hay — ver 9.2 punto 2), en vez de mezclar ambos en un solo total. `clasificarItemOT()`
+en `js/modules/ot.js` clasifica cada ítem en tres orígenes:
+
+- **`comprado`** — `a_comprar = true` y tiene un ganador elegido. Suma cantidad (en su unidad real,
+  kg/lts/uni, sin convertir) y monto por moneda (mismo criterio de Cotizaciones de no mezclar ARS/USD en
+  una misma suma, ver 9.2 punto 7).
+- **`stock`** — `a_comprar = false` (ya había stock). Suma cantidad en su unidad real pero **nunca monto**
+  — no se le compra a nadie.
+- **`pendiente`** — `a_comprar = true` pero todavía sin ganador elegido. No cuenta en ninguno de los dos
+  totales anteriores, para no inflar "comprado" ni "de stock" con algo que todavía no se definió — se
+  muestra aparte para que no se pierda de vista que falta resolverlo.
+
+Los ítems sin OT (la columna `N_OT` de Capataz no siempre viene completa) se agrupan aparte como
+**"(Sin OT)"** en vez de perderse del total, para que se note que faltan etiquetar.
+
+### 10.3 Vistas
+
+- **Dashboard** (`ot-dash`) — 4 KPIs (OTs con datos, ítems comprados, ítems de stock, ítems sin OT) +
+  un gráfico de dona **Comprado vs. de stock** (todas las OT juntas, por cantidad de ítems — no por
+  monto, así no depende de la moneda) + un **Ranking de OTs por monto comprado** (barras horizontales,
+  top 10). Acceso rápido a "Ver por OT".
+- **Por OT** (`ot-cards`) — grilla de **tarjetas**, una por OT (`.ot-card`, clickeable), cada una con sus
+  números de comprado (ítems + cantidad + monto) y de stock (ítems + cantidad) de un vistazo, más un
+  buscador por OT. El N° de OT se muestra **sin los ceros a la izquierda** que trae el export de Capataz
+  (`000000000596` → `596`, `formatOT()` en `js/modules/ot.js`) — solo se recorta si es puramente
+  numérico, así que "OT1" (el cajón de compras de planta en general, ver 10.1) queda tal cual; el dato
+  crudo (con ceros) se sigue usando para agrupar/filtrar, `formatOT()` es solo de presentación. Las
+  cantidades por unidad (`chipsUnidades()`) siempre muestran **KGS primero, aunque sea "0 KGS"** — es la
+  unidad de referencia del rubro (estructuras/tanques, la mayoría del material se compra por peso), así
+  que conviene verla siempre para comparar entre OT en vez de que aparezca o no según si esa OT tuvo
+  algo en kg — el resto de las unidades presentes (LTS, UNI, etc.) van después.
+- Click en una tarjeta abre su **detalle**, dividido en dos **sub-pestañas** (`.subtabs`/`.subtab`,
+  patrón visual reusado de las tabs de bloque de Cotizaciones — ver 9.2 punto 3 — pero con clase propia
+  porque no es específico de Cotizaciones): **Resumen** (KPIs + los 3 bloques de gráficos de abajo,
+  pestaña por defecto al abrir una OT) y **Detalle** (la tabla artículo por artículo). Se separaron a
+  pedido del usuario para no mezclar "panorama" con "línea por línea" en una sola pantalla larga. Los
+  gráficos se dibujan siempre con el panel Resumen momentáneamente visible (`mostrarTabOT()` en
+  `js/modules/ot.js`) aunque la sub-pestaña activa sea Detalle — Chart.js necesita que el contenedor
+  tenga tamaño real en el momento de crear el canvas, si no queda con dimensiones 0.
+  1. **Comprado vs. de stock** — **una dona por unidad** (KGS, LTS, UNI...), no una sola dona por
+     cantidad de ítems: un ítem "1 tonelada" y un ítem "1 tornillo" cuentan igual como "1 ítem", así que
+     ese número no dice mucho para decidir compras — pedido explícito del usuario tras ver el dashboard
+     con datos reales. `renderDonutsPorUnidad()` en `js/modules/ot.js` arma un `.chart-card` por unidad
+     presente entre comprado y stock (mismo criterio de "un chart-card por serie" que
+     `renderBarrasPorMoneda()`/`renderEvolucionPorMoneda()`), con KGS siempre primero (aunque sea
+     "0 KGS") — mismo criterio que `chipsUnidades()` en las tarjetas de la vista Por OT. Se usa tanto en
+     el Dashboard general (todas las OT juntas) como en el Resumen de cada OT.
+  2. **Gasto por proveedor** dentro de esa OT (barras horizontales).
+  3. **Evolución en el tiempo** — monto comprado por mes, agrupado por la fecha de la solicitud de
+     Cotizaciones a la que pertenece cada ítem (no hay una fecha propia por ítem).
+
+  La tabla de Detalle muestra el artículo por artículo (código, descripción, cantidad, origen — 🛒/📦/⏳
+  —, proveedor ganador, precio, subtotal, estado, de qué solicitud salió) para poder rastrear de dónde
+  sale cada número del Resumen, no solo verlo.
+
+**Gráficos multi-moneda:** ningún gráfico mezcla ARS y USD en el mismo eje (sería un dual-axis
+encubierto) — `renderBarrasPorMoneda()`/`renderEvolucionPorMoneda()` arman **un `.chart-card` por
+moneda** dentro del contenedor (`otd_ranking_wrap`, `otdet_prov_wrap`, `otdet_evol_wrap`), así que con
+una sola moneda (el caso normal) queda un único gráfico y con dos aparecen dos, cada uno con su propio
+título y escala — mismo criterio de "no mezclar monedas, mostrar aparte" que ya usa Cotizaciones (ver
+9.2 punto 7). Los gráficos usan Chart.js (mismo CDN que el Dashboard de Órdenes de Compra, sección 5.3)
+con los mismos colores de acento (`#22c55e` verde, `#6366f1` índigo, `#3b82f6` azul, `#64748b` gris) y
+leen `--muted`/`--border`/`--bg2` del tema activo en cada render, igual que el resto del tablero (ver
+sección 11).
+
+### 10.4 Modelo de datos
+
+Sin tablas propias — `js/modules/ot.js` trae en cada visita (no se cachea, mismo motivo que antes: lo
+que alimenta los totales pasa en la vista detalle de una solicitud de Cotizaciones, no acá) **todos** los
+`compras_cotizaciones_items` y `compras_cotizaciones_precios` de **todas** las solicitudes (no solo la
+abierta), más `compras_proveedores` (nombres) y `compras_cotizaciones` (nombre/fecha de cada solicitud,
+para la evolución en el tiempo y la columna "Solicitud" del detalle).
+
+### 10.5 Decisiones tomadas
+
+- **Módulo de nav propio, no una sub-vista de Cotizaciones**: se evaluó dejarlo anidado bajo Cotizaciones
+  (más simple, deja claro de dónde sale el dato) pero el usuario prefirió un grupo de nav al mismo nivel
+  que Flota/OC/Stock/Proveedores, para poder "trabajarlo de ahí" — el módulo sigue leyendo las mismas
+  tablas de Cotizaciones, no hay tablas nuevas.
+- **Comprado vs. stock, no un solo total**: ver 10.2 — nació de que el usuario "purga" cada solicitud
+  marcando qué ya hay en stock antes de cotizar, y quería que ese trabajo se reflejara en el seguimiento
+  por OT en vez de perderse (o peor, contarse como si se hubiera comprado).
+
+## 11. Stack técnico
 
 - **Frontend:** HTML/JS vanilla, mismo criterio que Nexo RRHH y CIMOMET v3.
 - **Diferencia respecto a Nexo RRHH:** en vez de un único archivo HTML, para este proyecto conviene
@@ -839,7 +1223,7 @@ tablero-compras/
 ├── js/
 │   ├── main.js             (nav / routing / ciclo de vida de módulos)
 │   ├── supabase-client.js  (credenciales hardcodeadas, conexión automática + login por PIN)
-│   ├── login.js            (login por PIN — atribución, no seguridad real, ver sección 9)
+│   ├── login.js            (login por PIN — atribución, no seguridad real, ver sección 11)
 │   ├── utils.js            (toast, formateo de fechas/montos, estado de vencimiento, parseo de Excel compartido por OC y Stock)
 │   └── modules/
 │       ├── flota-dashboard.js
@@ -854,8 +1238,11 @@ tablero-compras/
 │       ├── oc.js  (Órdenes de Compra — módulo aparte, sin relación con Flota, ver sección 5)
 │       ├── stock.js  (Stock — módulo aparte, sin relación con Flota ni OC, ver sección 6)
 │       ├── proveedores.js  (Proveedores — se alimenta de OC, ver sección 7)
-│       └── notas-pedido.js  (Notas de Pedido — numeración + PDF + vínculo con OC, ver sección 8)
+│       ├── notas-pedido.js  (Notas de Pedido — numeración + PDF + vínculo con OC, ver sección 8)
+│       ├── cotizaciones.js  (Cotizaciones — se alimenta de Capataz y de Proveedores, ver sección 9)
+│       └── ot.js  (OT — lee y reagrupa los datos de Cotizaciones, sin tablas propias, ver sección 10)
 ├── Excels/                (archivos de ejemplo de OC, Stock y NP — en .gitignore, no se suben al repo)
+├── Cotizar.xlsx           (archivo de ejemplo de Cotizaciones — también en .gitignore, datos reales)
 └── sql/
     ├── schema.sql
     ├── 002_seguros_archivo.sql
@@ -867,7 +1254,11 @@ tablero-compras/
     ├── 008_usuarios.sql
     ├── 009_entrega_parcial.sql
     ├── 010_moneda.sql
-    └── 011_cotizacion_ref.sql
+    ├── 011_cotizacion_ref.sql
+    ├── 012_reset_notas_pedido.sql
+    ├── 013_cotizaciones.sql
+    ├── 014_cotizaciones_bloques.sql
+    └── 015_cotizaciones_confirmado.sql
 ```
 
 > `porteria.html` y `solicitud.html` son entry points separados (audiencias distintas: portero de
@@ -877,7 +1268,7 @@ tablero-compras/
 > base) quedó sin tocar en la raíz como referencia — su funcionalidad ya está migrada a `index.html` +
 > los módulos `flota-*.js`; se puede borrar cuando lo confirmes.
 
-## 10. Notas específicas de entorno
+## 12. Notas específicas de entorno
 
 - Dijiste que vas a trabajar este proyecto en **Antigravity** (cuenta de la empresa). Ojo con un detalle
   que ya tenemos registrado de tu workflow: **Antigravity no carga `CLAUDE.md` automáticamente** — usa
@@ -887,7 +1278,7 @@ tablero-compras/
   `CLAUDE.md`. Lo más simple: mantener el contenido en `CLAUDE.md` y tener una copia (o symlink) como
   `AGENTS.md`.
 
-## 11. Decisiones abiertas (TBD)
+## 13. Decisiones abiertas (TBD)
 
 Ya decidido al construir el módulo Flota (2026-08-04):
 - [x] Esquema de datos: se migró al diseño de la sección 4.4 (`compras_vehiculos` separado de
@@ -920,6 +1311,16 @@ Ya decidido al construir el login por PIN (2026-08-24):
   una pantalla parecida del Tablero de Control de RRHH) y creación de PIN self-service la primera vez
   ("Crear PIN") en vez de que un admin precargue PINs por SQL.
 
+Ya decidido al construir el módulo Cotizaciones (2026-08-27):
+- [x] Se invita una lista fija de proveedores a mano por solicitud, no se sugiere automáticamente por
+  rubro/grupo de Proveedores — ver sección 9.4.
+- [x] Marcar "no comprar" (ya hay stock) se hace tildando filas en bloque (tocar y arrastrar, mismo
+  patrón que Clasificar Artículos), no un toggle individual por fila únicamente.
+- [x] Sí se registra un "ganador" por artículo, con la posibilidad de fijarlo a mano
+  (`ganador_manual = true`) para poder repartir la compra entre proveedores y cumplir mínimos de compra
+  sin que el sistema lo pise recalculando solo al más barato — ver 9.2.
+- [x] Sin envío de mail a proveedores ni vínculo con OC/Nota de Pedido en esta primera versión — ver 9.4.
+
 Todavía sin decidir:
 - [ ] ¿Se integra el combustible/YPF Ruta al módulo Flota o queda como módulo aparte?
 - [ ] ¿Las alertas de vencimiento se envían por mail (reutilizando Resend, ya integrado en Nexo RRHH) o solo se muestran en el tablero?
@@ -939,7 +1340,7 @@ Todavía sin decidir:
 - [ ] Categorización de proveedores (ver 5.3): clasificarlos por tipo (materia prima, pintura, insumos,
   etc.) para poder adaptar/filtrar el Dashboard de OC según categoría — todavía no tiene tabla ni UI.
 
-## 12. Próximos pasos sugeridos
+## 14. Próximos pasos sugeridos
 
 1. Correr `sql/schema.sql` contra el proyecto Supabase real (ya hecho — tablas `compras_*` creadas).
 2. Correr [`sql/002_seguros_archivo.sql`](sql/002_seguros_archivo.sql) (ya hecho) y
@@ -961,9 +1362,18 @@ Todavía sin decidir:
    `compras_notas_pedido`).
 10. Correr [`sql/011_cotizacion_ref.sql`](sql/011_cotizacion_ref.sql) para agregar la columna
     `cotizacion_ref` (**todavía falta**).
-11. Probar el circuito completo: pedir vehículo (solicitud.html) → aprobar y asignar (index.html) →
+11. Correr [`sql/012_reset_notas_pedido.sql`](sql/012_reset_notas_pedido.sql) — borra las Notas de Pedido
+    de prueba cargadas mientras se armaba el módulo y reinicia la numeración en 8122 (**todavía falta**).
+12. Correr [`sql/013_cotizaciones.sql`](sql/013_cotizaciones.sql) — crea las 4 tablas del módulo
+    Cotizaciones (ya hecho — el usuario ya creó una solicitud real de prueba).
+13. Correr [`sql/014_cotizaciones_bloques.sql`](sql/014_cotizaciones_bloques.sql) — agrega la división
+    en bloques (Pañol/Despacho, ver sección 9.2/9.4) (ya hecho — el usuario ya lo está usando con
+    proveedores reales invitados por bloque).
+14. Correr [`sql/015_cotizaciones_confirmado.sql`](sql/015_cotizaciones_confirmado.sql) — agrega
+    `confirmado` para poder cerrar la compra por proveedor (ver sección 9.2 punto 9) (**todavía falta**).
+15. Probar el circuito completo: pedir vehículo (solicitud.html) → aprobar y asignar (index.html) →
    registrar salida/retorno (porteria.html) → ver el movimiento reflejado en el dashboard.
-12. Evaluar RLS (Row Level Security) en las tablas `compras_*` — hoy cualquiera con el link de
+16. Evaluar RLS (Row Level Security) en las tablas `compras_*` — hoy cualquiera con el link de
    `solicitud.html`/`porteria.html` puede leer/escribir todas las tablas, sin ningún login de por medio.
-13. Ir completando los módulos `[TBD]` de la sección 3 a medida que los necesites, usando el módulo
+17. Ir completando los módulos `[TBD]` de la sección 3 a medida que los necesites, usando el módulo
    Flota (carpeta `js/modules/`) como plantilla.

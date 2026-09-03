@@ -19,6 +19,8 @@ import * as oc from './modules/oc.js';
 import * as stock from './modules/stock.js';
 import * as proveedores from './modules/proveedores.js';
 import * as notasPedido from './modules/notas-pedido.js';
+import * as cotizaciones from './modules/cotizaciones.js';
+import * as ot from './modules/ot.js';
 
 const MODULES = {
   dash: dashboard, vcs: vehiculos, sols: solicitudes, movs: movimientos, gantt, mant: mantenimiento, vtv, doc: documentos,
@@ -26,6 +28,8 @@ const MODULES = {
   'stock-dash': stock, 'stock-comprar': stock, 'stock-segui': stock, 'stock-todo': stock,
   'prov-dash': proveedores, 'prov-agenda': proveedores, 'prov-ranking': proveedores, 'prov-clasificar': proveedores, 'prov-catalogo': proveedores,
   'np-lista': notasPedido,
+  'cot-lista': cotizaciones,
+  'ot-dash': ot, 'ot-cards': ot,
 };
 
 function go(secId) {
@@ -84,6 +88,15 @@ const INSTRUCTIVOS = {
       'Tocá <strong>Exportar a XLS</strong>.',
     ],
     fileInputId: 'sto_file',
+  },
+  cotizaciones: {
+    titulo: '📤 Cómo bajar el archivo para armar una Cotización',
+    pasos: [
+      'Abrí <strong>Capataz Software</strong>.',
+      'Menú <strong>Venta y Compras → Movimientos → Gestión personalizada de ventas y compras</strong>.',
+      'Exportá el informe a Excel (.xlsx).',
+    ],
+    fileInputId: 'cot_file',
   },
 };
 

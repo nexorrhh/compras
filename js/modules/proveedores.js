@@ -474,6 +474,13 @@ function renderCatalogo() {
   let proveedores = obtenerTodosLosProveedores().map(p => ({ ...p, _grupos: gruposDeProveedor(p, derivado) }));
   if (q) proveedores = proveedores.filter(p => (p.nombre || '').toUpperCase().includes(q) || (p.cod_tango || '').toUpperCase().includes(q));
   if (grupoFiltroNombre) proveedores = proveedores.filter(p => p._grupos.includes(grupoFiltroNombre));
+  // Para poder recorrer el catálogo cargando vendedores sin volver a
+  // pasar por los que ya se completaron — un proveedor "detectado" (sin
+  // ficha) nunca tiene contactos todavía (hace falta "Completar datos"
+  // primero), así que este filtro nunca los oculta a propósito.
+  if (document.getElementById('pvp_f_ocultar_con_contacto')?.checked) {
+    proveedores = proveedores.filter(p => p.virtual || !CONTACTOS.some(c => c.proveedor_id === p.id));
+  }
   proveedores.sort((a, b) => a.nombre.localeCompare(b.nombre));
 
   const resumen = document.getElementById('pvp_resumen');
@@ -689,6 +696,7 @@ export function init() {
 
   document.getElementById('pvp_f_q')?.addEventListener('input', renderCatalogo);
   document.getElementById('pvp_f_grupo')?.addEventListener('change', renderCatalogo);
+  document.getElementById('pvp_f_ocultar_con_contacto')?.addEventListener('change', renderCatalogo);
   document.getElementById('pvp_nuevo')?.addEventListener('click', () => abrirProveedor(null));
   initExpandCollapse('t-prov-catalogo');
 
