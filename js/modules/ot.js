@@ -44,13 +44,19 @@ function formatOT(ot) {
   return /^\d+$/.test(ot) ? String(parseInt(ot, 10)) : ot;
 }
 
+// El campo UMC de Capataz a veces trae basura en vez de una unidad real
+// ("***", "?" cuando venía vacío — ver estadisticasItems) — una unidad
+// de verdad siempre tiene alguna letra (KGS, LTS, UNI, MTS...), así que
+// cualquier valor sin ninguna letra se descarta antes de mostrarlo.
+const esUnidadValida = u => /[A-Za-z]/.test(u);
+
 // KGS es la unidad de referencia del rubro (estructuras/tanques — la
 // mayoría del material se compra por peso), así que siempre se muestra
 // aunque esta OT no tenga nada comprado/de stock en kg todavía (queda
 // en "0 KGS"), y siempre primero en la lista — el resto de las unidades
 // presentes (LTS, UNI, etc.) van después, en el orden en que aparecen.
 function chipsUnidades(mapaUnidad) {
-  const entries = new Map(mapaUnidad);
+  const entries = new Map([...mapaUnidad].filter(([u]) => esUnidadValida(u)));
   if (![...entries.keys()].some(u => /^KG/i.test(u))) entries.set('KGS', 0);
   const claves = [...entries.keys()].sort((a, b) => {
     const aKg = /^KG/i.test(a) ? 0 : 1, bKg = /^KG/i.test(b) ? 0 : 1;
@@ -187,7 +193,7 @@ function aplicarTemaChart() {
 function renderDonutsPorUnidad(contId, compradoUnidad, stockUnidad) {
   const cont = document.getElementById(contId);
   if (!cont) return;
-  const claves = new Set([...compradoUnidad.keys(), ...stockUnidad.keys()]);
+  const claves = new Set([...compradoUnidad.keys(), ...stockUnidad.keys()].filter(esUnidadValida));
   if (![...claves].some(u => /^KG/i.test(u))) claves.add('KGS');
   const ordenadas = [...claves].sort((a, b) => {
     const aKg = /^KG/i.test(a) ? 0 : 1, bKg = /^KG/i.test(b) ? 0 : 1;

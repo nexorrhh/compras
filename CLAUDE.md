@@ -1084,7 +1084,10 @@ Los ítems sin OT (la columna `N_OT` de Capataz no siempre viene completa) se ag
   cantidades por unidad (`chipsUnidades()`) siempre muestran **KGS primero, aunque sea "0 KGS"** — es la
   unidad de referencia del rubro (estructuras/tanques, la mayoría del material se compra por peso), así
   que conviene verla siempre para comparar entre OT en vez de que aparezca o no según si esa OT tuvo
-  algo en kg — el resto de las unidades presentes (LTS, UNI, etc.) van después.
+  algo en kg — el resto de las unidades presentes (LTS, UNI, etc.) van después. La columna UMC de
+  Capataz a veces trae basura en vez de una unidad real (`***`, o `?` cuando el módulo la completa por
+  venir vacía) — `esUnidadValida()` descarta cualquier valor sin ninguna letra antes de mostrarlo (una
+  unidad real siempre tiene alguna, KGS/LTS/UNI/MTS...), tanto acá como en los gráficos de dona de abajo.
 - Click en una tarjeta abre su **detalle**, dividido en dos **sub-pestañas** (`.subtabs`/`.subtab`,
   patrón visual reusado de las tabs de bloque de Cotizaciones — ver 9.2 punto 3 — pero con clase propia
   porque no es específico de Cotizaciones): **Resumen** (KPIs + los 3 bloques de gráficos de abajo,
