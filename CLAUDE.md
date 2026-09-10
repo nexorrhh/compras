@@ -939,20 +939,28 @@ armar ese Excel a mano desde el original de Capataz.
 
 **Emitir informe de reparto** (botón al final de la ficha, `emitirInformeReparto()`): el cierre del
 bloque una vez decididos los ganadores — un Excel con **una hoja por proveedor** (solo los que ganaron
-al menos un ítem) con lo que le corresponde comprarle (Código/Descripción/Detalle/Cantidad/Unidad/Precio
-unitario/Moneda/Subtotal/**Estado** — la lista lista para armarle la Nota de Pedido u OC a ese proveedor)
-más una hoja **"Sin ganador"** con lo que quedó sin asignar (mismas columnas que "Exportar para cotizar",
-sin precio — es lo que todavía hay que resolver antes de cerrar el bloque). A diferencia de "Exportar
-para cotizar", el alcance acá es **todo** el bloque con `a_comprar = true` — no los filtros de rubro/
-"ocultar los que no se compran" de la pantalla en ese momento, porque el informe tiene que cubrir el
-bloque completo. Los nombres de hoja se sanitizan (Excel no permite `[ ] * / \ ?` y los trunca a 31
-caracteres) y se desambiguan si dos quedan iguales tras el recorte. La columna **Estado** marca
-"✓ Compra confirmada" en las filas de un ítem ya cerrado con "✅ Confirmar compra" (ver 9.2 punto 9) —
-pedido explícito del usuario, para que quede claro en el Excel qué ya se compró de verdad y qué todavía
-es solo el ganador de la comparativa. Al final de cada hoja de proveedor se agrega una fila **TOTAL**
-(en la columna Descripción) con la suma de la columna Subtotal — una fila por moneda si ese proveedor
-terminó con precios en más de una (`TOTAL (ARS)` / `TOTAL (USD)`, mismo criterio de no mezclar monedas
-que el resto del módulo, ver 9.2 punto 7).
+al menos un ítem) con lo que le corresponde comprarle (Código/**OT**/Descripción/Detalle/Cantidad/Unidad/
+Precio unitario/Moneda/Subtotal/**Estado** — la lista lista para armarle la Nota de Pedido u OC a ese
+proveedor) más una hoja **"Sin ganador"** con lo que quedó sin asignar (mismas columnas que "Exportar
+para cotizar" más la columna OT, sin precio — es lo que todavía hay que resolver antes de cerrar el
+bloque). A diferencia de "Exportar para cotizar", el alcance acá es **todo** el bloque con
+`a_comprar = true` — no los filtros de rubro/"ocultar los que no se compran" de la pantalla en ese
+momento, porque el informe tiene que cubrir el bloque completo. Los nombres de hoja se sanitizan (Excel
+no permite `[ ] * / \ ?` y los trunca a 31 caracteres) y se desambiguan si dos quedan iguales tras el
+recorte. La columna **OT** (`formatOTExport()`, misma lógica que `formatOT()` del módulo OT —
+duplicada a propósito entre módulos, mismo criterio que `agruparOCPorOrden()` en Notas de Pedido, ver
+8.2 — sin los ceros a la izquierda que trae Capataz) se agregó a pedido del usuario para saber de un
+vistazo a qué orden de trabajo corresponde cada línea sin tener que cruzar con Cotizaciones o el módulo
+OT. La columna **Estado** marca "✓ Compra confirmada" en las filas de un ítem ya cerrado con
+"✅ Confirmar compra" (ver 9.2 punto 9) — pedido explícito del usuario, para que quede claro en el Excel
+qué ya se compró de verdad y qué todavía es solo el ganador de la comparativa. **Precio unitario y
+Subtotal se redondean a 2 decimales** al armar cada fila (antes salían con la precisión completa del
+cálculo interno — `precio × cant_umc` — ilegible en el Excel real, ej. "532,745247"); el total por
+moneda se sigue acumulando con el subtotal SIN redondear fila por fila, para no arrastrar el redondeo de
+cada línea al total, y recién se redondea a 2 decimales la fila de TOTAL. Al final de cada hoja de
+proveedor se agrega esa fila **TOTAL** (en la columna Descripción) con la suma de la columna Subtotal —
+una fila por moneda si ese proveedor terminó con precios en más de una (`TOTAL (ARS)` / `TOTAL (USD)`,
+mismo criterio de no mezclar monedas que el resto del módulo, ver 9.2 punto 7).
 
 **Seguimiento por OT:** vive en su propio módulo (**OT**, ver sección 10) y no acá — nació como una
 sub-vista de Cotizaciones (2026-09-02) pero el usuario pidió pasarlo a un módulo de nav propio con

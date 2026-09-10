@@ -406,6 +406,19 @@ function exportarParaCotizar() {
   XLSX.writeFile(wb, `${partes.join('_')}.xlsx`);
 }
 
+// Capataz trae el N° de OT con ceros a la izquierda ("000000000596") —
+// se muestra sin esos ceros ("596"), mismo criterio y misma lógica que
+// formatOT() del módulo OT (duplicada a propósito acá, ver notas-pedido.js
+// 8.2 para el mismo criterio de "duplicar en vez de importar entre
+// módulos"). Solo se recorta si es puramente numérico, así que "OT1" (el
+// cajón de compras de planta en general) u otro valor no numérico queda
+// tal cual.
+function formatOTExport(ot) {
+  const t = (ot || '').trim();
+  if (!t) return '';
+  return /^\d+$/.test(t) ? String(parseInt(t, 10)) : t;
+}
+
 // Informe final del reparto de este bloque: una hoja por proveedor con lo
 // que ganó (para poder emitirle la Nota de Pedido/OC) + una hoja "Sin
 // ganador" con lo que todavía quedó sin asignar. Usa a_comprar + bloque
@@ -435,15 +448,22 @@ function emitirInformeReparto() {
       .sort((a, b) => (a.descripcion || '').localeCompare(b.descripcion || '', 'es'));
     if (!ganados.length) return;
 
-    const encabezado = ['Código', 'Descripción', 'Detalle', 'Cantidad', 'Unidad', 'Precio unitario', 'Moneda', 'Subtotal', 'Estado'];
+    const encabezado = ['Código', 'OT', 'Descripción', 'Detalle', 'Cantidad', 'Unidad', 'Precio unitario', 'Moneda', 'Subtotal', 'Estado'];
     const totalesPorMoneda = {};
     const filas = ganados.map(it => {
       const p = PRECIOS.find(pr => pr.item_id === it.id && pr.proveedor_id === inv.proveedor_id);
-      const precio = p && p.precio_unitario != null ? Number(p.precio_unitario) : null;
-      const subtotal = precio != null ? precio * (Number(it.cant_umc) || 0) : null;
+      const precioExacto = p && p.precio_unitario != null ? Number(p.precio_unitario) : null;
+      const subtotalExacto = precioExacto != null ? precioExacto * (Number(it.cant_umc) || 0) : null;
       const moneda = p ? p.moneda : '';
-      if (subtotal != null) totalesPorMoneda[moneda || 'ARS'] = (totalesPorMoneda[moneda || 'ARS'] || 0) + subtotal;
-      return [it.cod_articulo, it.descripcion || '', it.desc_adicional || '', it.cant_umc, it.umc || '', precio, moneda, subtotal, it.confirmado ? '✓ Compra confirmada' : ''];
+      // El total por moneda se acumula con el subtotal SIN redondear (para
+      // no arrastrar el redondeo de cada fila al total) — recién se
+      // redondea a 2 decimales al armar la fila de TOTAL, igual que cada
+      // celda de Precio unitario/Subtotal (antes salían con la precisión
+      // completa del cálculo interno, ilegible en el Excel real).
+      if (subtotalExacto != null) totalesPorMoneda[moneda || 'ARS'] = (totalesPorMoneda[moneda || 'ARS'] || 0) + subtotalExacto;
+      const precio = precioExacto != null ? Math.round(precioExacto * 100) / 100 : null;
+      const subtotal = subtotalExacto != null ? Math.round(subtotalExacto * 100) / 100 : null;
+      return [it.cod_articulo, formatOTExport(it.n_ot), it.descripcion || '', it.desc_adicional || '', it.cant_umc, it.umc || '', precio, moneda, subtotal, it.confirmado ? '✓ Compra confirmada' : ''];
     });
     // Una fila de total por moneda (casi siempre una sola, ver el aviso ⚠️
     // de moneda mixta en la comparativa) — en la columna Descripción para
@@ -451,7 +471,7 @@ function emitirInformeReparto() {
     // artículo.
     const monedas = Object.keys(totalesPorMoneda);
     const filasTotal = monedas.map(moneda => [
-      '', monedas.length > 1 ? `TOTAL (${moneda})` : 'TOTAL', '', '', '', '', moneda, totalesPorMoneda[moneda], ''
+      '', '', monedas.length > 1 ? `TOTAL (${moneda})` : 'TOTAL', '', '', '', '', moneda, Math.round(totalesPorMoneda[moneda] * 100) / 100, ''
     ]);
     const ws = XLSX.utils.aoa_to_sheet([encabezado, ...filas, ...filasTotal]);
     XLSX.utils.book_append_sheet(wb, ws, nombreHojaUnico(inv.nombre));
@@ -461,8 +481,8 @@ function emitirInformeReparto() {
     .filter(it => !it.ganador_proveedor_id)
     .slice()
     .sort((a, b) => (a.descripcion || '').localeCompare(b.descripcion || '', 'es'));
-  const encabezadoSG = ['Código', 'Descripción', 'Detalle', 'Cantidad', 'Unidad'];
-  const filasSG = sinGanador.map(it => [it.cod_articulo, it.descripcion || '', it.desc_adicional || '', it.cant_umc, it.umc || '']);
+  const encabezadoSG = ['Código', 'OT', 'Descripción', 'Detalle', 'Cantidad', 'Unidad'];
+  const filasSG = sinGanador.map(it => [it.cod_articulo, formatOTExport(it.n_ot), it.descripcion || '', it.desc_adicional || '', it.cant_umc, it.umc || '']);
   XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([encabezadoSG, ...filasSG]), nombreHojaUnico('Sin ganador'));
 
   const partesInforme = [COT_ACTUAL?.nombre || 'cotizacion', bloque || null, 'reparto', new Date().toISOString().slice(0, 10)]
