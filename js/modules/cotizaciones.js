@@ -463,7 +463,7 @@ function emitirInformeReparto() {
       if (subtotalExacto != null) totalesPorMoneda[moneda || 'ARS'] = (totalesPorMoneda[moneda || 'ARS'] || 0) + subtotalExacto;
       const precio = precioExacto != null ? Math.round(precioExacto * 100) / 100 : null;
       const subtotal = subtotalExacto != null ? Math.round(subtotalExacto * 100) / 100 : null;
-      return [it.cod_articulo, formatOTExport(it.n_ot), it.descripcion || '', it.desc_adicional || '', it.cant_umc, it.umc || '', precio, moneda, subtotal, it.confirmado ? '✓ Compra confirmada' : ''];
+      return [it.cod_articulo, formatOTExport(it.n_ot), it.descripcion || '', it.desc_adicional || '', it.cant_umc, it.umc || '', precio, moneda, subtotal, it.confirmado ? '✓ OC Generada' : ''];
     });
     // Una fila de total por moneda (casi siempre una sola, ver el aviso ⚠️
     // de moneda mixta en la comparativa) — en la columna Descripción para
@@ -1018,7 +1018,7 @@ function renderResumenProveedores() {
     const sinConfirmar = ganados.filter(it => !it.confirmado).length;
     const accionConfirmar = !ganados.length ? '' : sinConfirmar > 0
       ? `<button type="button" class="bsm g cot-confirmar-compra" data-prov="${inv.proveedor_id}" style="margin-top:8px">✅ Confirmar compra (${sinConfirmar})</button>`
-      : `<div style="margin-top:8px;font-size:12px;color:var(--green)">✅ Compra confirmada</div>`;
+      : `<div style="margin-top:8px;font-size:12px;color:var(--green)">✅ OC Generada</div>`;
     return `<div class="cot-resumen-card">
       <div style="font-weight:600">${escAttr(inv.nombre)}</div>
       <div style="font-size:13px;color:var(--muted);margin-top:4px">${ganados.length} ítem${ganados.length === 1 ? '' : 's'} ganado${ganados.length === 1 ? '' : 's'}</div>
@@ -1043,7 +1043,7 @@ async function confirmarCompraProveedor(proveedorId) {
     if (error) { toast(error.message, 'er'); return; }
   }
   ITEMS.forEach(it => { if (ids.includes(it.id)) it.confirmado = true; });
-  toast(`✓ Compra confirmada (${ids.length} ítem${ids.length === 1 ? '' : 's'})`);
+  toast(`✓ OC Generada (${ids.length} ítem${ids.length === 1 ? '' : 's'})`);
   renderTablaComparativa();
   renderResumenProveedores();
   await verificarCierreAutomatico();

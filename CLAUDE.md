@@ -959,8 +959,9 @@ recorte. La columna **OT** (`formatOTExport()`, misma lógica que `formatOT()` d
 duplicada a propósito entre módulos, mismo criterio que `agruparOCPorOrden()` en Notas de Pedido, ver
 8.2 — sin los ceros a la izquierda que trae Capataz) se agregó a pedido del usuario para saber de un
 vistazo a qué orden de trabajo corresponde cada línea sin tener que cruzar con Cotizaciones o el módulo
-OT. La columna **Estado** marca "✓ Compra confirmada" en las filas de un ítem ya cerrado con
-"✅ Confirmar compra" (ver 9.2 punto 9) — pedido explícito del usuario, para que quede claro en el Excel
+OT. La columna **Estado** marca "✓ OC Generada" (texto renombrado a pedido del usuario, 2026-09-10 —
+antes decía "Compra confirmada") en las filas de un ítem ya cerrado con "✅ Confirmar compra" (ver 9.2
+punto 9) — pedido explícito del usuario, para que quede claro en el Excel
 qué ya se compró de verdad y qué todavía es solo el ganador de la comparativa. **Precio unitario y
 Subtotal se redondean a 2 decimales** al armar cada fila (antes salían con la precisión completa del
 cálculo interno — `precio × cant_umc` — ilegible en el Excel real, ej. "532,745247"); el total por
