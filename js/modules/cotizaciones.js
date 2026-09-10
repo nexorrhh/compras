@@ -215,13 +215,13 @@ async function abrirDetalle(id) {
 
   const [{ data: items, error: e1 }, { data: invitadosRaw, error: e2 }] = await Promise.all([
     SB.from('compras_cotizaciones_items').select('*').eq('cotizacion_id', id).order('cod_articulo'),
-    SB.from('compras_cotizaciones_proveedores').select('id,proveedor_id,bloque').eq('cotizacion_id', id),
+    SB.from('compras_cotizaciones_proveedores').select('id,proveedor_id,bloque,condicion_pago').eq('cotizacion_id', id),
   ]);
   if (e1) { toast(e1.message, 'er'); return; }
   if (e2) { toast(e2.message, 'er'); return; }
   ITEMS = items || [];
   const provMap = new Map(PROVEEDORES.map(p => [p.id, p.nombre]));
-  INVITADOS = (invitadosRaw || []).map(i => ({ id: i.id, proveedor_id: i.proveedor_id, bloque: i.bloque || '', nombre: provMap.get(i.proveedor_id) || '(?)' }));
+  INVITADOS = (invitadosRaw || []).map(i => ({ id: i.id, proveedor_id: i.proveedor_id, bloque: i.bloque || '', condicion_pago: i.condicion_pago || '', nombre: provMap.get(i.proveedor_id) || '(?)' }));
 
   const itemIds = ITEMS.map(i => i.id);
   if (itemIds.length) {
@@ -441,6 +441,21 @@ function emitirInformeReparto() {
     return final;
   };
 
+  // El director financiero pidió un resumen aparte que no mezcle el
+  // detalle artículo por artículo con lo que a él le importa: a quién, a
+  // cuánto, con qué condición de pago y para qué OT — sin el "qué se
+  // compra" (pedido explícito, 2026-09-10). Se arma en paralelo al mismo
+  // recorrido que ya arma las hojas por proveedor, agrupando por
+  // proveedor+OT+moneda (nunca mezclar monedas en una misma suma, mismo
+  // criterio del resto del módulo — ver 9.2 punto 7).
+  const consolidadoMap = new Map();
+  const acumularConsolidado = (inv, ot, moneda, monto) => {
+    const clave = `${inv.proveedor_id}|${ot}|${moneda}`;
+    const actual = consolidadoMap.get(clave);
+    if (actual) actual.monto += monto;
+    else consolidadoMap.set(clave, { proveedor: inv.nombre, ot, moneda, monto, condicionPago: inv.condicion_pago || '' });
+  };
+
   invitadosVisibles().forEach(inv => {
     const ganados = itemsBloque
       .filter(it => it.ganador_proveedor_id === inv.proveedor_id)
@@ -460,7 +475,10 @@ function emitirInformeReparto() {
       // redondea a 2 decimales al armar la fila de TOTAL, igual que cada
       // celda de Precio unitario/Subtotal (antes salían con la precisión
       // completa del cálculo interno, ilegible en el Excel real).
-      if (subtotalExacto != null) totalesPorMoneda[moneda || 'ARS'] = (totalesPorMoneda[moneda || 'ARS'] || 0) + subtotalExacto;
+      if (subtotalExacto != null) {
+        totalesPorMoneda[moneda || 'ARS'] = (totalesPorMoneda[moneda || 'ARS'] || 0) + subtotalExacto;
+        acumularConsolidado(inv, formatOTExport(it.n_ot) || '(Sin OT)', moneda || 'ARS', subtotalExacto);
+      }
       const precio = precioExacto != null ? Math.round(precioExacto * 100) / 100 : null;
       const subtotal = subtotalExacto != null ? Math.round(subtotalExacto * 100) / 100 : null;
       return [it.cod_articulo, formatOTExport(it.n_ot), it.descripcion || '', it.desc_adicional || '', it.cant_umc, it.umc || '', precio, moneda, subtotal, it.confirmado ? '✓ OC Generada' : ''];
@@ -484,6 +502,20 @@ function emitirInformeReparto() {
   const encabezadoSG = ['Código', 'OT', 'Descripción', 'Detalle', 'Cantidad', 'Unidad'];
   const filasSG = sinGanador.map(it => [it.cod_articulo, formatOTExport(it.n_ot), it.descripcion || '', it.desc_adicional || '', it.cant_umc, it.umc || '']);
   XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([encabezadoSG, ...filasSG]), nombreHojaUnico('Sin ganador'));
+
+  // Hoja "Consolidado" — se agrega al final y se pasa al frente
+  // (wb.SheetNames.unshift) para que sea la que se ve al abrir el Excel,
+  // que es la que le importa al director; las hojas por proveedor con el
+  // detalle de artículos quedan igual, atrás, para armar la OC.
+  if (consolidadoMap.size) {
+    const filasConsolidado = [...consolidadoMap.values()]
+      .sort((a, b) => a.proveedor.localeCompare(b.proveedor, 'es') || a.ot.localeCompare(b.ot, 'es'))
+      .map(c => [c.proveedor, c.ot, Math.round(c.monto * 100) / 100, c.moneda, c.condicionPago || 'Sin definir']);
+    const encabezadoCons = ['Proveedor', 'OT', 'Monto', 'Moneda', 'Condición de pago'];
+    const wsCons = XLSX.utils.aoa_to_sheet([encabezadoCons, ...filasConsolidado]);
+    XLSX.utils.book_append_sheet(wb, wsCons, nombreHojaUnico('Consolidado'));
+    wb.SheetNames.unshift(wb.SheetNames.pop());
+  }
 
   const partesInforme = [COT_ACTUAL?.nombre || 'cotizacion', bloque || null, 'reparto', new Date().toISOString().slice(0, 10)]
     .filter(Boolean)
@@ -631,12 +663,24 @@ async function agregarInvitado(proveedorId) {
     .insert({ cotizacion_id: COT_ACTUAL.id, proveedor_id: proveedorId, bloque }).select().single();
   if (error) { toast(error.message, 'er'); return; }
   const prov = PROVEEDORES.find(p => p.id === proveedorId);
-  INVITADOS.push({ id: data.id, proveedor_id: proveedorId, bloque, nombre: prov?.nombre || '(?)' });
+  INVITADOS.push({ id: data.id, proveedor_id: proveedorId, bloque, condicion_pago: '', nombre: prov?.nombre || '(?)' });
   COL_MONEDA[proveedorId] = COL_MONEDA[proveedorId] || 'ARS';
   INVITADOS_RESUMEN.push({ cotizacion_id: COT_ACTUAL.id });
   renderInvitados();
   renderTablaComparativa();
   renderResumenProveedores();
+}
+
+// Pedido del director financiero (2026-09-10): el informe de reparto no
+// decía a qué condición de pago se le compra a cada proveedor. Se guarda
+// por proveedor invitado (no por ítem/precio) — mismas opciones fijas que
+// ya usa Notas de Pedido (ver CLAUDE.md 8.3), para no inventar una lista
+// nueva.
+async function guardarCondicionPago(invId, condicionPago) {
+  const { error } = await SB.from('compras_cotizaciones_proveedores').update({ condicion_pago: condicionPago || null }).eq('id', invId);
+  if (error) { toast(error.message, 'er'); return; }
+  const inv = INVITADOS.find(i => i.id === invId);
+  if (inv) inv.condicion_pago = condicionPago || '';
 }
 
 // Proveedor "detectado" (solo aparece en OC, sin ficha en compras_proveedores
@@ -1023,7 +1067,18 @@ function renderResumenProveedores() {
       <div style="font-weight:600">${escAttr(inv.nombre)}</div>
       <div style="font-size:13px;color:var(--muted);margin-top:4px">${ganados.length} ítem${ganados.length === 1 ? '' : 's'} ganado${ganados.length === 1 ? '' : 's'}</div>
       <div style="font-size:13px;margin-top:6px"><strong>Cantidad:</strong> ${chipsUnidad}</div>
-      <div style="font-size:13px;margin-top:2px"><strong>Monto:</strong> ${chipsMonto}</div>${combinado}${accionConfirmar}
+      <div style="font-size:13px;margin-top:2px"><strong>Monto:</strong> ${chipsMonto}</div>${combinado}
+      <div style="margin-top:8px">
+        <label style="font-size:11px;color:var(--muted);margin-bottom:2px">Condición de pago</label>
+        <select class="cot-condicion-pago" data-inv="${inv.id}" style="font-size:12px">
+          <option value="">Sin definir</option>
+          <option value="Contado F/Factura" ${inv.condicion_pago === 'Contado F/Factura' ? 'selected' : ''}>Contado F/Factura</option>
+          <option value="7 días F/F" ${inv.condicion_pago === '7 días F/F' ? 'selected' : ''}>7 días F/F</option>
+          <option value="15 días" ${inv.condicion_pago === '15 días' ? 'selected' : ''}>15 días</option>
+          <option value="30 días" ${inv.condicion_pago === '30 días' ? 'selected' : ''}>30 días</option>
+          <option value="45 días" ${inv.condicion_pago === '45 días' ? 'selected' : ''}>45 días</option>
+        </select>
+      </div>${accionConfirmar}
     </div>`;
   }).join('');
 }
@@ -1241,6 +1296,8 @@ function initDelegacionDetalle() {
       setGanador(e.target.dataset.item, e.target.value);
     } else if (e.target.classList.contains('cot-moneda-col')) {
       cambiarMonedaColumna(e.target.dataset.prov, e.target.value);
+    } else if (e.target.classList.contains('cot-condicion-pago')) {
+      guardarCondicionPago(e.target.dataset.inv, e.target.value);
     } else if (e.target.id === 'cot_check_all') {
       document.querySelectorAll('.cot-check-row').forEach(c => { c.checked = e.target.checked; });
       actualizarBarraBulk();

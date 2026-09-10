@@ -320,6 +320,7 @@ create table compras_cotizaciones_proveedores (
   cotizacion_id uuid not null references compras_cotizaciones(id) on delete cascade,
   proveedor_id uuid not null references compras_proveedores(id) on delete cascade,
   bloque text not null default '',
+  condicion_pago text,
   unique (cotizacion_id, proveedor_id, bloque)
 );
 

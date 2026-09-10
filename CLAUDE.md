@@ -930,6 +930,12 @@ vacía (participa en todos los cálculos de la fila, no tiene un estado "sin car
    elegirlo, solo queda "pendiente" de nuevo. Si la solicitud ya se había cerrado sola, se reabre
    automáticamente (mismo criterio inverso a `verificarCierreAutomatico()`) para no dejarla marcada
    CERRADA con un ítem sin confirmar adentro.
+10. **Condición de pago** (pedido del director financiero, 2026-09-10): cada tarjeta del resumen tiene un
+    `<select>` de condición de pago (mismas 5 opciones fijas que ya usa Notas de Pedido — Contado
+    F/Factura, 7/15/30/45 días — ver 8.3, para no inventar una lista nueva) que se guarda por proveedor
+    invitado (`guardarCondicionPago()`, columna `condicion_pago` en `compras_cotizaciones_proveedores`,
+    ver `sql/016_cotizaciones_condicion_pago.sql`) — no por ítem ni por precio, porque es una condición
+    que se negocia con el proveedor para todo el bloque, no artículo por artículo.
 
 **Exportar para cotizar** (`📥 Exportar para cotizar (.xlsx)`, `exportarParaCotizar()`): baja exactamente
 lo que se está viendo en la tabla (mismos filtros de bloque/rubro/"ocultar los que no se compran" que la
@@ -971,12 +977,23 @@ proveedor se agrega esa fila **TOTAL** (en la columna Descripción) con la suma 
 una fila por moneda si ese proveedor terminó con precios en más de una (`TOTAL (ARS)` / `TOTAL (USD)`,
 mismo criterio de no mezclar monedas que el resto del módulo, ver 9.2 punto 7).
 
+**Hoja "Consolidado"** (agregada a pedido del director financiero, 2026-09-10, que recibía este mismo
+Excel de Compras para su circuito de pagos): a él no le interesa el detalle artículo por artículo (eso
+es lo que necesita Compras para armar la OC) sino **a quién, cuánto, con qué condición de pago y para
+qué OT** — así que es una hoja aparte, no un reemplazo de las hojas por proveedor. Una fila por
+proveedor+OT+moneda (nunca mezcla monedas en una misma suma, mismo criterio de siempre) con columnas
+Proveedor/OT/Monto/Moneda/Condición de pago (ver punto 10 de arriba) — se arma en el mismo recorrido que
+ya arma las hojas por proveedor, sumando el subtotal exacto de cada ítem ganado bajo esa clave. Se
+agrega **al final** del workbook pero se mueve al frente (`wb.SheetNames.unshift(wb.SheetNames.pop())`)
+para que sea la primera pestaña que se ve al abrir el archivo — es la que le importa a quien lo recibe
+desde afuera de Compras, las hojas de detalle quedan atrás para quien arma la OC.
+
 **Seguimiento por OT:** vive en su propio módulo (**OT**, ver sección 10) y no acá — nació como una
 sub-vista de Cotizaciones (2026-09-02) pero el usuario pidió pasarlo a un módulo de nav propio con
 tarjetas por OT y gráficos de detalle en vez de una tabla más. El dato de OT (`n_ot`, columna 9.1) sigue
 viviendo en `compras_cotizaciones_items` — el módulo OT solo lo lee, no agrega tablas nuevas.
 
-### 9.3 Modelo de datos — `sql/013_cotizaciones.sql` + `sql/014_cotizaciones_bloques.sql` + `sql/015_cotizaciones_confirmado.sql`
+### 9.3 Modelo de datos — `sql/013_cotizaciones.sql` + `sql/014_cotizaciones_bloques.sql` + `sql/015_cotizaciones_confirmado.sql` + `sql/016_cotizaciones_condicion_pago.sql`
 
 Cuatro tablas (ver `sql/schema.sql` para el estado final), sin RLS (mismo criterio que el resto de
 `compras_*`):
@@ -994,7 +1011,8 @@ Cuatro tablas (ver `sql/schema.sql` para el estado final), sin RLS (mismo criter
   invita a un bloque puntual de la solicitud, no a toda la solicitud entera (`unique(cotizacion_id,
   proveedor_id, bloque)` — permite invitar al mismo proveedor a más de un bloque si hiciera falta).
   Decisión tomada con el usuario: se invita una lista fija a mano por bloque, no se sugiere
-  automáticamente por rubro/grupo de Proveedores (ver 9.4).
+  automáticamente por rubro/grupo de Proveedores (ver 9.4). `condicion_pago` (texto, ver 9.2 punto 10)
+  también vive acá, no por ítem/precio — es una condición del bloque completo con ese proveedor.
 - `compras_cotizaciones_precios` — el precio cargado por cada proveedor invitado para cada artículo
   (`unique(item_id, proveedor_id)`, sin columna de bloque propia — se resuelve solo, porque el `item_id`
   ya define a qué bloque pertenece), con su propia `moneda` (aunque la UI la fija por columna, ver 9.2).
@@ -1285,7 +1303,8 @@ tablero-compras/
     ├── 012_reset_notas_pedido.sql
     ├── 013_cotizaciones.sql
     ├── 014_cotizaciones_bloques.sql
-    └── 015_cotizaciones_confirmado.sql
+    ├── 015_cotizaciones_confirmado.sql
+    └── 016_cotizaciones_condicion_pago.sql
 ```
 
 > `porteria.html` y `solicitud.html` son entry points separados (audiencias distintas: portero de
@@ -1397,10 +1416,14 @@ Todavía sin decidir:
     en bloques (Pañol/Despacho, ver sección 9.2/9.4) (ya hecho — el usuario ya lo está usando con
     proveedores reales invitados por bloque).
 14. Correr [`sql/015_cotizaciones_confirmado.sql`](sql/015_cotizaciones_confirmado.sql) — agrega
-    `confirmado` para poder cerrar la compra por proveedor (ver sección 9.2 punto 9) (**todavía falta**).
-15. Probar el circuito completo: pedir vehículo (solicitud.html) → aprobar y asignar (index.html) →
+    `confirmado` para poder cerrar la compra por proveedor (ver sección 9.2 punto 9) (ya hecho — el
+    usuario ya está confirmando compras reales con esto).
+15. Correr [`sql/016_cotizaciones_condicion_pago.sql`](sql/016_cotizaciones_condicion_pago.sql) — agrega
+    `condicion_pago` a `compras_cotizaciones_proveedores` para el pedido del director financiero (ver
+    sección 9.2 punto 10) (**todavía falta**).
+16. Probar el circuito completo: pedir vehículo (solicitud.html) → aprobar y asignar (index.html) →
    registrar salida/retorno (porteria.html) → ver el movimiento reflejado en el dashboard.
-16. Evaluar RLS (Row Level Security) en las tablas `compras_*` — hoy cualquiera con el link de
+17. Evaluar RLS (Row Level Security) en las tablas `compras_*` — hoy cualquiera con el link de
    `solicitud.html`/`porteria.html` puede leer/escribir todas las tablas, sin ningún login de por medio.
-17. Ir completando los módulos `[TBD]` de la sección 3 a medida que los necesites, usando el módulo
+18. Ir completando los módulos `[TBD]` de la sección 3 a medida que los necesites, usando el módulo
    Flota (carpeta `js/modules/`) como plantilla.
