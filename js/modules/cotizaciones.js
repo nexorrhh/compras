@@ -1077,6 +1077,8 @@ function renderResumenProveedores() {
           <option value="15 días" ${inv.condicion_pago === '15 días' ? 'selected' : ''}>15 días</option>
           <option value="30 días" ${inv.condicion_pago === '30 días' ? 'selected' : ''}>30 días</option>
           <option value="45 días" ${inv.condicion_pago === '45 días' ? 'selected' : ''}>45 días</option>
+          <option value="60 días" ${inv.condicion_pago === '60 días' ? 'selected' : ''}>60 días</option>
+          <option value="90 días" ${inv.condicion_pago === '90 días' ? 'selected' : ''}>90 días</option>
         </select>
       </div>${accionConfirmar}
     </div>`;

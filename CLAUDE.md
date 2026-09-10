@@ -723,7 +723,8 @@ texto libre.
 
 **Bonificación** es un número (0-100, el `%` se agrega solo al mostrarlo/en el PDF, no se guarda en la
 columna) y **Condiciones de pago** es un `<select>` fijo (`Contado F/Factura, 7 días F/F, 15 días,
-30 días, 45 días`).
+30 días, 45 días, 60 días, 90 días` — los últimos dos agregados a pedido del usuario, 2026-09-10, mismo
+`<select>` que reusa Cotizaciones, ver 9.2 punto 10).
 
 **Fecha de entrega** es un date picker real (antes texto libre) — se guarda como fecha ISO en la
 columna `fecha_entrega` y se muestra formateada con `fmt()` de `utils.js`. Para "entrega parcial" hay un
@@ -931,8 +932,9 @@ vacía (participa en todos los cálculos de la fila, no tiene un estado "sin car
    automáticamente (mismo criterio inverso a `verificarCierreAutomatico()`) para no dejarla marcada
    CERRADA con un ítem sin confirmar adentro.
 10. **Condición de pago** (pedido del director financiero, 2026-09-10): cada tarjeta del resumen tiene un
-    `<select>` de condición de pago (mismas 5 opciones fijas que ya usa Notas de Pedido — Contado
-    F/Factura, 7/15/30/45 días — ver 8.3, para no inventar una lista nueva) que se guarda por proveedor
+    `<select>` de condición de pago (mismas opciones fijas que ya usa Notas de Pedido — Contado
+    F/Factura, 7/15/30/45/60/90 días, estas últimas dos sumadas el mismo día a pedido del usuario — ver
+    8.3, para no inventar una lista nueva) que se guarda por proveedor
     invitado (`guardarCondicionPago()`, columna `condicion_pago` en `compras_cotizaciones_proveedores`,
     ver `sql/016_cotizaciones_condicion_pago.sql`) — no por ítem ni por precio, porque es una condición
     que se negocia con el proveedor para todo el bloque, no artículo por artículo.
