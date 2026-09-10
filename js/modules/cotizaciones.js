@@ -772,6 +772,33 @@ async function guardarPrecio(itemId, proveedorId, valorStr) {
   renderResumenProveedores();
 }
 
+// La cantidad (cant_umc) que trae el archivo de Capataz es un cálculo
+// TEÓRICO (peso nominal según tabla, no lo que realmente se termina
+// comprando) — un caso real del usuario: pidió 107,930549 KGS de una
+// planchuela pero terminó comprando 112,62 KGS porque se vende en barras
+// de largo fijo, no al corte exacto. Se necesitaba poder corregir esa
+// cantidad a mano para que el resto de la comparativa (Resumen por
+// proveedor, subtotales, informe de reparto) sume lo realmente comprado
+// en vez del estimado de Capataz. Igual que guardarPrecio(), acepta coma
+// o punto decimal y no se puede dejar vacío (a diferencia del precio, la
+// cantidad participa en todos los cálculos de esta fila, no tiene un
+// estado "sin cargar" válido).
+async function guardarCantidadItem(itemId, valorStr) {
+  const v = (valorStr || '').trim().replace(',', '.');
+  const cantidad = Number(v);
+  if (v === '' || !isFinite(cantidad) || cantidad < 0) {
+    toast('Cantidad inválida', 'er');
+    renderTablaComparativa();
+    return;
+  }
+  const { error } = await SB.from('compras_cotizaciones_items').update({ cant_umc: cantidad }).eq('id', itemId);
+  if (error) { toast(error.message, 'er'); return; }
+  ITEMS = ITEMS.map(it => it.id === itemId ? { ...it, cant_umc: cantidad } : it);
+  toast('✓ Cantidad actualizada');
+  renderTablaComparativa();
+  renderResumenProveedores();
+}
+
 // El selector de moneda del encabezado es solo el default para el PRÓXIMO
 // precio (ver 9.2) — a propósito, para no pisar en silencio una celda que
 // ya se cargó bien en otra moneda (ver el caso real de monedas mezcladas
@@ -836,7 +863,9 @@ function renderTablaComparativa() {
   // así que solo se preserva foco + valor, no la posición del cursor.
   const activo = document.activeElement;
   const foco = (activo && wrap.contains(activo) && activo.classList.contains('cot-precio-input'))
-    ? { item: activo.dataset.item, prov: activo.dataset.prov, valor: activo.value }
+    ? { clase: 'cot-precio-input', item: activo.dataset.item, prov: activo.dataset.prov, valor: activo.value }
+    : (activo && wrap.contains(activo) && activo.classList.contains('cot-cant-input'))
+    ? { clase: 'cot-cant-input', item: activo.dataset.item, valor: activo.value }
     : null;
 
   const lista = itemsVisibles();
@@ -906,7 +935,10 @@ function renderTablaComparativa() {
       <td><input type="checkbox" class="cot-check-row" data-id="${item.id}" style="width:auto"></td>
       <td>${escAttr(item.cod_articulo)}</td>
       <td>${escAttr(item.descripcion || '')}${item.desc_adicional ? `<div style="font-size:11px;color:var(--muted)">${escAttr(item.desc_adicional)}</div>` : ''}</td>
-      <td style="text-align:right">${item.cant_umc != null ? numFmt(item.cant_umc) : '–'} ${escAttr(item.umc || '')}</td>
+      <td style="text-align:right;white-space:nowrap">
+        <input type="text" inputmode="decimal" class="cot-cant-input" data-item="${item.id}"
+          value="${item.cant_umc != null ? item.cant_umc : ''}" style="width:80px;text-align:right;display:inline-block;margin-right:4px">${escAttr(item.umc || '')}
+      </td>
       <td style="text-align:center"><span class="badge ${item.a_comprar ? 'aprobado' : 'rechazado'} cot-toggle-comprar" data-id="${item.id}" style="cursor:pointer">${item.a_comprar ? 'Sí' : 'No'}</span></td>
       ${celdasPrecio}
       <td>
@@ -931,7 +963,10 @@ function renderTablaComparativa() {
   actualizarBarraBulk();
 
   if (foco) {
-    const nuevo = wrap.querySelector(`.cot-precio-input[data-item="${CSS.escape(foco.item)}"][data-prov="${CSS.escape(foco.prov)}"]`);
+    const selector = foco.clase === 'cot-precio-input'
+      ? `.cot-precio-input[data-item="${CSS.escape(foco.item)}"][data-prov="${CSS.escape(foco.prov)}"]`
+      : `.cot-cant-input[data-item="${CSS.escape(foco.item)}"]`;
+    const nuevo = wrap.querySelector(selector);
     if (nuevo) {
       nuevo.value = foco.valor;
       nuevo.focus();
@@ -1200,6 +1235,8 @@ function initDelegacionDetalle() {
   cont.addEventListener('change', e => {
     if (e.target.classList.contains('cot-precio-input')) {
       guardarPrecio(e.target.dataset.item, e.target.dataset.prov, e.target.value);
+    } else if (e.target.classList.contains('cot-cant-input')) {
+      guardarCantidadItem(e.target.dataset.item, e.target.value);
     } else if (e.target.classList.contains('cot-ganador-sel')) {
       setGanador(e.target.dataset.item, e.target.value);
     } else if (e.target.classList.contains('cot-moneda-col')) {

@@ -773,7 +773,15 @@ falta que el usuario las saque a mano. `cant_umc`/`UMC` ya viene calculado por C
 de compra (kg para perfiles/chapas, litros para pintura, unidades para bulonería, etc. — no siempre
 coincide con `cant_ums`/`UMS`, que es la cantidad tal como la pidió Ingeniería) — el módulo usa
 `cant_umc`/`umc` como la cantidad de referencia en toda la comparativa y el resumen por proveedor,
-_sin_ inventar ninguna conversión propia entre unidades.
+_sin_ inventar ninguna conversión propia entre unidades. Ese `cant_umc` es un cálculo **teórico** de
+Capataz (peso nominal según tabla, no lo que se termina comprando de verdad) — caso real del usuario
+(2026-09-10): pidió 107,930549 KGS de una planchuela pero terminó comprando 112,62 KGS porque se vende
+en barras de largo fijo, no al corte exacto. Por eso la celda "Cantidad" de la comparativa es
+**editable** (`guardarCantidadItem()` en `js/modules/cotizaciones.js`, mismo patrón que los precios:
+acepta coma o punto, guarda al salir del campo) — corregir ahí el kg realmente comprado hace que el
+Resumen por proveedor, los subtotales y el informe de reparto sumen ese número real de ahí en más, en
+vez de quedarse con el estimado de Capataz. A diferencia del precio, la cantidad no se puede dejar
+vacía (participa en todos los cálculos de la fila, no tiene un estado "sin cargar" válido).
 
 ### 9.2 Cómo se usa
 
