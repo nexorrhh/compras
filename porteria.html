@@ -181,6 +181,33 @@ select option{background:var(--bg3)}
   </div>
 </div></div>
 
+<!-- MODAL: HISTÓRICO DE MOVIMIENTOS -->
+<div class="modal-ov" id="mHIST">
+<div class="modal" style="width:900px;max-width:96vw">
+  <span class="mcls" onclick="cm('mHIST')">×</span>
+  <div class="mtitle">📜 Histórico de salidas y retornos</div>
+  <div class="msub">No se limita al día de hoy — buscá por fecha, patente o conductor</div>
+  <div class="fr">
+    <div class="fg"><label>Desde</label><input type="date" id="hist_desde"></div>
+    <div class="fg"><label>Hasta</label><input type="date" id="hist_hasta"></div>
+  </div>
+  <div class="fr">
+    <div class="fg"><label>Patente / vehículo</label><select id="hist_patente"><option value="">Todos los vehículos</option></select></div>
+    <div class="fg"><label>Conductor</label><select id="hist_conductor"><option value="">Todos los conductores</option></select></div>
+  </div>
+  <div class="brow" style="justify-content:flex-start;margin-top:0;margin-bottom:16px">
+    <button class="btn p" onclick="buscarHistorico()">🔍 Buscar</button>
+  </div>
+  <div class="tw" style="margin-bottom:0">
+    <div style="max-height:45vh;overflow-y:auto">
+      <table>
+        <thead><tr><th>Fecha</th><th>Hora</th><th>Tipo</th><th>Vehículo</th><th>Conductor</th><th>KM</th><th>Observaciones</th></tr></thead>
+        <tbody id="t-hist"></tbody>
+      </table>
+    </div>
+  </div>
+</div></div>
+
 <header>
   <div class="logo">
     <div class="logo-icon">🔑</div>
@@ -215,6 +242,7 @@ select option{background:var(--bg3)}
   <div class="sec-title">
     Movimientos del día
     <span class="cnt green" id="cnt-hoy">0</span>
+    <button class="btn" style="margin-left:auto;font-size:12px;padding:6px 12px" onclick="abrirHistorico()">📜 Ver histórico</button>
   </div>
   <div class="tw">
     <table>
@@ -560,6 +588,73 @@ async function registrarExcepcion() {
 
   toast('⚠️ Excepción registrada'); cm('mEXC');
   await refresh();
+}
+
+// ============================================================
+// HISTÓRICO — a diferencia de "Movimientos del día" (siempre hoy), acá
+// se puede buscar cualquier rango de fechas/patente/conductor. Trae
+// hasta 500 filas (de sobra para el uso real de portería, que consulta
+// ventanas de días/semanas, no todo el historial de una).
+// ============================================================
+function abrirHistorico() {
+  const hoy = today();
+  const hace30 = new Date(Date.now() - 30*86400000).toISOString().slice(0,10);
+  document.getElementById('hist_desde').value = hace30;
+  document.getElementById('hist_hasta').value = hoy;
+
+  // Vehículos: se arma del listado ya cargado en VCS (activos), no hace
+  // falta una query nueva — mismo criterio que el select de "Excepción".
+  document.getElementById('hist_patente').innerHTML =
+    '<option value="">Todos los vehículos</option>' +
+    VCS.slice().sort((a,b)=>a.patente.localeCompare(b.patente)).map(v=>`<option value="${v.patente}">${v.patente} – ${desc(v)}</option>`).join('');
+
+  // Conductores: mismo PERSONAL habilitado que usan los selects de
+  // Salida/Excepción, con "Todos" al principio en vez de "Seleccionar...".
+  document.getElementById('hist_conductor').innerHTML =
+    '<option value="">Todos los conductores</option>' +
+    PERSONAL.map(p=>`<option value="${p.apellido_y_nombre}">${p.apellido_y_nombre} — ${p.empresa}</option>`).join('');
+
+  om('mHIST');
+  buscarHistorico();
+}
+
+async function buscarHistorico() {
+  const tb = document.getElementById('t-hist');
+  tb.innerHTML = '<tr><td colspan="7" class="empty">Buscando...</td></tr>';
+
+  const desde = document.getElementById('hist_desde').value;
+  const hasta = document.getElementById('hist_hasta').value;
+  const patente = document.getElementById('hist_patente').value;
+  const conductor = document.getElementById('hist_conductor').value;
+
+  let q = SB.from('compras_movimientos').select('*').order('fecha_hora',{ascending:false}).limit(500);
+  if (desde) q = q.gte('fecha_hora', desde+'T00:00:00');
+  if (hasta) q = q.lte('fecha_hora', hasta+'T23:59:59');
+  if (patente) q = q.ilike('vehiculo_desc', `%${patente}%`);
+  if (conductor) q = q.ilike('conductor', `%${conductor}%`);
+
+  const {data, error} = await q;
+  if (error) { toast(error.message,'er'); tb.innerHTML = '<tr><td colspan="7" class="empty">Error al buscar</td></tr>'; return; }
+
+  const movs = data || [];
+  if (!movs.length) { tb.innerHTML = '<tr><td colspan="7" class="empty">Sin movimientos para ese filtro</td></tr>'; return; }
+
+  tb.innerHTML = movs.map(m=>{
+    const esExc = m.observacion?.startsWith('[EXCEPCIÓN]');
+    const cls = esExc ? 'excepcion' : m.tipo.toLowerCase();
+    const lbl = esExc ? 'EXCEPCIÓN' : m.tipo;
+    const obs = esExc ? m.observacion.replace('[EXCEPCIÓN] ','') : (m.observacion||'–');
+    const d = new Date(m.fecha_hora);
+    return `<tr>
+      <td>${d.toLocaleDateString('es-AR')}</td>
+      <td>${d.toLocaleTimeString('es-AR',{hour:'2-digit',minute:'2-digit'})}</td>
+      <td><span class="badge ${cls}">${lbl}</span></td>
+      <td>${m.vehiculo_desc}</td>
+      <td>${m.conductor}</td>
+      <td>${m.km?m.km.toLocaleString('es-AR')+' km':'–'}</td>
+      <td style="font-size:12px;max-width:220px">${obs}</td>
+    </tr>`;
+  }).join('');
 }
 
 // ============================================================
