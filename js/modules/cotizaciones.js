@@ -444,16 +444,20 @@ function emitirInformeReparto() {
   // El director financiero pidió un resumen aparte que no mezcle el
   // detalle artículo por artículo con lo que a él le importa: a quién, a
   // cuánto, con qué condición de pago y para qué OT — sin el "qué se
-  // compra" (pedido explícito, 2026-09-10). Se arma en paralelo al mismo
-  // recorrido que ya arma las hojas por proveedor, agrupando por
-  // proveedor+OT+moneda (nunca mezclar monedas en una misma suma, mismo
-  // criterio del resto del módulo — ver 9.2 punto 7).
+  // compra" (pedido explícito, 2026-09-10). Primera versión agrupaba por
+  // proveedor+OT+moneda, una fila por combinación — el director pidió
+  // consolidar por proveedor de una ("al pepe tener abierto por varios
+  // renglones", 2026-09-11): ahora es **una sola fila por proveedor**
+  // (+moneda solo si ese proveedor terminó con montos en más de una, algo
+  // que no se puede sumar en un mismo total — mismo criterio del resto
+  // del módulo, ver 9.2 punto 7), con todas las OT que cubre juntas en
+  // una sola celda separadas por coma en vez de una fila por OT.
   const consolidadoMap = new Map();
   const acumularConsolidado = (inv, ot, moneda, monto) => {
-    const clave = `${inv.proveedor_id}|${ot}|${moneda}`;
+    const clave = `${inv.proveedor_id}|${moneda}`;
     const actual = consolidadoMap.get(clave);
-    if (actual) actual.monto += monto;
-    else consolidadoMap.set(clave, { proveedor: inv.nombre, ot, moneda, monto, condicionPago: inv.condicion_pago || '' });
+    if (actual) { actual.monto += monto; actual.ots.add(ot); }
+    else consolidadoMap.set(clave, { proveedor: inv.nombre, ots: new Set([ot]), moneda, monto, condicionPago: inv.condicion_pago || '' });
   };
 
   invitadosVisibles().forEach(inv => {
@@ -509,8 +513,8 @@ function emitirInformeReparto() {
   // detalle de artículos quedan igual, atrás, para armar la OC.
   if (consolidadoMap.size) {
     const filasConsolidado = [...consolidadoMap.values()]
-      .sort((a, b) => a.proveedor.localeCompare(b.proveedor, 'es') || a.ot.localeCompare(b.ot, 'es'))
-      .map(c => [c.proveedor, c.ot, Math.round(c.monto * 100) / 100, c.moneda, c.condicionPago || 'Sin definir']);
+      .sort((a, b) => a.proveedor.localeCompare(b.proveedor, 'es'))
+      .map(c => [c.proveedor, [...c.ots].sort((a, b) => a.localeCompare(b, 'es')).join(', '), Math.round(c.monto * 100) / 100, c.moneda, c.condicionPago || 'Sin definir']);
     const encabezadoCons = ['Proveedor', 'OT', 'Monto', 'Moneda', 'Condición de pago'];
     const wsCons = XLSX.utils.aoa_to_sheet([encabezadoCons, ...filasConsolidado]);
     XLSX.utils.book_append_sheet(wb, wsCons, nombreHojaUnico('Consolidado'));

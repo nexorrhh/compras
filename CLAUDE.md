@@ -982,13 +982,18 @@ mismo criterio de no mezclar monedas que el resto del módulo, ver 9.2 punto 7).
 **Hoja "Consolidado"** (agregada a pedido del director financiero, 2026-09-10, que recibía este mismo
 Excel de Compras para su circuito de pagos): a él no le interesa el detalle artículo por artículo (eso
 es lo que necesita Compras para armar la OC) sino **a quién, cuánto, con qué condición de pago y para
-qué OT** — así que es una hoja aparte, no un reemplazo de las hojas por proveedor. Una fila por
-proveedor+OT+moneda (nunca mezcla monedas en una misma suma, mismo criterio de siempre) con columnas
-Proveedor/OT/Monto/Moneda/Condición de pago (ver punto 10 de arriba) — se arma en el mismo recorrido que
-ya arma las hojas por proveedor, sumando el subtotal exacto de cada ítem ganado bajo esa clave. Se
-agrega **al final** del workbook pero se mueve al frente (`wb.SheetNames.unshift(wb.SheetNames.pop())`)
-para que sea la primera pestaña que se ve al abrir el archivo — es la que le importa a quien lo recibe
-desde afuera de Compras, las hojas de detalle quedan atrás para quien arma la OC.
+qué OT** — así que es una hoja aparte, no un reemplazo de las hojas por proveedor. **Una sola fila por
+proveedor** (columnas Proveedor/OT/Monto/Moneda/Condición de pago, ver punto 10 de arriba), con todas
+las OT que cubre ese proveedor juntas en una sola celda separadas por coma. La primera versión agrupaba
+por proveedor+OT (una fila por combinación) pero el director la rechazó al toque ("consolidame por
+proveedor, al pepe tener abierto por varios renglones", 2026-09-11) — factura junto, no le sirve verlo
+desglosado por OT. Solo se abre en más de una fila por proveedor si terminó con montos en **más de una
+moneda** (no se puede sumar ARS+USD en un mismo total, mismo criterio de siempre — ver 9.2 punto 7), algo
+que no pasó todavía en ningún caso real. Se arma en el mismo recorrido que ya arma las hojas por
+proveedor, sumando el subtotal exacto de cada ítem ganado bajo la clave proveedor+moneda. Se agrega
+**al final** del workbook pero se mueve al frente (`wb.SheetNames.unshift(wb.SheetNames.pop())`) para
+que sea la primera pestaña que se ve al abrir el archivo — es la que le importa a quien lo recibe desde
+afuera de Compras, las hojas de detalle quedan atrás para quien arma la OC.
 
 **Seguimiento por OT:** vive en su propio módulo (**OT**, ver sección 10) y no acá — nació como una
 sub-vista de Cotizaciones (2026-09-02) pero el usuario pidió pasarlo a un módulo de nav propio con
