@@ -510,12 +510,16 @@ function emitirInformeReparto() {
   // Hoja "Consolidado" — se agrega al final y se pasa al frente
   // (wb.SheetNames.unshift) para que sea la que se ve al abrir el Excel,
   // que es la que le importa al director; las hojas por proveedor con el
-  // detalle de artículos quedan igual, atrás, para armar la OC.
+  // detalle de artículos quedan igual, atrás, para armar la OC. Orden de
+  // columnas y encabezados (Proveedor/$/Monto/OT/Cond.) copiados tal cual
+  // de la maqueta que devolvió el director (2026-09-11) — "Monto" se
+  // escribe como texto con el signo "$" genérico (no U$S/$ según moneda,
+  // eso ya lo dice la columna de al lado) porque así lo pidió él.
   if (consolidadoMap.size) {
     const filasConsolidado = [...consolidadoMap.values()]
       .sort((a, b) => a.proveedor.localeCompare(b.proveedor, 'es'))
-      .map(c => [c.proveedor, [...c.ots].sort((a, b) => a.localeCompare(b, 'es')).join(', '), Math.round(c.monto * 100) / 100, c.moneda, c.condicionPago || 'Sin definir']);
-    const encabezadoCons = ['Proveedor', 'OT', 'Monto', 'Moneda', 'Condición de pago'];
+      .map(c => [c.proveedor, c.moneda, `$ ${numFmt(Math.round(c.monto * 100) / 100)}`, [...c.ots].sort((a, b) => a.localeCompare(b, 'es')).join(', '), c.condicionPago || 'Sin definir']);
+    const encabezadoCons = ['Proveedor', '$', 'Monto', 'OT', 'Cond.'];
     const wsCons = XLSX.utils.aoa_to_sheet([encabezadoCons, ...filasConsolidado]);
     XLSX.utils.book_append_sheet(wb, wsCons, nombreHojaUnico('Consolidado'));
     wb.SheetNames.unshift(wb.SheetNames.pop());
