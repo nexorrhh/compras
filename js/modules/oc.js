@@ -19,6 +19,14 @@ import { SB } from '../supabase-client.js';
 import { toast, fmt, norm, fechaISO, txt, num, fetchAll } from '../utils.js';
 
 let LINEAS = [];
+// Tango (el export de OC) no trae ninguna columna de unidad de medida —
+// se resuelve cruzando por código de artículo contra compras_stock_saldos
+// (el export de Capataz sí trae UNIDAD_MED, ver CLAUDE.md sección 6.1),
+// mismo criterio de cruzar por código que ya usa Proveedores (sección 7.1)
+// para derivar grupos. Un artículo puede no tener ninguna fila en Stock
+// (nunca se cargó ahí, o el mínimo/saldo quedó en 0 sin partida) — en ese
+// caso queda sin unidad, no se inventa ninguna.
+let UNIDADES = new Map();
 
 // Montos: en las tarjetas de KPI se abrevia (K/M) para que entre cómodo y se
 // lea de un vistazo; en la tabla se muestra completo pero sin decimales (no
@@ -276,11 +284,12 @@ function renderTabla(tbodyId, grupos) {
     const lineasOrdenadas = [...g.lineas].sort((a, b) => (a.articulo_desc || a.articulo_cod).localeCompare(b.articulo_desc || b.articulo_cod));
     const detalle = lineasOrdenadas.map(l => {
       const estL = estadoLinea(l);
+      const unidad = UNIDADES.get(l.articulo_cod) || '';
       return `<div class="oc-linea">
         <div class="oc-linea-desc">${l.articulo_desc || l.articulo_cod}</div>
-        <div>Pedida: <strong>${l.cant_pedida?.toLocaleString('es-AR') ?? '–'}</strong></div>
-        <div>Recibida: <strong>${l.cant_recibida?.toLocaleString('es-AR') ?? '–'}</strong></div>
-        <div>Pendiente: <strong>${l.cant_pendiente?.toLocaleString('es-AR') ?? '–'}</strong></div>
+        <div>Pedida: <strong>${l.cant_pedida?.toLocaleString('es-AR') ?? '–'} ${unidad}</strong></div>
+        <div>Recibida: <strong>${l.cant_recibida?.toLocaleString('es-AR') ?? '–'} ${unidad}</strong></div>
+        <div>Pendiente: <strong>${l.cant_pendiente?.toLocaleString('es-AR') ?? '–'} ${unidad}</strong></div>
         <div>Precio unit.: <strong>${fmtPesos(l.precio_unitario)}</strong></div>
         <div>Importe: <strong>${fmtPesos(l.importe)}</strong></div>
         <div><span class="badge ${estL === 'PENDIENTE' ? 'porvencer' : 'vigente'}">${estL === 'PENDIENTE' ? 'Pendiente' : 'Recibido'}</span></div>
@@ -546,12 +555,16 @@ export async function render(secId) {
   const tbodyId = TBODY_POR_SECCION[secId];
   if (tbodyId) { const tb = document.getElementById(tbodyId); if (tb) tb.innerHTML = '<tr><td colspan="7" class="loading">Cargando...</td></tr>'; }
 
-  const { data, error } = await fetchAll(() => SB.from('compras_oc_lineas').select('*'));
+  const [{ data, error }, { data: saldos, error: eSaldos }] = await Promise.all([
+    fetchAll(() => SB.from('compras_oc_lineas').select('*')),
+    fetchAll(() => SB.from('compras_stock_saldos').select('cod_articulo,unidad_medida')),
+  ]);
   if (error) {
     if (tbodyId) { const tb = document.getElementById(tbodyId); if (tb) tb.innerHTML = `<tr><td colspan="7" style="color:var(--red);padding:12px">${error.message}</td></tr>`; }
     return;
   }
   LINEAS = data || [];
+  if (!eSaldos) UNIDADES = new Map((saldos || []).filter(s => s.unidad_medida).map(s => [s.cod_articulo, s.unidad_medida]));
 
   if (secId === 'oc-abiertas') { renderAbiertas(); return; }
   const seccion = SECCIONES_ESTADO.find(s => s.tbodyId === tbodyId);

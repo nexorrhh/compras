@@ -367,6 +367,16 @@ Dashboard inicial (con gráficos) y sub-vistas de solo lectura, en vez de una so
 Tabla `compras_oc_lineas` (ver [`sql/004_ordenes_compra.sql`](sql/004_ordenes_compra.sql) para la
 migración y `sql/schema.sql` para el estado final). Sin RLS, mismo criterio que el resto de `compras_*`.
 
+**Unidad de medida en el detalle de línea** (pedido del usuario, 2026-09-15): el export de OC de Tango
+**no trae ninguna columna de unidad** (ver 5.1 — CANT_PED/CANT_REC/CANT_PEN son números pelados, sin
+decir si son kg, mts, uni...), así que Pedida/Recibida/Pendiente se mostraban sin ninguna referencia de
+qué se estaba contando. `render()` en `js/modules/oc.js` ahora cruza cada línea por `articulo_cod`
+contra `compras_stock_saldos.unidad_medida` (el export de Capataz sí trae `UNIDAD_MED`, ver sección 6.1)
+para completar la unidad en pantalla — mismo criterio de "cruzar por código de artículo entre módulos"
+que ya usa Proveedores (sección 7.1) para derivar grupos desde OC. Es solo para mostrar, no se guarda en
+`compras_oc_lineas`; un artículo que nunca se cargó en Stock (o no tiene ninguna fila con
+`unidad_medida`) queda sin unidad, no se inventa ninguna.
+
 > Pendiente de decidir con el usuario: si conviene sumar la columna `deposito` (pañol/despacho) como
 > filtro real en la UI, y si en algún momento se quiere que el % de "recibido" pese por importe en vez
 > de por unidades×precio (hoy son equivalentes matemáticamente, pero si el precio cambiara entre líneas
