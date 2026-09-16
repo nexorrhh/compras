@@ -1026,31 +1026,37 @@ viviendo en `compras_cotizaciones_items` — el módulo OT solo lo lee, no agreg
 
 **Aviso de artículo duplicado entre solicitudes** (pedido del usuario, 2026-09-16): caso real — el mismo
 artículo (`CAÑO3/8`, mismas cantidades) terminó cargado igual en dos solicitudes abiertas distintas
-("URG" y "Varias OT"), con riesgo de cotizarlo o comprarlo dos veces por separado sin que nadie se diera
-cuenta. `buscarDuplicadosEntreSolicitudes()` en `js/modules/cotizaciones.js` busca, para un conjunto de
-ítems, si ya existen en OTRA solicitud con `estado = 'ABIERTA'` como ítem `a_comprar = true` y
-`confirmado = false` (si ya se confirmó esa compra o la solicitud se cerró, no es un duplicado activo,
-es historial — no avisa). Dos criterios ajustados el mismo día, tras la primera versión:
-- **Se compara por artículo + OT, no solo por artículo** (`claveDuplicado()`, clave
-  `` `${cod_articulo}|${formatOTExport(n_ot)}` ``): pedir el mismo perfil para dos OT distintas es
-  normal (dos trabajos distintos, no un error) — el usuario lo explicó así: "a veces se vuelve a pedir
-  el mismo perfil varias veces pero es para distintas OT". Solo cuenta como duplicado el mismo
-  artículo **para la misma OT**, normalizada con `formatOTExport()` (misma lógica que el informe de
-  reparto, así "OT 596" y "OT 000000000596" matchean igual).
+("URG" y "Varias OT"), normalmente porque la misma solicitud de Capataz se terminó importando dos veces
+en la app, con nombre distinto cada vez — con riesgo de cotizar o comprar el mismo material dos veces
+por separado sin que nadie se diera cuenta. `buscarDuplicadosEntreSolicitudes()` en
+`js/modules/cotizaciones.js` busca, para un conjunto de ítems, si ya existen en OTRA solicitud con
+`estado = 'ABIERTA'` como ítem `a_comprar = true` y `confirmado = false` (si ya se confirmó esa compra o
+la solicitud se cerró, no es un duplicado activo, es historial — no avisa). Dos criterios ajustados tras
+iterar sobre la primera versión:
+- **El criterio es `nro_solicitud`** (`claveDuplicado()`) — el número de solicitud que ya trae Capataz
+  en el export (columna `nro_solic`, ver 9.1), **no** el nombre de la solicitud en esta app. Se probó
+  primero comparar por artículo+OT, pero el propio usuario señaló el problema: "a veces se vuelve a
+  pedir el mismo perfil varias veces pero es para distintas OT o a veces es hasta para la misma OT" —
+  pedir el mismo artículo dos veces (incluso para la misma OT) puede ser una necesidad real distinta, no
+  un error de carga. Un `nro_solicitud` repetido en otra solicitud ABIERTA, en cambio, **siempre**
+  significa que esa misma solicitud de Capataz ya está cargada en otro lado — Capataz nunca reutiliza ese
+  número para un pedido distinto ("es lo más sencillo... si un número de solicitud se repite significa
+  que esa cotización ya está cargada", palabras del usuario). Un ítem sin `nro_solicitud` no se compara,
+  no hay con qué.
 - **Siempre gana la solicitud más vieja** ("que se tome siempre la más vieja como la legal", pedido
   explícito): antes se avisaba por igual en las dos solicitudes, sin que ninguna quedara "limpia". Ahora
   se compara `compras_cotizaciones.created_at` — el apartado por duplicado solo aparece en la(s)
-  solicitud(es) más NUEVA(s); la más vieja de todas las que tienen ese artículo+OT nunca se marca a sí
-  misma, sin importar desde cuál de las dos se la esté mirando. Al cargar un archivo nuevo no hace falta
-  comparar fechas — por definición, cualquier coincidencia ya existente es más vieja que la solicitud
-  que se está por crear.
+  solicitud(es) más NUEVA(s); la más vieja de todas las que tienen ese `nro_solicitud` nunca se marca a
+  sí misma, sin importar desde cuál de las dos se la esté mirando. Al cargar un archivo nuevo no hace
+  falta comparar fechas — por definición, cualquier coincidencia ya existente es más vieja que la
+  solicitud que se está por crear.
 
 Se usa en dos momentos, sin bloquear nunca la carga a propósito — bloquear de plano rechazaría un
-archivo legítimo entero por un solo artículo repetido; mejor avisar y dejar decidir:
+archivo legítimo entero por una sola solicitud de Capataz repetida; mejor avisar y dejar decidir:
 1. **Al cargar un archivo nuevo** (`onArchivoCotizacion()`): el `confirm()` de siempre suma un párrafo
-   listando qué artículos del archivo ya se están cotizando en qué otra solicitud, antes de crear la
-   solicitud — mismo criterio que el aviso de "OC desaparecidas" en Órdenes de Compra (ver 5.2), avisar
-   antes de un cambio en vez de un chequeo silencioso.
+   listando qué números de solicitud del archivo ya están cargados en qué otra solicitud, antes de crear
+   la solicitud — mismo criterio que el aviso de "OC desaparecidas" en Órdenes de Compra (ver 5.2),
+   avisar antes de un cambio en vez de un chequeo silencioso.
 2. **Dentro de una solicitud ya abierta** (`abrirDetalle()`, guardado en `DUPLICADOS`): un ítem
    duplicado activo (`esDuplicadoActivo()`) **no cuenta en su bloque real** (General/Pañol/Despacho) ni
    en su comparativa/resumen/informe — pedido explícito del usuario tras la primera versión (que solo
@@ -1058,12 +1064,12 @@ archivo legítimo entero por un solo artículo repetido; mejor avisar y dejar de
    queda apartado en un **pseudo-bloque propio**, el tab **"⚠️ Duplicado (N)"** (`BLOQUE_DUPLICADOS`,
    constante que nunca se guarda en la columna `bloque` real — solo existe como modo de vista), que
    aparece junto a General/Pañol/Despacho solo si hay algo apartado. Ese tab reemplaza toda la vista
-   normal por un listado simple (`renderTablaDuplicados()`: Código/Descripción/Cantidad/"También se está
-   cotizando en") — no tiene sentido invitar proveedores ni cargar precios para algo que todavía no se
-   decidió comprar acá, así que esas secciones (`#cot_seccion_invitados_bulk`, `#cot_seccion_resumen`) se
-   ocultan mientras el tab esté activo. Repetir el mismo código dos veces **dentro de la misma solicitud**
-   (dos partidas distintas del mismo artículo) es normal y no cuenta como duplicado — el apartado es solo
-   entre solicitudes distintas.
+   normal por un listado simple (`renderTablaDuplicados()`: Código/Descripción/N° de solicitud/Cantidad/
+   "También cargada en") — no tiene sentido invitar proveedores ni cargar precios para algo que todavía
+   no se decidió comprar acá, así que esas secciones (`#cot_seccion_invitados_bulk`,
+   `#cot_seccion_resumen`) se ocultan mientras el tab esté activo. Repetir el mismo código dos veces
+   **dentro de la misma solicitud** (dos partidas distintas del mismo artículo) es normal y no cuenta
+   como duplicado — el apartado es solo entre solicitudes distintas.
 
 **Aceptar un duplicado igual (caso excepcional)** — pedido explícito: "SOLO EN CASO EXCEPCIONAL que me
 deje aceptarlo". El botón "✅ Aceptar de todas formas" de cada fila del tab Duplicado

@@ -171,41 +171,46 @@ function renderLista() {
 }
 
 // Un mismo artículo puede terminar cargado en más de una solicitud
-// ABIERTA a la vez — Ingeniería lo vuelve a pedir sin darse cuenta de
-// que ya estaba en otra, o una solicitud "urgente" repite algo de una
-// solicitud grande que ya estaba en trámite. Sin avisar esto, Compras
+// ABIERTA a la vez — normalmente porque el mismo archivo/solicitud de
+// Capataz se terminó importando dos veces en la app, en dos solicitudes
+// con nombre distinto ("URG" y "Varias OT"). Sin avisar esto, Compras
 // puede terminar cotizando o comprando el mismo material dos veces por
-// separado. Caso real del usuario (2026-09-16): "CAÑO3/8" cargado igual
-// en las solicitudes "URG" y "Varias OT". Se considera "en cotización"
-// un ítem con `a_comprar = true` y `confirmado = false` en una solicitud
-// con `estado = 'ABIERTA'` — si ya se confirmó esa compra o la solicitud
-// se cerró, no es un duplicado activo, es historial, no hace falta
-// avisar.
+// separado.
 //
-// Dos ajustes pedidos por el usuario tras la primera versión:
-// 1. **Se compara por artículo + OT, no solo por artículo**: pedir el
-//    mismo perfil para dos OT distintas es normal (dos trabajos
-//    distintos, no un error) — solo cuenta como duplicado si es el
-//    MISMO artículo para la MISMA OT (`formatOTExport()`, misma
-//    normalización que ya usa el informe de reparto, así "OT 596" y
-//    "OT 000000000596" matchean igual).
-// 2. **Siempre gana la solicitud más vieja**: antes se avisaba en las
-//    dos solicitudes por igual (ninguna quedaba "limpia"). Ahora se
-//    compara por `compras_cotizaciones.created_at` — el apartado solo
-//    aparece en la(s) solicitud(es) más NUEVA(s); la más vieja de todas
-//    las que tienen ese artículo+OT es "la legal" y nunca se marca a sí
-//    misma, sin importar desde cuál de las dos se esté mirando.
-//    `cotizacionActual` es `null` al cargar un archivo nuevo (todavía no
-//    existe, así que por definición cualquier coincidencia ya existente
-//    es más vieja) o `{id, created_at}` de la solicitud ya creada que se
-//    está mirando en `abrirDetalle()`.
+// El criterio es `nro_solicitud` — el número de solicitud QUE YA TRAE
+// CAPATAZ (columna `nro_solic` del export, ver 9.1), no el nombre de la
+// solicitud en esta app. Se descartó comparar por artículo+OT (primera
+// versión): pedir el mismo perfil para la misma OT dos veces puede ser
+// perfectamente legítimo (una necesidad real distinta, no un error de
+// carga), mientras que un `nro_solicitud` repetido en otra solicitud
+// ABIERTA **siempre** significa que esa misma solicitud de Capataz ya
+// está cargada en otro lado — Capataz nunca reutiliza ese número para
+// un pedido distinto (pedido explícito del usuario, 2026-09-16: "es lo
+// más sencillo... si un número de solicitud se repite significa que esa
+// cotización ya está cargada"). Un ítem sin `nro_solicitud` (dato viejo,
+// o el archivo no lo traía) no se compara — no hay con qué, no se
+// inventa una regla para ese caso.
+//
+// Se considera "en cotización" un ítem con `a_comprar = true` y
+// `confirmado = false` en una solicitud con `estado = 'ABIERTA'` — si ya
+// se confirmó esa compra o la solicitud se cerró, no es un duplicado
+// activo, es historial, no hace falta avisar.
+//
+// **Siempre gana la solicitud más vieja**: se compara
+// `compras_cotizaciones.created_at` — el apartado por duplicado solo
+// aparece en la(s) solicitud(es) más NUEVA(s); la más vieja de todas las
+// que tienen ese `nro_solicitud` nunca se marca a sí misma, sin importar
+// desde cuál de las dos se la esté mirando. `cotizacionActual` es `null`
+// al cargar un archivo nuevo (todavía no existe, así que por definición
+// cualquier coincidencia ya existente es más vieja) o `{id, created_at}`
+// de la solicitud ya creada que se está mirando en `abrirDetalle()`.
 async function buscarDuplicadosEntreSolicitudes(items, cotizacionActual) {
-  const resultado = new Map(); // clave `${cod_articulo}|${ot normalizada}` -> [{id, nombre}]
-  const codigos = [...new Set(items.map(i => i.cod_articulo))];
-  if (!codigos.length) return resultado;
+  const resultado = new Map(); // clave nro_solicitud -> [{id, nombre}]
+  const numeros = [...new Set(items.map(i => i.nro_solicitud).filter(Boolean))];
+  if (!numeros.length) return resultado;
   let q = SB.from('compras_cotizaciones_items')
-    .select('cod_articulo,n_ot,cotizacion_id,compras_cotizaciones(nombre,estado,created_at)')
-    .in('cod_articulo', codigos)
+    .select('nro_solicitud,cotizacion_id,compras_cotizaciones(nombre,estado,created_at)')
+    .in('nro_solicitud', numeros)
     .eq('a_comprar', true)
     .eq('confirmado', false);
   if (cotizacionActual?.id) q = q.neq('cotizacion_id', cotizacionActual.id);
@@ -214,13 +219,12 @@ async function buscarDuplicadosEntreSolicitudes(items, cotizacionActual) {
   for (const row of data) {
     const cot = row.compras_cotizaciones;
     if (!cot || cot.estado !== 'ABIERTA') continue;
-    // Si la solicitud que ya tiene este artículo+OT es más NUEVA que la
-    // actual, la actual es la vieja/legal — no se marca contra algo más
-    // reciente que ella.
+    // Si la solicitud que ya tiene este nro_solicitud es más NUEVA que
+    // la actual, la actual es la vieja/legal — no se marca contra algo
+    // más reciente que ella.
     if (cotizacionActual?.created_at && new Date(cot.created_at) >= new Date(cotizacionActual.created_at)) continue;
-    const clave = `${row.cod_articulo}|${formatOTExport(row.n_ot)}`;
-    if (!resultado.has(clave)) resultado.set(clave, []);
-    const lista = resultado.get(clave);
+    if (!resultado.has(row.nro_solicitud)) resultado.set(row.nro_solicitud, []);
+    const lista = resultado.get(row.nro_solicitud);
     if (!lista.some(x => x.id === row.cotizacion_id)) lista.push({ id: row.cotizacion_id, nombre: cot.nombre });
   }
   return resultado;
@@ -243,16 +247,20 @@ async function onArchivoCotizacion(file) {
   const articulos = new Set(filas.map(f => f.cod_articulo)).size;
   let msg = `Se leyeron ${filas.length} filas (${articulos} artículos).\n\nSe va a crear la solicitud "${nombre}" con estos ítems.`;
 
-  const itemsACotizar = filas.filter(f => f.a_comprar).map(f => ({ cod_articulo: f.cod_articulo, n_ot: f.n_ot }));
+  const itemsACotizar = filas.filter(f => f.a_comprar).map(f => ({ nro_solicitud: f.nro_solicitud }));
   const duplicados = await buscarDuplicadosEntreSolicitudes(itemsACotizar, null);
   if (duplicados.size) {
+    // Cuántas filas de ESTE archivo caen bajo cada nro_solicitud duplicado, para que el mensaje diga
+    // "8 artículos" en vez de solo el número de solicitud pelado.
+    const porNumero = new Map();
+    filas.forEach(f => { if (f.a_comprar && duplicados.has(f.nro_solicitud)) porNumero.set(f.nro_solicitud, (porNumero.get(f.nro_solicitud) || 0) + 1); });
     const detalle = [...duplicados.entries()].slice(0, 15)
-      .map(([clave, cots]) => {
-        const [cod, ot] = clave.split('|');
-        return `- ${cod}${ot ? ` (OT ${ot})` : ''} (ya en: ${cots.map(c => c.nombre).join(', ')})`;
+      .map(([nro, cots]) => {
+        const n = porNumero.get(nro) || 0;
+        return `- Solicitud ${nro} (${n} artículo${n === 1 ? '' : 's'}) — ya cargada en: ${cots.map(c => c.nombre).join(', ')}`;
       }).join('\n');
-    const extra = duplicados.size > 15 ? `\n...y ${duplicados.size - 15} artículo${duplicados.size - 15 === 1 ? '' : 's'} más` : '';
-    msg += `\n\n⚠️ ${duplicados.size} artículo${duplicados.size === 1 ? '' : 's'} de este archivo ya se está${duplicados.size === 1 ? '' : 'n'} cotizando en otra solicitud abierta:\n${detalle}${extra}`;
+    const extra = duplicados.size > 15 ? `\n...y ${duplicados.size - 15} solicitud${duplicados.size - 15 === 1 ? '' : 'es'} más` : '';
+    msg += `\n\n⚠️ ${duplicados.size} solicitud${duplicados.size === 1 ? '' : 'es'} de Capataz de este archivo ya está${duplicados.size === 1 ? '' : 'n'} cargada${duplicados.size === 1 ? '' : 's'} en otra solicitud abierta:\n${detalle}${extra}`;
   }
   msg += '\n\n¿Continuar?';
   const ok = confirm(msg);
@@ -307,7 +315,7 @@ async function abrirDetalle(id) {
     COL_MONEDA[inv.proveedor_id] = conMoneda?.moneda || 'ARS';
   });
 
-  const itemsACotizar = ITEMS.filter(i => i.a_comprar).map(i => ({ cod_articulo: i.cod_articulo, n_ot: i.n_ot }));
+  const itemsACotizar = ITEMS.filter(i => i.a_comprar).map(i => ({ nro_solicitud: i.nro_solicitud }));
   DUPLICADOS = await buscarDuplicadosEntreSolicitudes(itemsACotizar, { id, created_at: cot.created_at });
 
   document.getElementById('cot-vista-lista').style.display = 'none';
@@ -383,10 +391,10 @@ const BLOQUE_DUPLICADOS = '__DUPLICADOS__';
 // (aceptarDuplicado()) o deje de estar en DUPLICADOS (la otra solicitud
 // se cerró/confirmó ese ítem). Pedido explícito del usuario (2026-09-16):
 // "que no lo cuente" en el bloque normal, aparte en su propio apartado.
-// La clave es artículo+OT (ver buscarDuplicadosEntreSolicitudes) — el
-// mismo perfil para otra OT no es duplicado.
+// La clave es `nro_solicitud` (ver buscarDuplicadosEntreSolicitudes) —
+// un ítem sin ese dato no se compara.
 function claveDuplicado(it) {
-  return `${it.cod_articulo}|${formatOTExport(it.n_ot)}`;
+  return it.nro_solicitud;
 }
 function esDuplicadoActivo(it) {
   return !it.duplicado_aceptado && DUPLICADOS.has(claveDuplicado(it));
@@ -1024,14 +1032,14 @@ function renderTablaDuplicados(wrap) {
     return `<tr>
       <td>${escAttr(it.cod_articulo)}</td>
       <td>${escAttr(it.descripcion || '')}${it.desc_adicional ? `<div style="font-size:11px;color:var(--muted)">${escAttr(it.desc_adicional)}</div>` : ''}</td>
-      <td>${escAttr(formatOTExport(it.n_ot) || '(Sin OT)')}</td>
+      <td>${escAttr(it.nro_solicitud || '–')}</td>
       <td style="text-align:right;white-space:nowrap">${it.cant_umc != null ? numFmt(it.cant_umc) : '–'} ${escAttr(it.umc || '')}</td>
       <td style="color:var(--yellow)">${otras}</td>
       <td><button type="button" class="bsm cot-aceptar-duplicado" data-item="${it.id}" title="Excepcional: cotizar/comprar este ítem también acá, a pesar del duplicado">✅ Aceptar de todas formas</button></td>
     </tr>`;
   }).join('');
   wrap.innerHTML = `<table>
-    <thead><tr><th>Código</th><th>Descripción</th><th>OT</th><th>Cantidad</th><th>También se está cotizando en (más vieja)</th><th></th></tr></thead>
+    <thead><tr><th>Código</th><th>Descripción</th><th>N° solicitud (Capataz)</th><th>Cantidad</th><th>También cargada en (más vieja)</th><th></th></tr></thead>
     <tbody>${filas || '<tr><td colspan="6" style="text-align:center;padding:18px;color:var(--muted)">Sin artículos apartados por duplicado</td></tr>'}</tbody>
   </table>`;
 }
