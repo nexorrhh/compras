@@ -28,6 +28,7 @@ let PRECIOS = [];           // [{id, item_id, proveedor_id, precio_unitario, mon
 let COL_MONEDA = {};        // proveedor_id -> 'ARS'|'USD' — moneda con la que se cargan los PRÓXIMOS precios de esa columna
 let PROV_MODAL_ID = null;   // proveedor_id que se está cargando en el modal mCOTPROV
 let BLOQUE_TAB = '';        // bloque actualmente seleccionado ('' = General) — reemplaza al viejo <select>, ver poblarTabsBloque()
+let DUPLICADOS = new Map(); // cod_articulo -> [{id, nombre}] de OTRAS solicitudes abiertas que también lo tienen a comprar (ver buscarDuplicadosEntreSolicitudes)
 
 const SIMBOLO = m => m === 'USD' ? 'U$S' : '$';
 const numFmt = (n, dec = 2) => Number(n || 0).toLocaleString('es-AR', { maximumFractionDigits: dec });
@@ -169,6 +170,39 @@ function renderLista() {
   }).join('');
 }
 
+// Un mismo artículo puede terminar cargado en más de una solicitud
+// ABIERTA a la vez — Ingeniería lo vuelve a pedir sin darse cuenta de
+// que ya estaba en otra, o una solicitud "urgente" repite algo de una
+// solicitud grande que ya estaba en trámite. Sin avisar esto, Compras
+// puede terminar cotizando o comprando el mismo material dos veces por
+// separado. Caso real del usuario (2026-09-16): "CAÑO3/8" cargado igual
+// en las solicitudes "URG" y "Varias OT". Se considera "en cotización"
+// un ítem con `a_comprar = true` y `confirmado = false` en una solicitud
+// con `estado = 'ABIERTA'` — si ya se confirmó esa compra o la solicitud
+// se cerró, no es un duplicado activo, es historial, no hace falta
+// avisar. `excluirCotizacionId` deja afuera la propia solicitud (para no
+// avisar que un ítem "duplica" contra sí mismo).
+async function buscarDuplicadosEntreSolicitudes(codigos, excluirCotizacionId) {
+  const resultado = new Map();
+  if (!codigos.length) return resultado;
+  let q = SB.from('compras_cotizaciones_items')
+    .select('cod_articulo,cotizacion_id,compras_cotizaciones(nombre,estado)')
+    .in('cod_articulo', codigos)
+    .eq('a_comprar', true)
+    .eq('confirmado', false);
+  if (excluirCotizacionId) q = q.neq('cotizacion_id', excluirCotizacionId);
+  const { data, error } = await q;
+  if (error || !data) return resultado;
+  for (const row of data) {
+    const cot = row.compras_cotizaciones;
+    if (!cot || cot.estado !== 'ABIERTA') continue;
+    if (!resultado.has(row.cod_articulo)) resultado.set(row.cod_articulo, []);
+    const lista = resultado.get(row.cod_articulo);
+    if (!lista.some(x => x.id === row.cotizacion_id)) lista.push({ id: row.cotizacion_id, nombre: cot.nombre });
+  }
+  return resultado;
+}
+
 async function onArchivoCotizacion(file) {
   const nombre = (document.getElementById('cot_nombre_nueva')?.value || '').trim();
   if (!nombre) { toast('Ponele un nombre a la solicitud antes de elegir el archivo', 'er'); return; }
@@ -184,7 +218,18 @@ async function onArchivoCotizacion(file) {
   if (!filas.length) { toast('No se encontraron filas en el archivo', 'er'); return; }
 
   const articulos = new Set(filas.map(f => f.cod_articulo)).size;
-  const ok = confirm(`Se leyeron ${filas.length} filas (${articulos} artículos).\n\nSe va a crear la solicitud "${nombre}" con estos ítems. ¿Continuar?`);
+  let msg = `Se leyeron ${filas.length} filas (${articulos} artículos).\n\nSe va a crear la solicitud "${nombre}" con estos ítems.`;
+
+  const codigosACotizar = [...new Set(filas.filter(f => f.a_comprar).map(f => f.cod_articulo))];
+  const duplicados = await buscarDuplicadosEntreSolicitudes(codigosACotizar, null);
+  if (duplicados.size) {
+    const detalle = [...duplicados.entries()].slice(0, 15)
+      .map(([cod, cots]) => `- ${cod} (ya en: ${cots.map(c => c.nombre).join(', ')})`).join('\n');
+    const extra = duplicados.size > 15 ? `\n...y ${duplicados.size - 15} artículo${duplicados.size - 15 === 1 ? '' : 's'} más` : '';
+    msg += `\n\n⚠️ ${duplicados.size} artículo${duplicados.size === 1 ? '' : 's'} de este archivo ya se está${duplicados.size === 1 ? '' : 'n'} cotizando en otra solicitud abierta:\n${detalle}${extra}`;
+  }
+  msg += '\n\n¿Continuar?';
+  const ok = confirm(msg);
   if (!ok) return;
 
   const { data: cot, error: e1 } = await SB.from('compras_cotizaciones').insert({ nombre }).select().single();
@@ -235,6 +280,9 @@ async function abrirDetalle(id) {
     const conMoneda = PRECIOS.find(p => p.proveedor_id === inv.proveedor_id);
     COL_MONEDA[inv.proveedor_id] = conMoneda?.moneda || 'ARS';
   });
+
+  const codigosACotizar = [...new Set(ITEMS.filter(i => i.a_comprar).map(i => i.cod_articulo))];
+  DUPLICADOS = await buscarDuplicadosEntreSolicitudes(codigosACotizar, id);
 
   document.getElementById('cot-vista-lista').style.display = 'none';
   document.getElementById('cot-vista-detalle').style.display = '';
@@ -983,9 +1031,14 @@ function renderTablaComparativa() {
       ? `<div style="font-size:10px;color:var(--muted)" title="Los precios cargados en esta fila están en monedas distintas — no se comparan entre sí">⚠️ monedas mezcladas</div>`
       : '';
 
+    const dup = DUPLICADOS.get(item.cod_articulo);
+    const avisoDup = dup && dup.length
+      ? ` <span title="También se está cotizando en: ${escAttr(dup.map(d => d.nombre).join(', '))}" style="cursor:help">⚠️</span>`
+      : '';
+
     return `<tr${item.confirmado ? ' style="background:var(--row-hover)"' : ''}>
       <td><input type="checkbox" class="cot-check-row" data-id="${item.id}" style="width:auto"></td>
-      <td>${escAttr(item.cod_articulo)}</td>
+      <td>${escAttr(item.cod_articulo)}${avisoDup}</td>
       <td>${escAttr(item.descripcion || '')}${item.desc_adicional ? `<div style="font-size:11px;color:var(--muted)">${escAttr(item.desc_adicional)}</div>` : ''}</td>
       <td style="text-align:right;white-space:nowrap">
         <input type="text" inputmode="decimal" class="cot-cant-input" data-item="${item.id}"

@@ -1024,6 +1024,25 @@ sub-vista de Cotizaciones (2026-09-02) pero el usuario pidió pasarlo a un módu
 tarjetas por OT y gráficos de detalle en vez de una tabla más. El dato de OT (`n_ot`, columna 9.1) sigue
 viviendo en `compras_cotizaciones_items` — el módulo OT solo lo lee, no agrega tablas nuevas.
 
+**Aviso de artículo duplicado entre solicitudes** (pedido del usuario, 2026-09-16): caso real — el mismo
+artículo (`CAÑO3/8`, mismas cantidades) terminó cargado igual en dos solicitudes abiertas distintas
+("URG" y "Varias OT"), con riesgo de cotizarlo o comprarlo dos veces por separado sin que nadie se diera
+cuenta. `buscarDuplicadosEntreSolicitudes()` en `js/modules/cotizaciones.js` busca, para un conjunto de
+`cod_articulo`, si ya existen en OTRA solicitud con `estado = 'ABIERTA'` como ítem `a_comprar = true` y
+`confirmado = false` (si ya se confirmó esa compra o la solicitud se cerró, no es un duplicado activo,
+es historial — no avisa). Se usa en dos momentos, sin bloquear nunca la carga a propósito — bloquear de
+plano rechazaría un archivo legítimo entero por un solo artículo repetido; mejor avisar y dejar decidir:
+1. **Al cargar un archivo nuevo** (`onArchivoCotizacion()`): el `confirm()` de siempre suma un párrafo
+   listando qué artículos del archivo ya se están cotizando en qué otra solicitud, antes de crear la
+   solicitud — mismo criterio que el aviso de "OC desaparecidas" en Órdenes de Compra (ver 5.2), avisar
+   antes de un cambio en vez de un chequeo silencioso.
+2. **Dentro de una solicitud ya abierta** (`abrirDetalle()`, guardado en `DUPLICADOS`): cada fila de la
+   comparativa cuyo código aparece en otra solicitud abierta muestra un ⚠️ al lado del código, con un
+   tooltip nombrando en qué otra solicitud está — para que también se note en solicitudes que ya estaban
+   cargadas de antes, no solo en las nuevas. Repetir el mismo código dos veces **dentro de la misma
+   solicitud** (dos partidas distintas del mismo artículo) es normal y no se avisa — el aviso es solo
+   entre solicitudes distintas.
+
 ### 9.3 Modelo de datos — `sql/013_cotizaciones.sql` + `sql/014_cotizaciones_bloques.sql` + `sql/015_cotizaciones_confirmado.sql` + `sql/016_cotizaciones_condicion_pago.sql`
 
 Cuatro tablas (ver `sql/schema.sql` para el estado final), sin RLS (mismo criterio que el resto de
