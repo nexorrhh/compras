@@ -352,6 +352,17 @@ Dashboard inicial (con gráficos) y sub-vistas de solo lectura, en vez de una so
   (cantidad pedida/recibida/pendiente, precio unitario e importe por línea).
 - Estado de una OC — **PENDIENTE** (nada recibido todavía), **PARCIAL** (llegó parte), **COMPLETADA**
   (llegó todo) — se calcula por cantidades, no por dinero (ver `estadoOC()` en `js/modules/oc.js`).
+- **Estado de una línea, dentro del detalle desplegable** (`estadoLinea()`): no es un simple
+  Pendiente/Recibido según `cant_pendiente`. Caso real del usuario (2026-09-16): a veces Tango cierra
+  una línea sola con `cant_pendiente = 0` **sin que haya llegado nada** (o solo una parte) — típicamente
+  porque ese artículo se terminó comprando a otro proveedor por fuera de esta OC, sin pasar por una OC
+  formal para eso. Antes eso se mostraba igual que "Recibido" (verde), como si hubiera llegado. Ahora
+  una línea con `cant_pendiente = 0` pero `cant_recibida < cant_pedida` se marca aparte como
+  **"⚠️ Cerrada sin recibir"** (rojo, `.badge.vencido` — distinto del amarillo "Pendiente" porque ya no
+  está abierta, y distinto del verde "Recibido" porque no llegó lo pedido), con un tooltip explicando el
+  motivo probable. Es solo de presentación en el detalle de línea — no cambia el estado
+  Pendiente/Parcial/Completada de la OC completa (`estadoOC()`), que sigue siendo por cantidades a nivel
+  de toda la orden.
 - `js/modules/oc.js` es un único módulo que expone `render(secId)`: internamente decide qué sub-vista
   pintar según el `secId` recibido (todas comparten las mismas funciones internas de parseo, agrupado
   y cálculo de estado — no hay lógica duplicada entre sub-vistas, solo IDs de DOM distintos por

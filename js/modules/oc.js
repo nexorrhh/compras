@@ -178,7 +178,18 @@ async function cargarArchivo(file) {
 //   - COMPLETADA: ninguna línea tiene nada pendiente (llegó todo).
 //   - PARCIAL:    cualquier otra combinación (llegó parte).
 // ------------------------------------------------------------
-function estadoLinea(l) { return (l.cant_pendiente || 0) > 0.01 ? 'PENDIENTE' : 'RECIBIDO'; }
+// Una línea con pendiente=0 no siempre significa que llegó — Tango a
+// veces cierra una línea sola sin que se haya recibido nada (o solo una
+// parte), típicamente porque ese artículo se terminó comprando a otro
+// proveedor por fuera de esta OC (sin pasar por una OC formal para eso).
+// Caso real del usuario (2026-09-16): una línea con Pedida 2 / Recibida 0
+// / Pendiente 0 se mostraba como "Recibido" (verde), como si hubiera
+// llegado, cuando en realidad nunca llegó nada por esta orden.
+function estadoLinea(l) {
+  if ((l.cant_pendiente || 0) > 0.01) return 'PENDIENTE';
+  if ((l.cant_pedida || 0) > 0.01 && (l.cant_recibida || 0) < (l.cant_pedida || 0) - 0.01) return 'CERRADA_SIN_RECIBIR';
+  return 'RECIBIDO';
+}
 
 function agruparPorOrden(lineas) {
   const map = new Map();
@@ -285,6 +296,18 @@ function renderTabla(tbodyId, grupos) {
     const detalle = lineasOrdenadas.map(l => {
       const estL = estadoLinea(l);
       const unidad = UNIDADES.get(l.articulo_cod) || '';
+      // "Cerrada sin recibir" en rojo (no amarillo/verde) porque es el
+      // caso que hay que revisar: Tango la cerró sin que llegara nada
+      // (o solo una parte) por esta orden — normalmente porque ese
+      // artículo se terminó comprando a otro proveedor por fuera de esta
+      // OC. No es lo mismo que "Pendiente" (sigue abierta, se espera) ni
+      // que "Recibido" (llegó lo pedido).
+      const badge = estL === 'PENDIENTE' ? { cls: 'porvencer', txt: 'Pendiente' }
+        : estL === 'CERRADA_SIN_RECIBIR' ? { cls: 'vencido', txt: '⚠️ Cerrada sin recibir' }
+        : { cls: 'vigente', txt: 'Recibido' };
+      const tituloBadge = estL === 'CERRADA_SIN_RECIBIR'
+        ? ' title="Tango cerró esta línea sin recibir lo pedido (o recibió solo una parte) — probablemente se compró a otro proveedor por fuera de esta OC"'
+        : '';
       return `<div class="oc-linea">
         <div class="oc-linea-desc">${l.articulo_desc || l.articulo_cod}</div>
         <div>Pedida: <strong>${l.cant_pedida?.toLocaleString('es-AR') ?? '–'} ${unidad}</strong></div>
@@ -292,7 +315,7 @@ function renderTabla(tbodyId, grupos) {
         <div>Pendiente: <strong>${l.cant_pendiente?.toLocaleString('es-AR') ?? '–'} ${unidad}</strong></div>
         <div>Precio unit.: <strong>${fmtPesos(l.precio_unitario)}</strong></div>
         <div>Importe: <strong>${fmtPesos(l.importe)}</strong></div>
-        <div><span class="badge ${estL === 'PENDIENTE' ? 'porvencer' : 'vigente'}">${estL === 'PENDIENTE' ? 'Pendiente' : 'Recibido'}</span></div>
+        <div><span class="badge ${badge.cls}"${tituloBadge}>${badge.txt}</span></div>
       </div>`;
     }).join('');
     return `<tr class="oc-row">
