@@ -312,7 +312,8 @@ create table compras_cotizaciones_items (
   bloque text not null default '',
   ganador_proveedor_id uuid references compras_proveedores(id) on delete set null,
   ganador_manual boolean not null default false,
-  confirmado boolean not null default false
+  confirmado boolean not null default false,
+  duplicado_aceptado boolean not null default false
 );
 
 create table compras_cotizaciones_proveedores (

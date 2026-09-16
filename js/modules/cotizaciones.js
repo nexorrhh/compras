@@ -344,6 +344,23 @@ async function toggleEstadoCotizacion() {
 // ------------------------------------------------------------
 const SIN_CLASIFICAR = '__SIN_CLASIFICAR__';
 
+// Pseudo-bloque para el tab "⚠️ Duplicado" — a diferencia de General/
+// Pañol/Despacho, no es un valor real de la columna `bloque` (nunca se
+// guarda), es solo un modo de vista: mientras está activo, la tabla
+// muestra los ítems apartados por duplicado_aceptado en vez de los de
+// un bloque real (ver renderTablaComparativa()/renderTablaDuplicados()).
+const BLOQUE_DUPLICADOS = '__DUPLICADOS__';
+
+// Un ítem "duplicado activo" no cuenta en su bloque real (General/Pañol/
+// Despacho) ni en la comparativa/resumen/informe de ese bloque — queda
+// apartado en el tab "⚠️ Duplicado" hasta que se acepte a mano
+// (aceptarDuplicado()) o deje de estar en DUPLICADOS (la otra solicitud
+// se cerró/confirmó ese ítem). Pedido explícito del usuario (2026-09-16):
+// "que no lo cuente" en el bloque normal, aparte en su propio apartado.
+function esDuplicadoActivo(it) {
+  return !it.duplicado_aceptado && DUPLICADOS.has(it.cod_articulo);
+}
+
 // El bloque (ej. "Pañol"/"Despacho") es la división principal de una
 // solicitud: cada bloque tiene su propia lista de proveedores
 // invitados (ver 9.2/9.4) — bloqueActual() es "con qué bloque estoy
@@ -363,7 +380,15 @@ function poblarTabsBloque() {
   const cont = document.getElementById('cot_f_bloque_tabs');
   if (!cont) return;
   const conteos = { '': 0, 'Pañol': 0, 'Despacho': 0 };
-  ITEMS.forEach(it => { const b = it.bloque || ''; if (b in conteos) conteos[b]++; });
+  // Un ítem "duplicado activo" no cuenta en su bloque real — queda
+  // apartado en el tab "⚠️ Duplicado" (ver esDuplicadoActivo()), a
+  // pedido explícito del usuario ("que no lo cuente").
+  let duplicados = 0;
+  ITEMS.forEach(it => {
+    if (esDuplicadoActivo(it)) { duplicados++; return; }
+    const b = it.bloque || '';
+    if (b in conteos) conteos[b]++;
+  });
   // Un bloque puede quedar sin ítems (se reetiquetaron todos a otro
   // bloque) pero seguir teniendo proveedores invitados ahí — si su tab
   // desapareciera igual, esos proveedores (y los precios que se les
@@ -380,9 +405,16 @@ function poblarTabsBloque() {
     { valor: 'Despacho', label: 'Despacho' },
   ].filter(o => conteos[o.valor] > 0 || bloquesConInvitados.has(o.valor));
 
-  if (!opciones.some(o => o.valor === BLOQUE_TAB)) BLOQUE_TAB = opciones[0]?.valor ?? '';
+  if (BLOQUE_TAB !== BLOQUE_DUPLICADOS && !opciones.some(o => o.valor === BLOQUE_TAB)) BLOQUE_TAB = opciones[0]?.valor ?? '';
+  if (BLOQUE_TAB === BLOQUE_DUPLICADOS && !duplicados) BLOQUE_TAB = opciones[0]?.valor ?? '';
 
-  cont.innerHTML = opciones.map(o => `<button type="button" class="cot-bloque-tab ${o.valor === BLOQUE_TAB ? 'active' : ''}" data-bloque="${escAttr(o.valor)}">${escAttr(o.label)} (${conteos[o.valor]})</button>`).join('');
+  let html = opciones.map(o => `<button type="button" class="cot-bloque-tab ${o.valor === BLOQUE_TAB ? 'active' : ''}" data-bloque="${escAttr(o.valor)}">${escAttr(o.label)} (${conteos[o.valor]})</button>`).join('');
+  // Solo aparece si hay algo apartado — nunca un tab "Duplicado (0)"
+  // vacío, mismo criterio que los bloques reales de arriba.
+  if (duplicados > 0) {
+    html += `<button type="button" class="cot-bloque-tab cot-bloque-tab-dup ${BLOQUE_TAB === BLOQUE_DUPLICADOS ? 'active' : ''}" data-bloque="${BLOQUE_DUPLICADOS}" title="Artículos que ya se están cotizando en otra solicitud abierta — apartados acá para no pedirlos de nuevo">⚠️ Duplicado (${duplicados})</button>`;
+  }
+  cont.innerHTML = html;
 }
 
 function invitadosVisibles() {
@@ -415,7 +447,7 @@ function itemsVisibles() {
   // vuelta para el caso real de tener que deshacer una confirmación (ej.
   // el proveedor ganador no tenía stock de eso después de todo) sin tener
   // que ir a buscar en el informe de reparto quién más lo había cotizado.
-  let lista = ITEMS.filter(i => (i.bloque || '') === bloque && (mostrarConfirmados || !i.confirmado));
+  let lista = ITEMS.filter(i => (i.bloque || '') === bloque && (mostrarConfirmados || !i.confirmado) && !esDuplicadoActivo(i));
   if (ocultarNo) lista = lista.filter(i => i.a_comprar);
   if (grupoF === SIN_CLASIFICAR) lista = lista.filter(i => !grupoNombreDeItem(i));
   else if (grupoF) lista = lista.filter(i => grupoNombreDeItem(i) === grupoF);
@@ -475,7 +507,7 @@ function formatOTExport(ot) {
 // que se esté mirando en ese momento.
 function emitirInformeReparto() {
   const bloque = bloqueActual();
-  const itemsBloque = ITEMS.filter(i => (i.bloque || '') === bloque && i.a_comprar);
+  const itemsBloque = ITEMS.filter(i => (i.bloque || '') === bloque && i.a_comprar && !esDuplicadoActivo(i));
   if (!itemsBloque.length) { toast('No hay ítems a comprar en este bloque', 'er'); return; }
 
   const wb = XLSX.utils.book_new();
@@ -949,9 +981,44 @@ function enfocarPrecioAdyacente(input, delta) {
   if (siguiente) siguiente.focus(); else input.blur();
 }
 
+// Listado simple (no la grilla de proveedores/precios) de los ítems
+// apartados por duplicado_aceptado — para cada uno, en qué otra
+// solicitud abierta ya está, y un botón para aceptarlo igual acá (caso
+// excepcional, pedido explícito del usuario: "que me deje aceptarlo y
+// que lo agregue" solo cuando haga falta).
+function renderTablaDuplicados(wrap) {
+  const lista = ITEMS.filter(esDuplicadoActivo).slice().sort((a, b) => (a.descripcion || '').localeCompare(b.descripcion || '', 'es'));
+  const filas = lista.map(it => {
+    const otras = (DUPLICADOS.get(it.cod_articulo) || []).map(o => escAttr(o.nombre)).join(', ');
+    return `<tr>
+      <td>${escAttr(it.cod_articulo)}</td>
+      <td>${escAttr(it.descripcion || '')}${it.desc_adicional ? `<div style="font-size:11px;color:var(--muted)">${escAttr(it.desc_adicional)}</div>` : ''}</td>
+      <td style="text-align:right;white-space:nowrap">${it.cant_umc != null ? numFmt(it.cant_umc) : '–'} ${escAttr(it.umc || '')}</td>
+      <td style="color:var(--yellow)">${otras}</td>
+      <td><button type="button" class="bsm cot-aceptar-duplicado" data-item="${it.id}" title="Excepcional: cotizar/comprar este ítem también acá, a pesar del duplicado">✅ Aceptar de todas formas</button></td>
+    </tr>`;
+  }).join('');
+  wrap.innerHTML = `<table>
+    <thead><tr><th>Código</th><th>Descripción</th><th>Cantidad</th><th>También se está cotizando en</th><th></th></tr></thead>
+    <tbody>${filas || '<tr><td colspan="5" style="text-align:center;padding:18px;color:var(--muted)">Sin artículos apartados por duplicado</td></tr>'}</tbody>
+  </table>`;
+}
+
 function renderTablaComparativa() {
   const wrap = document.getElementById('cot-tabla-wrap');
   if (!wrap) return;
+
+  // El tab "⚠️ Duplicado" reemplaza toda la vista de bloque normal por
+  // el listado de apartados (ver renderTablaDuplicados()) — no aplica
+  // invitar proveedores, cargar precios ni resumen/informe para algo que
+  // todavía no se decidió comprar acá, así que esas secciones se ocultan
+  // mientras este tab esté activo.
+  const enDuplicados = bloqueActual() === BLOQUE_DUPLICADOS;
+  const seccionInvitados = document.getElementById('cot_seccion_invitados_bulk');
+  const seccionResumen = document.getElementById('cot_seccion_resumen');
+  if (seccionInvitados) seccionInvitados.style.display = enDuplicados ? 'none' : '';
+  if (seccionResumen) seccionResumen.style.display = enDuplicados ? 'none' : '';
+  if (enDuplicados) { renderTablaDuplicados(wrap); return; }
 
   // Reconstruir la tabla entera en cada render pisa el input en el que
   // el usuario esté escribiendo — pasa seguido: tipea un precio, hace
@@ -1031,14 +1098,9 @@ function renderTablaComparativa() {
       ? `<div style="font-size:10px;color:var(--muted)" title="Los precios cargados en esta fila están en monedas distintas — no se comparan entre sí">⚠️ monedas mezcladas</div>`
       : '';
 
-    const dup = DUPLICADOS.get(item.cod_articulo);
-    const avisoDup = dup && dup.length
-      ? ` <span title="También se está cotizando en: ${escAttr(dup.map(d => d.nombre).join(', '))}" style="cursor:help">⚠️</span>`
-      : '';
-
     return `<tr${item.confirmado ? ' style="background:var(--row-hover)"' : ''}>
       <td><input type="checkbox" class="cot-check-row" data-id="${item.id}" style="width:auto"></td>
-      <td>${escAttr(item.cod_articulo)}${avisoDup}</td>
+      <td>${escAttr(item.cod_articulo)}</td>
       <td>${escAttr(item.descripcion || '')}${item.desc_adicional ? `<div style="font-size:11px;color:var(--muted)">${escAttr(item.desc_adicional)}</div>` : ''}</td>
       <td style="text-align:right;white-space:nowrap">
         <input type="text" inputmode="decimal" class="cot-cant-input" data-item="${item.id}"
@@ -1093,7 +1155,7 @@ function renderResumenProveedores() {
     // solo para que no ensucie el resumen (queda el ganador guardado por
     // si se vuelve a marcar "Sí" más adelante), así que el resumen suma
     // solo lo que realmente se va a comprar.
-    const ganados = ITEMS.filter(it => (it.bloque || '') === bloque && it.a_comprar && it.ganador_proveedor_id === inv.proveedor_id);
+    const ganados = ITEMS.filter(it => (it.bloque || '') === bloque && it.a_comprar && it.ganador_proveedor_id === inv.proveedor_id && !esDuplicadoActivo(it));
     const porUnidad = new Map();
     const porMoneda = new Map();
     for (const it of ganados) {
@@ -1144,6 +1206,29 @@ function renderResumenProveedores() {
       </div>${accionConfirmar}
     </div>`;
   }).join('');
+}
+
+// Caso excepcional: el usuario decide cotizar/comprar este ítem también
+// en ESTA solicitud a pesar de que ya se está cotizando en otra abierta
+// (ver DUPLICADOS/esDuplicadoActivo) — por ejemplo porque acá hace más
+// falta y no puede esperar a que se resuelva la otra. Pedido explícito:
+// que sea la excepción, no el default — por eso pide confirmación antes
+// de aceptarlo, y queda marcado a mano por artículo, no se resetea solo
+// si la otra solicitud se cierra después.
+async function aceptarDuplicado(itemId) {
+  const item = ITEMS.find(i => i.id === itemId);
+  if (!item) return;
+  const otras = (DUPLICADOS.get(item.cod_articulo) || []).map(o => o.nombre).join(', ') || 'otra solicitud';
+  const ok = confirm(`Este artículo ya se está cotizando en: ${otras}.\n\n¿Confirmás que igual querés cotizarlo/comprarlo también en esta solicitud?`);
+  if (!ok) return;
+  const { error } = await SB.from('compras_cotizaciones_items').update({ duplicado_aceptado: true }).eq('id', itemId);
+  if (error) { toast(error.message, 'er'); return; }
+  item.duplicado_aceptado = true;
+  toast(`✓ "${item.cod_articulo}" agregado a la solicitud`);
+  poblarTabsBloque();
+  renderInvitados();
+  renderTablaComparativa();
+  renderResumenProveedores();
 }
 
 // Cierra la decisión de compra a este proveedor: los ítems que ganó en
@@ -1331,6 +1416,9 @@ function initDelegacionDetalle() {
 
     const confirmarBtn = e.target.closest('.cot-confirmar-compra');
     if (confirmarBtn) { confirmarCompraProveedor(confirmarBtn.dataset.prov); return; }
+
+    const aceptarDupBtn = e.target.closest('.cot-aceptar-duplicado');
+    if (aceptarDupBtn) { aceptarDuplicado(aceptarDupBtn.dataset.item); return; }
 
     const tabBloque = e.target.closest('.cot-bloque-tab');
     if (tabBloque) {

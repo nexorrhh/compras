@@ -192,6 +192,12 @@ select option{background:var(--bg3)}
 .cot-bloque-tab{padding:7px 14px;border-radius:8px;border:1px solid var(--border);background:var(--bg2);color:var(--text);cursor:pointer;font-size:13px;transition:all .15s}
 .cot-bloque-tab:hover{border-color:var(--accent)}
 .cot-bloque-tab.active{background:var(--accent);border-color:var(--accent);color:#fff;font-weight:600}
+/* Tab de "Duplicado" — mismo patrón que .cot-bloque-tab pero en rojo,
+   para que se note que es distinto de los bloques reales (General/
+   Pañol/Despacho): son artículos apartados, no un bloque para cotizar. */
+.cot-bloque-tab-dup{border-color:rgba(239,68,68,.4);color:var(--red)}
+.cot-bloque-tab-dup:hover{border-color:var(--red)}
+.cot-bloque-tab-dup.active{background:var(--red);border-color:var(--red);color:#fff;font-weight:600}
 /* Mismo patrón visual que .cot-bloque-tab, generalizado para cualquier
    submódulo con sub-pestañas (ej. OT: Resumen/Detalle) que no es
    específico de los bloques de Cotizaciones. */

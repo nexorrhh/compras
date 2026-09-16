@@ -908,41 +908,45 @@
       </div>
     </div>
 
-    <div class="psub" style="margin:16px 0 6px">Proveedores invitados a este bloque</div>
-    <div class="fg" style="position:relative;max-width:340px">
-      <input id="cot_prov_buscar" autocomplete="off" placeholder="Buscar proveedor para invitar...">
-      <div class="ac-box" id="cot_prov_sug" style="display:none"></div>
-    </div>
-    <div id="cot_invitados_chips" style="display:flex;flex-wrap:wrap;gap:8px;margin:10px 0 18px"></div>
-
-    <div class="sh">
-      <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
-        <span style="font-size:13px;color:var(--muted)" id="cot_bulk_count">0 seleccionados</span>
-        <button type="button" class="bsm g" id="cot_bulk_si" disabled>✅ Marcar A comprar</button>
-        <button type="button" class="bsm d" id="cot_bulk_no" disabled>🚫 Marcar NO comprar</button>
-        <button type="button" class="bsm" id="cot_bulk_bloque_panol" disabled>🏷️ Marcar como Pañol</button>
-        <button type="button" class="bsm" id="cot_bulk_bloque_despacho" disabled>🏷️ Marcar como Despacho</button>
-        <button type="button" class="bsm" id="cot_bulk_bloque_gral" disabled title="Vuelve a General (sin dividir)">↩️ Quitar bloque</button>
+    <div id="cot_seccion_invitados_bulk">
+      <div class="psub" style="margin:16px 0 6px">Proveedores invitados a este bloque</div>
+      <div class="fg" style="position:relative;max-width:340px">
+        <input id="cot_prov_buscar" autocomplete="off" placeholder="Buscar proveedor para invitar...">
+        <div class="ac-box" id="cot_prov_sug" style="display:none"></div>
       </div>
-      <div style="display:flex;gap:14px;align-items:center">
-        <select id="cot_f_grupo"><option value="">Todos los rubros</option></select>
-        <label style="display:flex;align-items:center;gap:7px;font-size:13px;color:var(--muted);cursor:pointer">
-          <input type="checkbox" id="cot_f_ocultar_no_comprar" checked style="width:auto">
-          Ocultar los que no se compran
-        </label>
-        <label style="display:flex;align-items:center;gap:7px;font-size:13px;color:var(--muted);cursor:pointer">
-          <input type="checkbox" id="cot_f_mostrar_confirmados" style="width:auto">
-          Mostrar confirmados
-        </label>
-        <button type="button" class="bsm" id="cot_exportar">📥 Exportar para cotizar (.xlsx)</button>
+      <div id="cot_invitados_chips" style="display:flex;flex-wrap:wrap;gap:8px;margin:10px 0 18px"></div>
+
+      <div class="sh">
+        <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+          <span style="font-size:13px;color:var(--muted)" id="cot_bulk_count">0 seleccionados</span>
+          <button type="button" class="bsm g" id="cot_bulk_si" disabled>✅ Marcar A comprar</button>
+          <button type="button" class="bsm d" id="cot_bulk_no" disabled>🚫 Marcar NO comprar</button>
+          <button type="button" class="bsm" id="cot_bulk_bloque_panol" disabled>🏷️ Marcar como Pañol</button>
+          <button type="button" class="bsm" id="cot_bulk_bloque_despacho" disabled>🏷️ Marcar como Despacho</button>
+          <button type="button" class="bsm" id="cot_bulk_bloque_gral" disabled title="Vuelve a General (sin dividir)">↩️ Quitar bloque</button>
+        </div>
+        <div style="display:flex;gap:14px;align-items:center">
+          <select id="cot_f_grupo"><option value="">Todos los rubros</option></select>
+          <label style="display:flex;align-items:center;gap:7px;font-size:13px;color:var(--muted);cursor:pointer">
+            <input type="checkbox" id="cot_f_ocultar_no_comprar" checked style="width:auto">
+            Ocultar los que no se compran
+          </label>
+          <label style="display:flex;align-items:center;gap:7px;font-size:13px;color:var(--muted);cursor:pointer">
+            <input type="checkbox" id="cot_f_mostrar_confirmados" style="width:auto">
+            Mostrar confirmados
+          </label>
+          <button type="button" class="bsm" id="cot_exportar">📥 Exportar para cotizar (.xlsx)</button>
+        </div>
       </div>
     </div>
     <div class="tw" id="cot-tabla-wrap"></div>
 
-    <div class="psub" style="margin:18px 0 8px">Resumen por proveedor</div>
-    <div id="cot_resumen_proveedores" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:10px"></div>
+    <div id="cot_seccion_resumen">
+      <div class="psub" style="margin:18px 0 8px">Resumen por proveedor</div>
+      <div id="cot_resumen_proveedores" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:10px"></div>
 
-    <button type="button" class="btn p" id="cot_informe_reparto" style="margin-top:18px">📄 Emitir informe de reparto (.xlsx)</button>
+      <button type="button" class="btn p" id="cot_informe_reparto" style="margin-top:18px">📄 Emitir informe de reparto (.xlsx)</button>
+    </div>
   </div>
 </div>
 

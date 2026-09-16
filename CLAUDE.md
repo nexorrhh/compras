@@ -1036,14 +1036,28 @@ plano rechazaría un archivo legítimo entero por un solo artículo repetido; me
    listando qué artículos del archivo ya se están cotizando en qué otra solicitud, antes de crear la
    solicitud — mismo criterio que el aviso de "OC desaparecidas" en Órdenes de Compra (ver 5.2), avisar
    antes de un cambio en vez de un chequeo silencioso.
-2. **Dentro de una solicitud ya abierta** (`abrirDetalle()`, guardado en `DUPLICADOS`): cada fila de la
-   comparativa cuyo código aparece en otra solicitud abierta muestra un ⚠️ al lado del código, con un
-   tooltip nombrando en qué otra solicitud está — para que también se note en solicitudes que ya estaban
-   cargadas de antes, no solo en las nuevas. Repetir el mismo código dos veces **dentro de la misma
-   solicitud** (dos partidas distintas del mismo artículo) es normal y no se avisa — el aviso es solo
+2. **Dentro de una solicitud ya abierta** (`abrirDetalle()`, guardado en `DUPLICADOS`): un ítem
+   duplicado activo (`esDuplicadoActivo()`) **no cuenta en su bloque real** (General/Pañol/Despacho) ni
+   en su comparativa/resumen/informe — pedido explícito del usuario tras la primera versión (que solo
+   ponía un ⚠️ al lado del código, sin sacarlo del bloque): "necesitaría que no lo cuente". En vez de eso
+   queda apartado en un **pseudo-bloque propio**, el tab **"⚠️ Duplicado (N)"** (`BLOQUE_DUPLICADOS`,
+   constante que nunca se guarda en la columna `bloque` real — solo existe como modo de vista), que
+   aparece junto a General/Pañol/Despacho solo si hay algo apartado. Ese tab reemplaza toda la vista
+   normal por un listado simple (`renderTablaDuplicados()`: Código/Descripción/Cantidad/"También se está
+   cotizando en") — no tiene sentido invitar proveedores ni cargar precios para algo que todavía no se
+   decidió comprar acá, así que esas secciones (`#cot_seccion_invitados_bulk`, `#cot_seccion_resumen`) se
+   ocultan mientras el tab esté activo. Repetir el mismo código dos veces **dentro de la misma solicitud**
+   (dos partidas distintas del mismo artículo) es normal y no cuenta como duplicado — el apartado es solo
    entre solicitudes distintas.
 
-### 9.3 Modelo de datos — `sql/013_cotizaciones.sql` + `sql/014_cotizaciones_bloques.sql` + `sql/015_cotizaciones_confirmado.sql` + `sql/016_cotizaciones_condicion_pago.sql`
+**Aceptar un duplicado igual (caso excepcional)** — pedido explícito: "SOLO EN CASO EXCEPCIONAL que me
+deje aceptarlo". El botón "✅ Aceptar de todas formas" de cada fila del tab Duplicado
+(`aceptarDuplicado()`) pide confirmación explícita y, si se acepta, marca
+`duplicado_aceptado = true` en `compras_cotizaciones_items` (columna nueva, ver
+`sql/017_cotizaciones_duplicado_aceptado.sql`) — desde ese momento el ítem vuelve a contar en su bloque
+real como cualquier otro, para siempre (no se resetea solo si la otra solicitud se cierra después).
+
+### 9.3 Modelo de datos — `sql/013_cotizaciones.sql` + `sql/014_cotizaciones_bloques.sql` + `sql/015_cotizaciones_confirmado.sql` + `sql/016_cotizaciones_condicion_pago.sql` + `sql/017_cotizaciones_duplicado_aceptado.sql`
 
 Cuatro tablas (ver `sql/schema.sql` para el estado final), sin RLS (mismo criterio que el resto de
 `compras_*`):
@@ -1056,7 +1070,9 @@ Cuatro tablas (ver `sql/schema.sql` para el estado final), sin RLS (mismo criter
   clasificar, `'Pañol'` o `'Despacho'` — el usuario confirmó que la división es siempre esa, así que la
   UI ofrece un select fijo + dos botones en vez de texto libre, ver 9.2), el vínculo al ganador
   (`ganador_proveedor_id` + `ganador_manual`, ver 9.2) y `confirmado` (compra ya decidida a ese
-  proveedor — se oculta de la comparativa, ver 9.2 punto 9).
+  proveedor — se oculta de la comparativa, ver 9.2 punto 9). `duplicado_aceptado` (ver 9.2, aviso de
+  duplicado entre solicitudes) es la excepción explícita a mano para un ítem que se decidió cotizar/
+  comprar también acá a pesar de estar duplicado en otra solicitud abierta.
 - `compras_cotizaciones_proveedores` — la lista de proveedores invitados, **por bloque**: un proveedor se
   invita a un bloque puntual de la solicitud, no a toda la solicitud entera (`unique(cotizacion_id,
   proveedor_id, bloque)` — permite invitar al mismo proveedor a más de un bloque si hiciera falta).
@@ -1354,7 +1370,8 @@ tablero-compras/
     ├── 013_cotizaciones.sql
     ├── 014_cotizaciones_bloques.sql
     ├── 015_cotizaciones_confirmado.sql
-    └── 016_cotizaciones_condicion_pago.sql
+    ├── 016_cotizaciones_condicion_pago.sql
+    └── 017_cotizaciones_duplicado_aceptado.sql
 ```
 
 > `porteria.html` y `solicitud.html` son entry points separados (audiencias distintas: portero de
@@ -1471,9 +1488,12 @@ Todavía sin decidir:
 15. Correr [`sql/016_cotizaciones_condicion_pago.sql`](sql/016_cotizaciones_condicion_pago.sql) — agrega
     `condicion_pago` a `compras_cotizaciones_proveedores` para el pedido del director financiero (ver
     sección 9.2 punto 10) (**todavía falta**).
-16. Probar el circuito completo: pedir vehículo (solicitud.html) → aprobar y asignar (index.html) →
+16. Correr [`sql/017_cotizaciones_duplicado_aceptado.sql`](sql/017_cotizaciones_duplicado_aceptado.sql) —
+    agrega `duplicado_aceptado` a `compras_cotizaciones_items` para el tab "⚠️ Duplicado" (ver sección
+    9.2) (**todavía falta**).
+17. Probar el circuito completo: pedir vehículo (solicitud.html) → aprobar y asignar (index.html) →
    registrar salida/retorno (porteria.html) → ver el movimiento reflejado en el dashboard.
-17. Evaluar RLS (Row Level Security) en las tablas `compras_*` — hoy cualquiera con el link de
+18. Evaluar RLS (Row Level Security) en las tablas `compras_*` — hoy cualquiera con el link de
    `solicitud.html`/`porteria.html` puede leer/escribir todas las tablas, sin ningún login de por medio.
-18. Ir completando los módulos `[TBD]` de la sección 3 a medida que los necesites, usando el módulo
+19. Ir completando los módulos `[TBD]` de la sección 3 a medida que los necesites, usando el módulo
    Flota (carpeta `js/modules/`) como plantilla.
