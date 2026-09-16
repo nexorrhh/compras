@@ -180,24 +180,47 @@ function renderLista() {
 // un ítem con `a_comprar = true` y `confirmado = false` en una solicitud
 // con `estado = 'ABIERTA'` — si ya se confirmó esa compra o la solicitud
 // se cerró, no es un duplicado activo, es historial, no hace falta
-// avisar. `excluirCotizacionId` deja afuera la propia solicitud (para no
-// avisar que un ítem "duplica" contra sí mismo).
-async function buscarDuplicadosEntreSolicitudes(codigos, excluirCotizacionId) {
-  const resultado = new Map();
+// avisar.
+//
+// Dos ajustes pedidos por el usuario tras la primera versión:
+// 1. **Se compara por artículo + OT, no solo por artículo**: pedir el
+//    mismo perfil para dos OT distintas es normal (dos trabajos
+//    distintos, no un error) — solo cuenta como duplicado si es el
+//    MISMO artículo para la MISMA OT (`formatOTExport()`, misma
+//    normalización que ya usa el informe de reparto, así "OT 596" y
+//    "OT 000000000596" matchean igual).
+// 2. **Siempre gana la solicitud más vieja**: antes se avisaba en las
+//    dos solicitudes por igual (ninguna quedaba "limpia"). Ahora se
+//    compara por `compras_cotizaciones.created_at` — el apartado solo
+//    aparece en la(s) solicitud(es) más NUEVA(s); la más vieja de todas
+//    las que tienen ese artículo+OT es "la legal" y nunca se marca a sí
+//    misma, sin importar desde cuál de las dos se esté mirando.
+//    `cotizacionActual` es `null` al cargar un archivo nuevo (todavía no
+//    existe, así que por definición cualquier coincidencia ya existente
+//    es más vieja) o `{id, created_at}` de la solicitud ya creada que se
+//    está mirando en `abrirDetalle()`.
+async function buscarDuplicadosEntreSolicitudes(items, cotizacionActual) {
+  const resultado = new Map(); // clave `${cod_articulo}|${ot normalizada}` -> [{id, nombre}]
+  const codigos = [...new Set(items.map(i => i.cod_articulo))];
   if (!codigos.length) return resultado;
   let q = SB.from('compras_cotizaciones_items')
-    .select('cod_articulo,cotizacion_id,compras_cotizaciones(nombre,estado)')
+    .select('cod_articulo,n_ot,cotizacion_id,compras_cotizaciones(nombre,estado,created_at)')
     .in('cod_articulo', codigos)
     .eq('a_comprar', true)
     .eq('confirmado', false);
-  if (excluirCotizacionId) q = q.neq('cotizacion_id', excluirCotizacionId);
+  if (cotizacionActual?.id) q = q.neq('cotizacion_id', cotizacionActual.id);
   const { data, error } = await q;
   if (error || !data) return resultado;
   for (const row of data) {
     const cot = row.compras_cotizaciones;
     if (!cot || cot.estado !== 'ABIERTA') continue;
-    if (!resultado.has(row.cod_articulo)) resultado.set(row.cod_articulo, []);
-    const lista = resultado.get(row.cod_articulo);
+    // Si la solicitud que ya tiene este artículo+OT es más NUEVA que la
+    // actual, la actual es la vieja/legal — no se marca contra algo más
+    // reciente que ella.
+    if (cotizacionActual?.created_at && new Date(cot.created_at) >= new Date(cotizacionActual.created_at)) continue;
+    const clave = `${row.cod_articulo}|${formatOTExport(row.n_ot)}`;
+    if (!resultado.has(clave)) resultado.set(clave, []);
+    const lista = resultado.get(clave);
     if (!lista.some(x => x.id === row.cotizacion_id)) lista.push({ id: row.cotizacion_id, nombre: cot.nombre });
   }
   return resultado;
@@ -220,11 +243,14 @@ async function onArchivoCotizacion(file) {
   const articulos = new Set(filas.map(f => f.cod_articulo)).size;
   let msg = `Se leyeron ${filas.length} filas (${articulos} artículos).\n\nSe va a crear la solicitud "${nombre}" con estos ítems.`;
 
-  const codigosACotizar = [...new Set(filas.filter(f => f.a_comprar).map(f => f.cod_articulo))];
-  const duplicados = await buscarDuplicadosEntreSolicitudes(codigosACotizar, null);
+  const itemsACotizar = filas.filter(f => f.a_comprar).map(f => ({ cod_articulo: f.cod_articulo, n_ot: f.n_ot }));
+  const duplicados = await buscarDuplicadosEntreSolicitudes(itemsACotizar, null);
   if (duplicados.size) {
     const detalle = [...duplicados.entries()].slice(0, 15)
-      .map(([cod, cots]) => `- ${cod} (ya en: ${cots.map(c => c.nombre).join(', ')})`).join('\n');
+      .map(([clave, cots]) => {
+        const [cod, ot] = clave.split('|');
+        return `- ${cod}${ot ? ` (OT ${ot})` : ''} (ya en: ${cots.map(c => c.nombre).join(', ')})`;
+      }).join('\n');
     const extra = duplicados.size > 15 ? `\n...y ${duplicados.size - 15} artículo${duplicados.size - 15 === 1 ? '' : 's'} más` : '';
     msg += `\n\n⚠️ ${duplicados.size} artículo${duplicados.size === 1 ? '' : 's'} de este archivo ya se está${duplicados.size === 1 ? '' : 'n'} cotizando en otra solicitud abierta:\n${detalle}${extra}`;
   }
@@ -281,8 +307,8 @@ async function abrirDetalle(id) {
     COL_MONEDA[inv.proveedor_id] = conMoneda?.moneda || 'ARS';
   });
 
-  const codigosACotizar = [...new Set(ITEMS.filter(i => i.a_comprar).map(i => i.cod_articulo))];
-  DUPLICADOS = await buscarDuplicadosEntreSolicitudes(codigosACotizar, id);
+  const itemsACotizar = ITEMS.filter(i => i.a_comprar).map(i => ({ cod_articulo: i.cod_articulo, n_ot: i.n_ot }));
+  DUPLICADOS = await buscarDuplicadosEntreSolicitudes(itemsACotizar, { id, created_at: cot.created_at });
 
   document.getElementById('cot-vista-lista').style.display = 'none';
   document.getElementById('cot-vista-detalle').style.display = '';
@@ -357,8 +383,13 @@ const BLOQUE_DUPLICADOS = '__DUPLICADOS__';
 // (aceptarDuplicado()) o deje de estar en DUPLICADOS (la otra solicitud
 // se cerró/confirmó ese ítem). Pedido explícito del usuario (2026-09-16):
 // "que no lo cuente" en el bloque normal, aparte en su propio apartado.
+// La clave es artículo+OT (ver buscarDuplicadosEntreSolicitudes) — el
+// mismo perfil para otra OT no es duplicado.
+function claveDuplicado(it) {
+  return `${it.cod_articulo}|${formatOTExport(it.n_ot)}`;
+}
 function esDuplicadoActivo(it) {
-  return !it.duplicado_aceptado && DUPLICADOS.has(it.cod_articulo);
+  return !it.duplicado_aceptado && DUPLICADOS.has(claveDuplicado(it));
 }
 
 // El bloque (ej. "Pañol"/"Despacho") es la división principal de una
@@ -989,18 +1020,19 @@ function enfocarPrecioAdyacente(input, delta) {
 function renderTablaDuplicados(wrap) {
   const lista = ITEMS.filter(esDuplicadoActivo).slice().sort((a, b) => (a.descripcion || '').localeCompare(b.descripcion || '', 'es'));
   const filas = lista.map(it => {
-    const otras = (DUPLICADOS.get(it.cod_articulo) || []).map(o => escAttr(o.nombre)).join(', ');
+    const otras = (DUPLICADOS.get(claveDuplicado(it)) || []).map(o => escAttr(o.nombre)).join(', ');
     return `<tr>
       <td>${escAttr(it.cod_articulo)}</td>
       <td>${escAttr(it.descripcion || '')}${it.desc_adicional ? `<div style="font-size:11px;color:var(--muted)">${escAttr(it.desc_adicional)}</div>` : ''}</td>
+      <td>${escAttr(formatOTExport(it.n_ot) || '(Sin OT)')}</td>
       <td style="text-align:right;white-space:nowrap">${it.cant_umc != null ? numFmt(it.cant_umc) : '–'} ${escAttr(it.umc || '')}</td>
       <td style="color:var(--yellow)">${otras}</td>
       <td><button type="button" class="bsm cot-aceptar-duplicado" data-item="${it.id}" title="Excepcional: cotizar/comprar este ítem también acá, a pesar del duplicado">✅ Aceptar de todas formas</button></td>
     </tr>`;
   }).join('');
   wrap.innerHTML = `<table>
-    <thead><tr><th>Código</th><th>Descripción</th><th>Cantidad</th><th>También se está cotizando en</th><th></th></tr></thead>
-    <tbody>${filas || '<tr><td colspan="5" style="text-align:center;padding:18px;color:var(--muted)">Sin artículos apartados por duplicado</td></tr>'}</tbody>
+    <thead><tr><th>Código</th><th>Descripción</th><th>OT</th><th>Cantidad</th><th>También se está cotizando en (más vieja)</th><th></th></tr></thead>
+    <tbody>${filas || '<tr><td colspan="6" style="text-align:center;padding:18px;color:var(--muted)">Sin artículos apartados por duplicado</td></tr>'}</tbody>
   </table>`;
 }
 
@@ -1218,7 +1250,7 @@ function renderResumenProveedores() {
 async function aceptarDuplicado(itemId) {
   const item = ITEMS.find(i => i.id === itemId);
   if (!item) return;
-  const otras = (DUPLICADOS.get(item.cod_articulo) || []).map(o => o.nombre).join(', ') || 'otra solicitud';
+  const otras = (DUPLICADOS.get(claveDuplicado(item)) || []).map(o => o.nombre).join(', ') || 'otra solicitud';
   const ok = confirm(`Este artículo ya se está cotizando en: ${otras}.\n\n¿Confirmás que igual querés cotizarlo/comprarlo también en esta solicitud?`);
   if (!ok) return;
   const { error } = await SB.from('compras_cotizaciones_items').update({ duplicado_aceptado: true }).eq('id', itemId);

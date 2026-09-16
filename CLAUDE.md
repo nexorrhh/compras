@@ -1028,10 +1028,25 @@ viviendo en `compras_cotizaciones_items` — el módulo OT solo lo lee, no agreg
 artículo (`CAÑO3/8`, mismas cantidades) terminó cargado igual en dos solicitudes abiertas distintas
 ("URG" y "Varias OT"), con riesgo de cotizarlo o comprarlo dos veces por separado sin que nadie se diera
 cuenta. `buscarDuplicadosEntreSolicitudes()` en `js/modules/cotizaciones.js` busca, para un conjunto de
-`cod_articulo`, si ya existen en OTRA solicitud con `estado = 'ABIERTA'` como ítem `a_comprar = true` y
+ítems, si ya existen en OTRA solicitud con `estado = 'ABIERTA'` como ítem `a_comprar = true` y
 `confirmado = false` (si ya se confirmó esa compra o la solicitud se cerró, no es un duplicado activo,
-es historial — no avisa). Se usa en dos momentos, sin bloquear nunca la carga a propósito — bloquear de
-plano rechazaría un archivo legítimo entero por un solo artículo repetido; mejor avisar y dejar decidir:
+es historial — no avisa). Dos criterios ajustados el mismo día, tras la primera versión:
+- **Se compara por artículo + OT, no solo por artículo** (`claveDuplicado()`, clave
+  `` `${cod_articulo}|${formatOTExport(n_ot)}` ``): pedir el mismo perfil para dos OT distintas es
+  normal (dos trabajos distintos, no un error) — el usuario lo explicó así: "a veces se vuelve a pedir
+  el mismo perfil varias veces pero es para distintas OT". Solo cuenta como duplicado el mismo
+  artículo **para la misma OT**, normalizada con `formatOTExport()` (misma lógica que el informe de
+  reparto, así "OT 596" y "OT 000000000596" matchean igual).
+- **Siempre gana la solicitud más vieja** ("que se tome siempre la más vieja como la legal", pedido
+  explícito): antes se avisaba por igual en las dos solicitudes, sin que ninguna quedara "limpia". Ahora
+  se compara `compras_cotizaciones.created_at` — el apartado por duplicado solo aparece en la(s)
+  solicitud(es) más NUEVA(s); la más vieja de todas las que tienen ese artículo+OT nunca se marca a sí
+  misma, sin importar desde cuál de las dos se la esté mirando. Al cargar un archivo nuevo no hace falta
+  comparar fechas — por definición, cualquier coincidencia ya existente es más vieja que la solicitud
+  que se está por crear.
+
+Se usa en dos momentos, sin bloquear nunca la carga a propósito — bloquear de plano rechazaría un
+archivo legítimo entero por un solo artículo repetido; mejor avisar y dejar decidir:
 1. **Al cargar un archivo nuevo** (`onArchivoCotizacion()`): el `confirm()` de siempre suma un párrafo
    listando qué artículos del archivo ya se están cotizando en qué otra solicitud, antes de crear la
    solicitud — mismo criterio que el aviso de "OC desaparecidas" en Órdenes de Compra (ver 5.2), avisar
