@@ -799,11 +799,26 @@ _sin_ inventar ninguna conversión propia entre unidades. Ese `cant_umc` es un c
 Capataz (peso nominal según tabla, no lo que se termina comprando de verdad) — caso real del usuario
 (2026-09-10): pidió 107,930549 KGS de una planchuela pero terminó comprando 112,62 KGS porque se vende
 en barras de largo fijo, no al corte exacto. Por eso la celda "Cantidad" de la comparativa es
-**editable** (`guardarCantidadItem()` en `js/modules/cotizaciones.js`, mismo patrón que los precios:
-acepta coma o punto, guarda al salir del campo) — corregir ahí el kg realmente comprado hace que el
-Resumen por proveedor, los subtotales y el informe de reparto sumen ese número real de ahí en más, en
-vez de quedarse con el estimado de Capataz. A diferencia del precio, la cantidad no se puede dejar
-vacía (participa en todos los cálculos de la fila, no tiene un estado "sin cargar" válido).
+**editable** (`guardarCantidadEquivalente()` en `js/modules/cotizaciones.js`, mismo patrón que los
+precios: acepta coma o punto, guarda al salir del campo) — corregir ahí el kg realmente comprado hace
+que el Resumen por proveedor, los subtotales y el informe de reparto sumen ese número real de ahí en
+más, en vez de quedarse con el estimado de Capataz. A diferencia del precio, la cantidad no se puede
+dejar vacía (participa en todos los cálculos de la fila, no tiene un estado "sin cargar" válido).
+
+**Equivalencia mts/m²↔kg editable en los dos sentidos** (pedido explícito del usuario, 2026-09-17):
+`cant_ums`/`ums` (mts para perfiles, m² para chapas — la cantidad tal como la pidió Ingeniería) y
+`cant_umc`/`umc` (kg, la unidad de compra) salen del mismo renglón del archivo de Capataz, así que su
+cociente es un factor físico real — kg por metro lineal de ESE perfil, kg por m² de ESA chapa — no una
+coincidencia de esa fila puntual. Cuando `ums` es distinto de `umc` y hay `cant_ums > 0` (con qué sacar
+el factor), la celda "Cantidad" muestra **las dos cantidades editables apiladas** (mts arriba, kg abajo)
+en vez de una sola: corregir cualquiera de las dos recalcula la otra sola con ese factor ("si al valor
+que tiene le modifico los metros me haga el equivalente en KG y si modifico los KG me haga el
+equivalente en metros", palabras del usuario). El factor se recalcula cada vez a partir de los dos
+valores guardados ANTES de ese cambio — no se persiste en ninguna columna aparte, porque cada edición ya
+actualiza los dos campos a la vez con ese mismo factor, así que se mantiene estable de una edición a la
+siguiente sin necesitar guardarlo por separado. Si no hay `cant_ums` (o es 0) o `ums === umc` (ej.
+bulonería, las dos en UNI — no hay una "equivalencia" real que mostrar), la celda vuelve a ser una sola
+cantidad editable, igual que antes.
 
 ### 9.2 Cómo se usa
 

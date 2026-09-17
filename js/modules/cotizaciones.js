@@ -950,21 +950,47 @@ async function guardarPrecio(itemId, proveedorId, valorStr) {
 // de largo fijo, no al corte exacto. Se necesitaba poder corregir esa
 // cantidad a mano para que el resto de la comparativa (Resumen por
 // proveedor, subtotales, informe de reparto) sume lo realmente comprado
-// en vez del estimado de Capataz. Igual que guardarPrecio(), acepta coma
-// o punto decimal y no se puede dejar vacío (a diferencia del precio, la
-// cantidad participa en todos los cálculos de esta fila, no tiene un
-// estado "sin cargar" válido).
-async function guardarCantidadItem(itemId, valorStr) {
+// en vez del estimado de Capataz.
+//
+// `cant_ums`/`ums` (mts para perfiles, m2 para chapas — la cantidad tal
+// como la pidió Ingeniería, ver 9.1) y `cant_umc`/`umc` (kg, la unidad de
+// compra) salen del mismo renglón del archivo de Capataz, así que su
+// cociente es un factor físico real (kg por metro lineal de ESE perfil,
+// kg por m² de ESA chapa) — no una coincidencia de esta fila. Pedido
+// explícito del usuario (2026-09-17): "si al valor que tiene le modifico
+// los metros me haga el equivalente en KG y si modifico los KG me haga
+// el equivalente en metros". El factor se recalcula cada vez a partir de
+// los dos valores guardados ANTES de este cambio (no se persiste en
+// ninguna columna aparte) — como cada edición actualiza los dos campos a
+// la vez con ese mismo factor, se mantiene estable de una edición a la
+// siguiente sin necesitar guardarlo por separado. Si no hay `cant_ums`
+// (o es 0, no hay con qué sacar un factor), se guarda solo el campo
+// editado, igual que la versión anterior de esta función.
+//
+// Igual que guardarPrecio(), acepta coma o punto decimal y no se puede
+// dejar vacío (a diferencia del precio, la cantidad participa en todos
+// los cálculos de esta fila, no tiene un estado "sin cargar" válido).
+async function guardarCantidadEquivalente(itemId, campo, valorStr) {
   const v = (valorStr || '').trim().replace(',', '.');
-  const cantidad = Number(v);
-  if (v === '' || !isFinite(cantidad) || cantidad < 0) {
+  const valor = Number(v);
+  if (v === '' || !isFinite(valor) || valor < 0) {
     toast('Cantidad inválida', 'er');
     renderTablaComparativa();
     return;
   }
-  const { error } = await SB.from('compras_cotizaciones_items').update({ cant_umc: cantidad }).eq('id', itemId);
+  const item = ITEMS.find(it => it.id === itemId);
+  if (!item) return;
+  const umsAnterior = Number(item.cant_ums) || 0;
+  const umcAnterior = Number(item.cant_umc) || 0;
+  const factor = umsAnterior > 0 ? umcAnterior / umsAnterior : null; // kg por unidad de cant_ums
+
+  const cambios = campo === 'umc'
+    ? { cant_umc: valor, ...(factor ? { cant_ums: Math.round((valor / factor) * 1e6) / 1e6 } : {}) }
+    : { cant_ums: valor, ...(factor ? { cant_umc: Math.round((valor * factor) * 1e6) / 1e6 } : {}) };
+
+  const { error } = await SB.from('compras_cotizaciones_items').update(cambios).eq('id', itemId);
   if (error) { toast(error.message, 'er'); return; }
-  ITEMS = ITEMS.map(it => it.id === itemId ? { ...it, cant_umc: cantidad } : it);
+  ITEMS = ITEMS.map(it => it.id === itemId ? { ...it, ...cambios } : it);
   toast('✓ Cantidad actualizada');
   renderTablaComparativa();
   renderResumenProveedores();
@@ -1069,11 +1095,18 @@ function renderTablaComparativa() {
   // selectionStart/setSelectionRange no están soportados en type=number,
   // así que solo se preserva foco + valor, no la posición del cursor.
   const activo = document.activeElement;
-  const foco = (activo && wrap.contains(activo) && activo.classList.contains('cot-precio-input'))
-    ? { clase: 'cot-precio-input', item: activo.dataset.item, prov: activo.dataset.prov, valor: activo.value }
-    : (activo && wrap.contains(activo) && activo.classList.contains('cot-cant-input'))
-    ? { clase: 'cot-cant-input', item: activo.dataset.item, valor: activo.value }
-    : null;
+  let foco = null;
+  if (activo && wrap.contains(activo)) {
+    if (activo.classList.contains('cot-precio-input')) {
+      foco = { clase: 'cot-precio-input', item: activo.dataset.item, prov: activo.dataset.prov, valor: activo.value };
+    } else {
+      // Cantidad y su equivalencia (ver renderTablaComparativa más abajo)
+      // comparten el mismo patrón de "solo necesita item.id" — cualquiera
+      // de las dos clases restaura el foco igual.
+      const clase = ['cot-cant-input', 'cot-cant-ums-input'].find(c => activo.classList.contains(c));
+      if (clase) foco = { clase, item: activo.dataset.item, valor: activo.value };
+    }
+  }
 
   const lista = itemsVisibles();
   const invitados = invitadosVisibles();
@@ -1138,14 +1171,29 @@ function renderTablaComparativa() {
       ? `<div style="font-size:10px;color:var(--muted)" title="Los precios cargados en esta fila están en monedas distintas — no se comparan entre sí">⚠️ monedas mezcladas</div>`
       : '';
 
+    // Cuando la unidad "como lo pidió Ingeniería" (cant_ums/ums — mts para
+    // perfiles, m2 para chapas) es distinta de la unidad de compra
+    // (cant_umc/umc — kg) y hay con qué sacar un factor real (cant_ums>0),
+    // se muestran las dos cantidades editables — corregir cualquiera de
+    // las dos recalcula la otra sola (ver guardarCantidadEquivalente()).
+    // Si son la misma unidad (ej. bulonería, las dos en UNI) o no hay
+    // cant_ums, se muestra solo la cantidad de compra de siempre.
+    const tieneEquivalencia = item.ums && item.umc && item.ums !== item.umc && Number(item.cant_ums) > 0 && item.cant_umc != null;
+    const celdaCantidad = tieneEquivalencia
+      ? `<div style="display:flex;flex-direction:column;gap:3px;align-items:flex-end">
+          <div><input type="text" inputmode="decimal" class="cot-cant-ums-input" data-item="${item.id}"
+            value="${item.cant_ums}" style="width:70px;text-align:right;display:inline-block;margin-right:4px">${escAttr(item.ums)}</div>
+          <div><input type="text" inputmode="decimal" class="cot-cant-input" data-item="${item.id}"
+            value="${item.cant_umc}" style="width:70px;text-align:right;display:inline-block;margin-right:4px">${escAttr(item.umc)}</div>
+        </div>`
+      : `<input type="text" inputmode="decimal" class="cot-cant-input" data-item="${item.id}"
+          value="${item.cant_umc != null ? item.cant_umc : ''}" style="width:80px;text-align:right;display:inline-block;margin-right:4px">${escAttr(item.umc || '')}`;
+
     return `<tr${item.confirmado ? ' style="background:var(--row-hover)"' : ''}>
       <td><input type="checkbox" class="cot-check-row" data-id="${item.id}" style="width:auto"></td>
       <td>${escAttr(item.cod_articulo)}</td>
       <td>${escAttr(item.descripcion || '')}${item.desc_adicional ? `<div style="font-size:11px;color:var(--muted)">${escAttr(item.desc_adicional)}</div>` : ''}</td>
-      <td style="text-align:right;white-space:nowrap">
-        <input type="text" inputmode="decimal" class="cot-cant-input" data-item="${item.id}"
-          value="${item.cant_umc != null ? item.cant_umc : ''}" style="width:80px;text-align:right;display:inline-block;margin-right:4px">${escAttr(item.umc || '')}
-      </td>
+      <td style="text-align:right;white-space:nowrap">${celdaCantidad}</td>
       <td style="text-align:center"><span class="badge ${item.a_comprar ? 'aprobado' : 'rechazado'} cot-toggle-comprar" data-id="${item.id}" style="cursor:pointer">${item.a_comprar ? 'Sí' : 'No'}</span></td>
       ${celdasPrecio}
       <td>
@@ -1172,7 +1220,7 @@ function renderTablaComparativa() {
   if (foco) {
     const selector = foco.clase === 'cot-precio-input'
       ? `.cot-precio-input[data-item="${CSS.escape(foco.item)}"][data-prov="${CSS.escape(foco.prov)}"]`
-      : `.cot-cant-input[data-item="${CSS.escape(foco.item)}"]`;
+      : `.${foco.clase}[data-item="${CSS.escape(foco.item)}"]`;
     const nuevo = wrap.querySelector(selector);
     if (nuevo) {
       nuevo.value = foco.valor;
@@ -1482,7 +1530,9 @@ function initDelegacionDetalle() {
     if (e.target.classList.contains('cot-precio-input')) {
       guardarPrecio(e.target.dataset.item, e.target.dataset.prov, e.target.value);
     } else if (e.target.classList.contains('cot-cant-input')) {
-      guardarCantidadItem(e.target.dataset.item, e.target.value);
+      guardarCantidadEquivalente(e.target.dataset.item, 'umc', e.target.value);
+    } else if (e.target.classList.contains('cot-cant-ums-input')) {
+      guardarCantidadEquivalente(e.target.dataset.item, 'ums', e.target.value);
     } else if (e.target.classList.contains('cot-ganador-sel')) {
       setGanador(e.target.dataset.item, e.target.value);
     } else if (e.target.classList.contains('cot-moneda-col')) {
