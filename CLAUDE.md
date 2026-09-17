@@ -977,17 +977,20 @@ cantidad editable, igual que antes.
 
 **Exportar para cotizar** (`📥 Exportar para cotizar (.xlsx)`, `exportarParaCotizar()`): baja exactamente
 lo que se está viendo en la tabla (mismos filtros de bloque/rubro/"ocultar los que no se compran" que la
-pantalla — mismo criterio que el export de Stock → A comprar) a un Excel con columnas Código /
+pantalla — mismo criterio que el export de Stock → A comprar) a un Excel con columnas Código / **OT** /
 Descripción / Detalle / **Cantidad** / **Unidad** (en la unidad original de la solicitud, `cant_ums`/
 `ums` — ej. metros para perfiles, m2 para chapas) / **Equivalencia** / **Unidad** (en unidad de compra,
-`cant_umc`/`umc` — ej. kg). Dos columnas repiten el encabezado "Unidad" a propósito (pedido explícito del
-usuario, layout exacto) — como un objeto JS no puede tener dos claves iguales, se arma con
-`XLSX.utils.aoa_to_sheet()` (array de filas) en vez de `json_to_sheet()`. Las filas salen en el mismo
-orden que la tabla en pantalla — alfabético por **Descripción** (`itemsVisibles()` ordena así siempre,
-no solo al exportar; pedido explícito del usuario, es más fácil de recorrer tanto en pantalla como en el
-Excel que en el orden de carga original de Capataz). Es la lista ya desglosada (sin lo que hay en stock,
-ya separada por bloque/rubro) que se le manda al proveedor para que cotice — reemplaza el paso manual de
-armar ese Excel a mano desde el original de Capataz.
+`cant_umc`/`umc` — ej. kg). La columna **OT** (`formatOTExport()`, misma lógica que el informe de
+reparto — ver más abajo — sin los ceros a la izquierda que trae Capataz) se agregó a pedido del usuario
+(2026-09-17) para saber de un vistazo a qué orden de trabajo corresponde cada línea de este Excel. Dos
+columnas repiten el encabezado "Unidad" a propósito (pedido explícito del usuario, layout exacto) — como
+un objeto JS no puede tener dos claves iguales, se arma con `XLSX.utils.aoa_to_sheet()` (array de filas)
+en vez de `json_to_sheet()`. Las filas salen en el mismo orden que la tabla en pantalla — alfabético por
+**Descripción** (`itemsVisibles()` ordena así siempre, no solo al exportar; pedido explícito del usuario,
+es más fácil de recorrer tanto en pantalla como en el Excel que en el orden de carga original de
+Capataz). Es la lista ya desglosada (sin lo que hay en stock, ya separada por bloque/rubro) que se le
+manda al proveedor para que cotice — reemplaza el paso manual de armar ese Excel a mano desde el
+original de Capataz.
 
 **Emitir informe de reparto** (botón al final de la ficha, `emitirInformeReparto()`): el cierre del
 bloque una vez decididos los ganadores — un Excel con **una hoja por proveedor** (solo los que ganaron

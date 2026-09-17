@@ -504,9 +504,13 @@ function exportarParaCotizar() {
   // pedida y otra para su equivalencia en unidad de compra) — un objeto
   // JS no puede tener dos claves iguales, así que se arma con aoa_to_sheet
   // (array de filas) en vez de json_to_sheet.
-  const encabezado = ['Código', 'Descripción', 'Detalle', 'Cantidad', 'Unidad', 'Equivalencia', 'Unidad'];
+  // La columna OT (`formatOTExport()`, misma lógica que el informe de
+  // reparto, ver 9.2) se agregó a pedido del usuario para saber de un
+  // vistazo a qué orden de trabajo corresponde cada línea de este Excel.
+  const encabezado = ['Código', 'OT', 'Descripción', 'Detalle', 'Cantidad', 'Unidad', 'Equivalencia', 'Unidad'];
   const filas = lista.map(it => [
     it.cod_articulo,
+    formatOTExport(it.n_ot),
     it.descripcion || '',
     it.desc_adicional || '',
     it.cant_ums,
