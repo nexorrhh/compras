@@ -334,6 +334,16 @@ create table compras_cotizaciones_precios (
   unique (item_id, proveedor_id)
 );
 
+-- Largo comercial de barra (mts) por artículo, para poder ajustar la
+-- Cantidad de Cotizaciones a un múltiplo entero de barra antes de
+-- pedírselo al proveedor (no se puede comprar media barra) — ver
+-- sql/018_articulos_largo_barra.sql y CLAUDE.md sección 9.
+create table compras_articulos_largo_barra (
+  cod_articulo text primary key,
+  largo_barra numeric not null,
+  updated_at timestamptz not null default now()
+);
+
 -- ------------------------------------------------------------
 -- ÍNDICES
 -- ------------------------------------------------------------

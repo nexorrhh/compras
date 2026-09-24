@@ -820,6 +820,28 @@ siguiente sin necesitar guardarlo por separado. Si no hay `cant_ums` (o es 0) o 
 bulonería, las dos en UNI — no hay una "equivalencia" real que mostrar), la celda vuelve a ser una sola
 cantidad editable, igual que antes.
 
+**Ajustar a barra entera** (pedido explícito del usuario, 2026-09-21): el mts que pide Ingeniería es el
+neto que necesita, pero el proveedor no vende al corte exacto — vende barras de largo fijo, así que si
+Ingeniería pide 68 mts y la barra es de 6 mts, hay que pedirle 72 mts (12 barras), no 68 ("no me puede
+vender una barra y media, me tiene que vender dos"). Para los ítems en barra (`ums === 'MTS'` — no
+aplica a chapas, `MT2`, que se compran por hoja, otra lógica que no se pidió acá), la celda Cantidad
+suma un input chico **"barra mts"** + un botón **🔧** (`ajustarABarraEntera()` en
+`js/modules/cotizaciones.js`): al tocarlo, redondea `cant_ums` hacia arriba al múltiplo más cercano del
+largo cargado y recalcula `cant_umc` con la misma equivalencia física de siempre (reusa
+`guardarCantidadEquivalente()`, no un cálculo aparte) — una regla de 3 sobre el factor kg/metro real de
+ESE renglón, no una tabla de pesos externa.
+
+**Por qué el largo de barra se carga a mano por artículo y no se autocompleta solo:** se investigó si
+había un largo estándar por "tipo" de perfil (ej. "todos los ángulos vienen de 6m") pero los catálogos
+reales de proveedores (Acindar, etc.) muestran que varía por la medida EXACTA, no por familia — un
+ángulo chico puede venir en barras de 6m y uno más grande en 12m. No hay una tabla universal confiable
+para inventar esto sin arriesgar una compra mal armada, así que Compras lo carga una vez por artículo (lo
+que realmente le confirma su proveedor) y el sistema lo recuerda solo de ahí en más: se guarda en
+`compras_articulos_largo_barra` (`cod_articulo` como PK, ver
+[`sql/018_articulos_largo_barra.sql`](sql/018_articulos_largo_barra.sql)) — mismo criterio que
+`compras_articulos_grupo` en Proveedores (sección 7.1) — así que la próxima vez que el mismo artículo
+aparezca en cualquier otra solicitud, el largo ya sale precargado en el input.
+
 ### 9.2 Cómo se usa
 
 1. **Crear una solicitud**: se le pone un nombre (para poder encontrarla después — ej. "Estructura
@@ -1096,9 +1118,9 @@ deje aceptarlo". El botón "✅ Aceptar de todas formas" de cada fila del tab Du
 `sql/017_cotizaciones_duplicado_aceptado.sql`) — desde ese momento el ítem vuelve a contar en su bloque
 real como cualquier otro, para siempre (no se resetea solo si la otra solicitud se cierra después).
 
-### 9.3 Modelo de datos — `sql/013_cotizaciones.sql` + `sql/014_cotizaciones_bloques.sql` + `sql/015_cotizaciones_confirmado.sql` + `sql/016_cotizaciones_condicion_pago.sql` + `sql/017_cotizaciones_duplicado_aceptado.sql`
+### 9.3 Modelo de datos — `sql/013_cotizaciones.sql` + `sql/014_cotizaciones_bloques.sql` + `sql/015_cotizaciones_confirmado.sql` + `sql/016_cotizaciones_condicion_pago.sql` + `sql/017_cotizaciones_duplicado_aceptado.sql` + `sql/018_articulos_largo_barra.sql`
 
-Cuatro tablas (ver `sql/schema.sql` para el estado final), sin RLS (mismo criterio que el resto de
+Cinco tablas (ver `sql/schema.sql` para el estado final), sin RLS (mismo criterio que el resto de
 `compras_*`):
 
 - `compras_cotizaciones` — la solicitud en sí: nombre, fecha, estado (`ABIERTA`/`CERRADA` — un flag
@@ -1121,6 +1143,10 @@ Cuatro tablas (ver `sql/schema.sql` para el estado final), sin RLS (mismo criter
 - `compras_cotizaciones_precios` — el precio cargado por cada proveedor invitado para cada artículo
   (`unique(item_id, proveedor_id)`, sin columna de bloque propia — se resuelve solo, porque el `item_id`
   ya define a qué bloque pertenece), con su propia `moneda` (aunque la UI la fija por columna, ver 9.2).
+- `compras_articulos_largo_barra` — `cod_articulo` como PK (un largo de barra por artículo, igual
+  criterio que `compras_articulos_grupo`), independiente de cualquier solicitud puntual: cargado una vez
+  para un artículo, queda disponible para cualquier otra cotización futura que tenga ese mismo artículo
+  (ver 9.1, "Ajustar a barra entera").
 
 ### 9.4 Decisiones tomadas y alcance actual
 
@@ -1410,7 +1436,8 @@ tablero-compras/
     ├── 014_cotizaciones_bloques.sql
     ├── 015_cotizaciones_confirmado.sql
     ├── 016_cotizaciones_condicion_pago.sql
-    └── 017_cotizaciones_duplicado_aceptado.sql
+    ├── 017_cotizaciones_duplicado_aceptado.sql
+    └── 018_articulos_largo_barra.sql
 ```
 
 > `porteria.html` y `solicitud.html` son entry points separados (audiencias distintas: portero de
@@ -1530,9 +1557,12 @@ Todavía sin decidir:
 16. Correr [`sql/017_cotizaciones_duplicado_aceptado.sql`](sql/017_cotizaciones_duplicado_aceptado.sql) —
     agrega `duplicado_aceptado` a `compras_cotizaciones_items` para el tab "⚠️ Duplicado" (ver sección
     9.2) (**todavía falta**).
-17. Probar el circuito completo: pedir vehículo (solicitud.html) → aprobar y asignar (index.html) →
+17. Correr [`sql/018_articulos_largo_barra.sql`](sql/018_articulos_largo_barra.sql) — crea
+    `compras_articulos_largo_barra` para "Ajustar a barra entera" (ver sección 9.1/9.3) (**todavía
+    falta**).
+18. Probar el circuito completo: pedir vehículo (solicitud.html) → aprobar y asignar (index.html) →
    registrar salida/retorno (porteria.html) → ver el movimiento reflejado en el dashboard.
-18. Evaluar RLS (Row Level Security) en las tablas `compras_*` — hoy cualquiera con el link de
+19. Evaluar RLS (Row Level Security) en las tablas `compras_*` — hoy cualquiera con el link de
    `solicitud.html`/`porteria.html` puede leer/escribir todas las tablas, sin ningún login de por medio.
-19. Ir completando los módulos `[TBD]` de la sección 3 a medida que los necesites, usando el módulo
+20. Ir completando los módulos `[TBD]` de la sección 3 a medida que los necesites, usando el módulo
    Flota (carpeta `js/modules/`) como plantilla.

@@ -20,6 +20,7 @@ let PROVEEDORES = [];       // catálogo con ficha propia (compras_proveedores) 
 let OC_LINEAS_MIN = [];     // {proveedor_cod, proveedor_nombre} de compras_oc_lineas — para sugerir también proveedores "detectados" sin ficha todavía (ver 9.4/7.2)
 let GRUPOS = [];            // compras_grupos completo {id, nombre}
 let ARTICULOS_GRUPO_MAP = new Map(); // cod_articulo -> grupo_id (compras_articulos_grupo, misma clasificación que Proveedores)
+let ARTICULOS_LARGO_BARRA = new Map(); // cod_articulo -> largo_barra (compras_articulos_largo_barra, ver ajustarABarraEntera())
 
 let COT_ACTUAL = null;      // la solicitud abierta en la vista detalle
 let ITEMS = [];             // items de COT_ACTUAL
@@ -94,20 +95,23 @@ async function cargarListado() {
 }
 
 async function cargarProveedores() {
-  const [{ data: props, error: e1 }, { data: ocLineas, error: e2 }, { data: grupos, error: e3 }, { data: artGrupo, error: e4 }] = await Promise.all([
+  const [{ data: props, error: e1 }, { data: ocLineas, error: e2 }, { data: grupos, error: e3 }, { data: artGrupo, error: e4 }, { data: largoBarra, error: e5 }] = await Promise.all([
     fetchAll(() => SB.from('compras_proveedores').select('id,nombre,cod_tango').order('nombre')),
     fetchAll(() => SB.from('compras_oc_lineas').select('proveedor_cod,proveedor_nombre')),
     SB.from('compras_grupos').select('*').order('nombre'),
     fetchAll(() => SB.from('compras_articulos_grupo').select('cod_articulo,grupo_id')),
+    fetchAll(() => SB.from('compras_articulos_largo_barra').select('cod_articulo,largo_barra')),
   ]);
   if (e1) { toast(e1.message, 'er'); return; }
   if (e2) { toast(e2.message, 'er'); return; }
   if (e3) { toast(e3.message, 'er'); return; }
   if (e4) { toast(e4.message, 'er'); return; }
+  if (e5) { toast(e5.message, 'er'); return; }
   PROVEEDORES = props || [];
   OC_LINEAS_MIN = ocLineas || [];
   GRUPOS = grupos || [];
   ARTICULOS_GRUPO_MAP = new Map((artGrupo || []).map(a => [a.cod_articulo, a.grupo_id]));
+  ARTICULOS_LARGO_BARRA = new Map((largoBarra || []).map(a => [a.cod_articulo, a.largo_barra]));
 }
 
 // Rubro/grupo de un ítem — reusa la misma clasificación por artículo que
@@ -974,7 +978,7 @@ async function guardarPrecio(itemId, proveedorId, valorStr) {
 // Igual que guardarPrecio(), acepta coma o punto decimal y no se puede
 // dejar vacío (a diferencia del precio, la cantidad participa en todos
 // los cálculos de esta fila, no tiene un estado "sin cargar" válido).
-async function guardarCantidadEquivalente(itemId, campo, valorStr) {
+async function guardarCantidadEquivalente(itemId, campo, valorStr, silent = false) {
   const v = (valorStr || '').trim().replace(',', '.');
   const valor = Number(v);
   if (v === '' || !isFinite(valor) || valor < 0) {
@@ -995,9 +999,59 @@ async function guardarCantidadEquivalente(itemId, campo, valorStr) {
   const { error } = await SB.from('compras_cotizaciones_items').update(cambios).eq('id', itemId);
   if (error) { toast(error.message, 'er'); return; }
   ITEMS = ITEMS.map(it => it.id === itemId ? { ...it, ...cambios } : it);
-  toast('✓ Cantidad actualizada');
+  if (!silent) toast('✓ Cantidad actualizada');
   renderTablaComparativa();
   renderResumenProveedores();
+}
+
+// Largo comercial de barra (mts) por artículo — para poder pedirle al
+// proveedor un múltiplo entero de barra en vez de la cantidad neta que
+// pidió Ingeniería (pedido explícito del usuario, 2026-09-21: "no me
+// puede vender una barra y media, me tiene que vender dos"). Varía según
+// el perfil/diámetro EXACTO, no solo por "tipo" de material — un mismo
+// tipo de ángulo puede venir en 6m en una medida y en 12m en otra según
+// el catálogo del proveedor — así que no hay una tabla universal confiable
+// para autocompletarlo solo; se guarda por cod_articulo (mismo criterio
+// que compras_articulos_grupo en Proveedores) para que Compras lo cargue
+// una vez y se recuerde solo la próxima vez que aparezca ese artículo en
+// cualquier otra solicitud.
+async function guardarLargoBarra(codArticulo, valorStr) {
+  const v = (valorStr || '').trim().replace(',', '.');
+  const largo = Number(v);
+  if (!codArticulo || !v || !isFinite(largo) || largo <= 0) return null;
+  const { error } = await SB.from('compras_articulos_largo_barra')
+    .upsert({ cod_articulo: codArticulo, largo_barra: largo }, { onConflict: 'cod_articulo' });
+  if (error) { toast(error.message, 'er'); return null; }
+  ARTICULOS_LARGO_BARRA.set(codArticulo, largo);
+  return largo;
+}
+
+// Redondea la Cantidad (cant_ums, mts) hacia arriba al múltiplo más
+// cercano del largo de barra cargado en la fila, y recalcula el kg
+// (cant_umc) con la misma equivalencia física de siempre (ver
+// guardarCantidadEquivalente()) — no se inventa un cálculo aparte, así
+// el resultado queda igual de consistente que si el usuario hubiera
+// tipeado el mts corregido a mano.
+async function ajustarABarraEntera(itemId, largoStr) {
+  const v = (largoStr || '').trim().replace(',', '.');
+  const largo = Number(v);
+  if (!v || !isFinite(largo) || largo <= 0) {
+    toast('Cargá el largo de barra (mts) antes de ajustar', 'er');
+    return;
+  }
+  const item = ITEMS.find(it => it.id === itemId);
+  if (!item) return;
+  const cantActual = Number(item.cant_ums) || 0;
+  const EPS = 1e-6;
+  const barras = Math.max(1, Math.ceil(cantActual / largo - EPS));
+  const nuevoMts = Math.round(barras * largo * 1e6) / 1e6;
+  await guardarLargoBarra(item.cod_articulo, v);
+  if (Math.abs(nuevoMts - cantActual) < EPS) {
+    toast(`Ya pedís un múltiplo exacto de ${numFmt(largo)} mts (${barras} barra${barras === 1 ? '' : 's'}) — no hace falta ajustar`);
+    return;
+  }
+  await guardarCantidadEquivalente(itemId, 'ums', String(nuevoMts), true);
+  toast(`✓ Ajustado a ${barras} barra${barras === 1 ? '' : 's'} de ${numFmt(largo)} mts = ${numFmt(nuevoMts)} mts`);
 }
 
 // El selector de moneda del encabezado es solo el default para el PRÓXIMO
@@ -1183,12 +1237,26 @@ function renderTablaComparativa() {
     // Si son la misma unidad (ej. bulonería, las dos en UNI) o no hay
     // cant_ums, se muestra solo la cantidad de compra de siempre.
     const tieneEquivalencia = item.ums && item.umc && item.ums !== item.umc && Number(item.cant_ums) > 0 && item.cant_umc != null;
+    // "Ajustar a barra entera" solo tiene sentido para material que se
+    // compra en barra por metro lineal (ums === 'MTS' — perfiles, caños,
+    // planchuelas, hierro redondo), no para chapas (MT2, se compran por
+    // chapa/hoja, otra lógica de redondeo que no se pidió acá).
+    const filaBarra = (tieneEquivalencia && item.ums === 'MTS')
+      ? `<div style="display:flex;align-items:center;gap:3px;margin-top:2px;justify-content:flex-end">
+          <input type="text" inputmode="decimal" class="cot-largo-barra-input" data-item="${item.id}"
+            value="${ARTICULOS_LARGO_BARRA.has(item.cod_articulo) ? ARTICULOS_LARGO_BARRA.get(item.cod_articulo) : ''}"
+            placeholder="barra mts" title="Largo comercial de la barra de este artículo" style="width:56px;text-align:right;font-size:11px">
+          <button type="button" class="bsm cot-ajustar-barra" data-item="${item.id}"
+            title="Redondear la Cantidad hacia arriba al múltiplo de este largo de barra — no se puede comprar media barra" style="padding:1px 5px;font-size:10px">🔧</button>
+        </div>`
+      : '';
     const celdaCantidad = tieneEquivalencia
       ? `<div style="display:flex;flex-direction:column;gap:3px;align-items:flex-end">
           <div><input type="text" inputmode="decimal" class="cot-cant-ums-input" data-item="${item.id}"
             value="${item.cant_ums}" style="width:70px;text-align:right;display:inline-block;margin-right:4px">${escAttr(item.ums)}</div>
           <div><input type="text" inputmode="decimal" class="cot-cant-input" data-item="${item.id}"
             value="${item.cant_umc}" style="width:70px;text-align:right;display:inline-block;margin-right:4px">${escAttr(item.umc)}</div>
+          ${filaBarra}
         </div>`
       : `<input type="text" inputmode="decimal" class="cot-cant-input" data-item="${item.id}"
           value="${item.cant_umc != null ? item.cant_umc : ''}" style="width:80px;text-align:right;display:inline-block;margin-right:4px">${escAttr(item.umc || '')}`;
@@ -1512,6 +1580,13 @@ function initDelegacionDetalle() {
     const aceptarDupBtn = e.target.closest('.cot-aceptar-duplicado');
     if (aceptarDupBtn) { aceptarDuplicado(aceptarDupBtn.dataset.item); return; }
 
+    const ajustarBarraBtn = e.target.closest('.cot-ajustar-barra');
+    if (ajustarBarraBtn) {
+      const input = ajustarBarraBtn.parentElement?.querySelector('.cot-largo-barra-input');
+      ajustarABarraEntera(ajustarBarraBtn.dataset.item, input?.value);
+      return;
+    }
+
     const tabBloque = e.target.closest('.cot-bloque-tab');
     if (tabBloque) {
       BLOQUE_TAB = tabBloque.dataset.bloque;
@@ -1537,6 +1612,9 @@ function initDelegacionDetalle() {
       guardarCantidadEquivalente(e.target.dataset.item, 'umc', e.target.value);
     } else if (e.target.classList.contains('cot-cant-ums-input')) {
       guardarCantidadEquivalente(e.target.dataset.item, 'ums', e.target.value);
+    } else if (e.target.classList.contains('cot-largo-barra-input')) {
+      const it = ITEMS.find(i => i.id === e.target.dataset.item);
+      if (it) guardarLargoBarra(it.cod_articulo, e.target.value);
     } else if (e.target.classList.contains('cot-ganador-sel')) {
       setGanador(e.target.dataset.item, e.target.value);
     } else if (e.target.classList.contains('cot-moneda-col')) {
