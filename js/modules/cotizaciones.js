@@ -1443,10 +1443,17 @@ async function deshacerConfirmacion(itemId) {
 
 // Cuando no queda ningún ítem "a comprar" sin confirmar (en NINGÚN
 // bloque de la solicitud), se cierra sola — sigue pudiéndose reabrir a
-// mano con el botón de siempre si hace falta corregir algo.
+// mano con el botón de siempre si hace falta corregir algo. Los ítems
+// apartados en el tab "⚠️ Duplicado" (ver esDuplicadoActivo) no cuentan
+// acá — no forman parte de ningún bloque real, así que no tiene sentido
+// que una solicitud quede colgada eternamente esperando que se resuelvan
+// duplicados que ni siquiera se están cotizando en esta solicitud (bug
+// real reportado por el usuario, 2026-09-24: una solicitud con todo
+// confirmado en "General" no cerraba sola porque tenía 26 ítems
+// apartados por duplicado, sin relación con lo que ya se compró acá).
 async function verificarCierreAutomatico() {
   if (!COT_ACTUAL || COT_ACTUAL.estado === 'CERRADA') return;
-  const aComprar = ITEMS.filter(it => it.a_comprar);
+  const aComprar = ITEMS.filter(it => it.a_comprar && !esDuplicadoActivo(it));
   if (!aComprar.length || aComprar.some(it => !it.confirmado)) return;
 
   const { error } = await SB.from('compras_cotizaciones').update({ estado: 'CERRADA' }).eq('id', COT_ACTUAL.id);
