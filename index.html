@@ -442,6 +442,13 @@
     </div>
   </div>
 
+  <div class="nav-group" id="nav-param" data-default-sec="param-usuarios">
+    <div class="nav-parent"><span>⚙️</span> Parametrización <span class="nav-chevron">▾</span></div>
+    <div class="nav-children">
+      <div class="nav-item" data-sec="param-usuarios"><span>👤</span> Usuarios</div>
+    </div>
+  </div>
+
   <div class="nav-sec">Otros módulos (TBD)</div>
   <div class="nav-item disabled" title="Todavía no desarrollado"><span>💰</span> Presupuesto y gastos</div>
   <div class="nav-item disabled" title="Todavía no desarrollado"><span>📑</span> Contratos y vencimientos</div>
@@ -1074,6 +1081,38 @@
     <span>Total</span><strong id="cotprov_total_val">$0,00</strong>
   </div>
   <div class="brow"><button type="button" class="btn p" onclick="cm('mCOTPROV')">Listo, comparar</button></div>
+</div></div>
+
+<!-- ============ PARAMETRIZACIÓN — USUARIOS ============ -->
+<div class="sec" id="s-param-usuarios">
+  <div class="ptitle">Parametrización — Usuarios</div>
+  <div class="psub">Perfiles que pueden entrar al tablero — a cada uno se le puede restringir a qué módulos tiene acceso (a nivel interfaz, no es una seguridad real, ver CLAUDE.md)</div>
+  <div class="sh">
+    <div></div>
+    <button type="button" class="btn p" id="param_nuevo">+ Nuevo perfil</button>
+  </div>
+  <div class="tw"><table>
+    <thead><tr><th>Nombre</th><th>PIN</th><th>Módulos habilitados</th><th>Estado</th><th></th></tr></thead>
+    <tbody id="t-param-usuarios"></tbody>
+  </table></div>
+</div>
+
+<!-- ============ MODAL — PERFIL (alta / módulos habilitados) ============ -->
+<div class="modal-ov" id="mUSUARIO">
+<div class="modal">
+  <span class="mcls" onclick="cm('mUSUARIO')">×</span>
+  <div class="mtitle" id="mUSUARIO_t">+ Nuevo perfil</div>
+  <div class="fg"><label>Nombre *</label><input id="param_nombre" placeholder="Apellido, Nombre"></div>
+  <label style="display:flex;align-items:center;gap:7px;font-size:13px;cursor:pointer;margin:12px 0 10px">
+    <input type="checkbox" id="param_admin_check" style="width:auto">
+    Acceso total (admin) — ve todos los módulos, incluidos los que se agreguen más adelante
+  </label>
+  <div class="psub" style="margin-bottom:6px">O elegí puntualmente qué módulos puede ver:</div>
+  <div id="param_modulos_checks" style="display:grid;grid-template-columns:repeat(2,1fr);gap:8px 16px"></div>
+  <div class="brow" style="margin-top:18px">
+    <button type="button" class="btn" onclick="cm('mUSUARIO')">Cancelar</button>
+    <button type="button" class="btn p" id="param_guardar">Guardar</button>
+  </div>
 </div></div>
 
 </main>

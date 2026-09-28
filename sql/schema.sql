@@ -274,7 +274,10 @@ create table compras_usuarios (
   nombre text not null unique,
   pin text,
   activo boolean not null default true,
-  created_at timestamptz not null default now()
+  created_at timestamptz not null default now(),
+  -- null = sin restricción (admin, ve todos los módulos, ver sql/019_usuarios_modulos.sql);
+  -- un array (ej. ["flota","oc"]) restringe el nav a esos módulos — solo a nivel interfaz.
+  modulos_habilitados jsonb
 );
 
 -- ------------------------------------------------------------

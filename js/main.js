@@ -6,6 +6,7 @@
 // ============================================================
 import { initSupabaseConnection } from './supabase-client.js';
 import { om, cm } from './utils.js';
+import { getUsuarioActual } from './login.js';
 
 import * as dashboard from './modules/flota-dashboard.js';
 import * as vehiculos from './modules/flota-vehiculos.js';
@@ -21,6 +22,7 @@ import * as proveedores from './modules/proveedores.js';
 import * as notasPedido from './modules/notas-pedido.js';
 import * as cotizaciones from './modules/cotizaciones.js';
 import * as ot from './modules/ot.js';
+import * as parametrizacion from './modules/parametrizacion.js';
 
 const MODULES = {
   dash: dashboard, vcs: vehiculos, sols: solicitudes, movs: movimientos, gantt, mant: mantenimiento, vtv, doc: documentos,
@@ -31,6 +33,7 @@ const MODULES = {
   'cot-lista': cotizaciones,
   'cot-pendientes': cotizaciones,
   'ot-dash': ot, 'ot-cards': ot,
+  'param-usuarios': parametrizacion,
 };
 
 function go(secId) {
@@ -147,6 +150,29 @@ function startAutoRefresh() {
   }, 30000);
 }
 
+// Oculta los grupos de nav que el perfil logueado no tiene habilitados
+// (`compras_usuarios.modulos_habilitados`, ver módulo Parametrización) y
+// devuelve la sección por defecto a la que hay que aterrizar en vez de
+// "dash" (que vive dentro del grupo Flota — si ese grupo no está
+// habilitado, aterrizar ahí mostraría contenido de un módulo oculto).
+// `null` = sin restricción (admin, ve todo, no se oculta nada) — mismo
+// comportamiento que tenían todos los perfiles antes de que existiera
+// esta pantalla. Es una restricción de INTERFAZ únicamente, no de
+// acceso a los datos (ver CLAUDE.md sección 12).
+function aplicarPermisos() {
+  const habilitados = getUsuarioActual()?.modulos_habilitados;
+  if (habilitados == null) return null;
+  const set = new Set(habilitados);
+  let primerSecDisponible = null;
+  document.querySelectorAll('.nav-group[id^="nav-"]').forEach(group => {
+    const modulo = group.id.replace(/^nav-/, '');
+    const permitido = set.has(modulo);
+    group.style.display = permitido ? '' : 'none';
+    if (permitido && !primerSecDisponible) primerSecDisponible = group.dataset.defaultSec;
+  });
+  return primerSecDisponible;
+}
+
 async function onConnected() {
   [...new Set(Object.values(MODULES))].forEach(m => m.init?.());
   wireNav();
@@ -154,7 +180,8 @@ async function onConnected() {
   initTheme();
   startClock();
   startAutoRefresh();
-  go('dash');
+  const primerDisponible = aplicarPermisos();
+  go(primerDisponible || 'dash');
 }
 
 initSupabaseConnection(onConnected);

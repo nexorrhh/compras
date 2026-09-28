@@ -46,6 +46,7 @@ seguros, permisos). El resto de los módulos se va a ir sumando a medida que se 
 | **Notas de Pedido** | `[DETALLADO]` (sección 8) | Lo que se le manda al proveedor para confirmar una cotización urgente o un servicio — numeración automática, PDF descargable, seguimiento por vínculo con la Orden de Compra que las cierra |
 | **Cotizaciones** | `[DETALLADO]` (sección 9) | Solicitudes de cotización armadas desde el export de Capataz — marcar qué artículos no hace falta comprar (ya hay stock), invitar proveedores, cargar precios y comparar, con un resumen por proveedor en kg/lts/uni para repartir la compra respetando mínimos |
 | **OT** | `[DETALLADO]` (sección 10) | Seguimiento de compras por orden de trabajo — tarjetas por OT + gráficos, distinguiendo lo comprado de lo asignado de stock; lee los datos de Cotizaciones, sin tablas propias |
+| **Parametrización** | `[DETALLADO]` (sección 12) | Alta de perfiles con PIN self-service y restricción de qué módulos puede ver cada uno (a nivel interfaz, no seguridad real) |
 | Presupuesto y gastos de compras | `[TBD]` | Presupuestado vs. real por categoría/área, alertas de desvío |
 | Contratos y vencimientos | `[TBD]` | Contratos de servicios, alquileres, licencias — no solo de vehículos |
 | Circuito de aprobaciones | `[TBD]` | Reglas de autorización de pagos/compras según monto |
@@ -1500,7 +1501,8 @@ tablero-compras/
 │       ├── proveedores.js  (Proveedores — se alimenta de OC, ver sección 7)
 │       ├── notas-pedido.js  (Notas de Pedido — numeración + PDF + vínculo con OC, ver sección 8)
 │       ├── cotizaciones.js  (Cotizaciones — se alimenta de Capataz y de Proveedores, ver sección 9)
-│       └── ot.js  (OT — lee y reagrupa los datos de Cotizaciones, sin tablas propias, ver sección 10)
+│       ├── ot.js  (OT — lee y reagrupa los datos de Cotizaciones, sin tablas propias, ver sección 10)
+│       └── parametrizacion.js  (Parametrización — alta de perfiles y módulos habilitados, ver sección 12)
 ├── Excels/                (archivos de ejemplo de OC, Stock y NP — en .gitignore, no se suben al repo)
 ├── Cotizar.xlsx           (archivo de ejemplo de Cotizaciones — también en .gitignore, datos reales)
 └── sql/
@@ -1521,7 +1523,8 @@ tablero-compras/
     ├── 015_cotizaciones_confirmado.sql
     ├── 016_cotizaciones_condicion_pago.sql
     ├── 017_cotizaciones_duplicado_aceptado.sql
-    └── 018_articulos_largo_barra.sql
+    ├── 018_articulos_largo_barra.sql
+    └── 019_usuarios_modulos.sql
 ```
 
 > `porteria.html` y `solicitud.html` son entry points separados (audiencias distintas: portero de
@@ -1531,7 +1534,70 @@ tablero-compras/
 > base) quedó sin tocar en la raíz como referencia — su funcionalidad ya está migrada a `index.html` +
 > los módulos `flota-*.js`; se puede borrar cuando lo confirmes.
 
-## 12. Notas específicas de entorno
+## 12. Módulo: Parametrización `[DETALLADO]`
+
+Nace de un pedido puntual del usuario (2026-09-28): poder agregar perfiles nuevos que **no** tengan
+acceso a todo el tablero, sino a un subconjunto de módulos elegido al crearlos ("necesitaria agregar
+perfiles pero que no tengan acceso a todos los módulos si no que a módulos preseleccionados"). Es un
+grupo de nav propio ("⚙️ Parametrización ▾", `js/modules/parametrizacion.js`) con una única sub-vista
+por ahora: **Usuarios**.
+
+### 12.1 Alcance: restricción de interfaz, no seguridad real
+
+Antes de construir esto se le preguntó explícitamente al usuario qué nivel de control necesitaba,
+porque el resto del tablero (login por PIN, sin RLS, anon key pública — ver sección 11) es **solo
+atribución**, no una barrera de seguridad real. Confirmó que le alcanza con que sea **a nivel
+interfaz**: se ocultan del nav los grupos de módulos que el perfil no tiene habilitado, mismo criterio
+que el PIN de siempre (para que la persona no navegue a algo que no le corresponde, no como defensa
+contra alguien con conocimientos técnicos). Implementarlo de verdad (que ni con la anon key se pueda
+leer/escribir un módulo sin permiso) requeriría sumar Supabase Auth + RLS por tabla en las ~30 tablas
+`compras_*` — un cambio grande, que queda afuera de esta versión (sigue como TBD en la sección 14).
+
+### 12.2 Modelo de datos — `sql/019_usuarios_modulos.sql`
+
+Una sola columna nueva en `compras_usuarios` (ver `sql/008_usuarios.sql`/sección 11 para el resto de la
+tabla): `modulos_habilitados jsonb`.
+- **`null`** (el valor que ya tenían Cimolai y Angulo, los dos perfiles existentes antes de este módulo)
+  significa **sin restricción — ve todos los módulos**, exactamente el mismo comportamiento que tenían
+  hasta ahora. Confirmado con el usuario: este sistema aplica solo a los perfiles nuevos que se creen de
+  acá en más, no retroactivo a los dos que ya existían.
+- Un **array** (aunque sea de un solo elemento, ej. `["flota"]`) restringe el nav a esos módulos
+  únicamente.
+- Los módulos disponibles para elegir están hardcodeados en `MODULOS_APP` (`js/utils.js`), compartida
+  entre `parametrizacion.js` (para pintar los checkboxes) y `main.js` (para saber qué grupo de nav
+  ocultar) — cada `key` coincide con el sufijo del `id` de su `<div class="nav-group" id="nav-<key>">`
+  en `index.html`, así no hay que mantener esa lista en dos lugares.
+
+### 12.3 Cómo se usa
+
+- **"+ Nuevo perfil"** abre un modal con nombre + un checkbox **"Acceso total (admin)"** + una grilla de
+  checkboxes, uno por módulo. Si se tilda "Acceso total", los checkboxes individuales quedan
+  deshabilitados (no importa qué tengan tildado, se guarda `null`); si no, hace falta tildar al menos
+  uno — no tiene sentido crear un perfil sin ningún módulo. Al guardar, se hace un `insert` en
+  `compras_usuarios` **sin PIN** — reusa tal cual el circuito ya existente (sección 11): la propia
+  persona lo crea la primera vez que entra ("Crear PIN"), no hace falta que el usuario le asigne uno
+  a mano.
+- **"✏️ Módulos"** en la tabla reabre el mismo modal para un perfil existente, pero con el nombre
+  **deshabilitado** (a propósito: cambiarlo podría desalinearlo de dónde ya quedó guardado como texto
+  libre en otras tablas, ej. `compras_notas_pedido.revisado_por`) — solo se puede corregir qué módulos
+  tiene habilitados.
+- **"🚫 Desactivar" / "✅ Reactivar"** cambia `compras_usuarios.activo` (columna que ya existía) — un
+  perfil inactivo deja de aparecer en la grilla de perfiles del login (`js/login.js` ya filtraba por
+  `activo=true`) sin borrar nada de lo que esa persona haya cargado antes.
+
+### 12.4 Aplicación del permiso — `js/main.js`
+
+`aplicarPermisos()` corre una sola vez, justo después de loguearse (dentro de `onConnected()`): si
+`getUsuarioActual().modulos_habilitados` es `null`, no hace nada (admin, ve todo — ni siquiera recorre
+el nav). Si es un array, oculta (`display:none`) cada `.nav-group` cuyo `id` no esté en la lista, y
+devuelve el `data-default-sec` del primer grupo permitido — necesario porque la pantalla de arranque de
+siempre (`dash`, el Dashboard de Flota) vive dentro del grupo Flota: si a ese perfil no le tocó Flota,
+aterrizar ahí mostraría igual el contenido de un módulo que se supone no debería ver. Es una sola
+pasada al entrar, no un guard en cada `go()` — como el nav ya queda oculto, no hay manera de navegar ahí
+haciendo click; solo se podría forzando la URL/consola, que es exactamente el nivel de "no seguridad
+real" que se confirmó que alcanzaba (ver 12.1).
+
+## 13. Notas específicas de entorno
 
 - Dijiste que vas a trabajar este proyecto en **Antigravity** (cuenta de la empresa). Ojo con un detalle
   que ya tenemos registrado de tu workflow: **Antigravity no carga `CLAUDE.md` automáticamente** — usa
@@ -1541,7 +1607,7 @@ tablero-compras/
   `CLAUDE.md`. Lo más simple: mantener el contenido en `CLAUDE.md` y tener una copia (o symlink) como
   `AGENTS.md`.
 
-## 13. Decisiones abiertas (TBD)
+## 14. Decisiones abiertas (TBD)
 
 Ya decidido al construir el módulo Flota (2026-08-04):
 - [x] Esquema de datos: se migró al diseño de la sección 4.4 (`compras_vehiculos` separado de
@@ -1584,6 +1650,14 @@ Ya decidido al construir el módulo Cotizaciones (2026-08-27):
   sin que el sistema lo pise recalculando solo al más barato — ver 9.2.
 - [x] Sin envío de mail a proveedores ni vínculo con OC/Nota de Pedido en esta primera versión — ver 9.4.
 
+Ya decidido al construir el módulo Parametrización (2026-09-28):
+- [x] El control de acceso por módulo es a nivel interfaz (se oculta el nav), no una restricción real de
+  datos — confirmado explícitamente con el usuario antes de construirlo, ver sección 12.1.
+- [x] Los dos perfiles que ya existían (Cimolai, Angulo) no cambian: `modulos_habilitados = null` sigue
+  significando acceso total, igual que antes de que existiera esta pantalla.
+- [x] El alta de un perfil nuevo sigue sin pedir contraseña — reusa el mismo circuito de "Crear PIN" en
+  el primer ingreso que ya existía (sección 11), solo se le suma elegir los módulos habilitados.
+
 Todavía sin decidir:
 - [ ] ¿Se integra el combustible/YPF Ruta al módulo Flota o queda como módulo aparte?
 - [ ] ¿Las alertas de vencimiento se envían por mail (reutilizando Resend, ya integrado en Nexo RRHH) o solo se muestran en el tablero?
@@ -1591,8 +1665,9 @@ Todavía sin decidir:
 - [ ] Definir el siguiente módulo a desarrollar en detalle después de Flota (¿Proveedores? ¿Presupuesto?).
 - [ ] Dominio propio para hosting o alcanza con GitHub Pages por ahora.
 - [ ] Login/roles real (RLS/autenticación) — `index.html` desde 2026-08-24 pide un PIN de 4 dígitos por
-  perfil (ver 9, `js/login.js`) pero es solo **atribución**, no seguridad: cualquiera con la anon key
-  sigue pudiendo leer/escribir todas las tablas `compras_*` sin pasar por ahí. `porteria.html` y
+  perfil (ver 11, `js/login.js`) y desde 2026-09-28 restringe qué módulos ve cada perfil (ver sección
+  12), pero los dos son solo **atribución/interfaz**, no seguridad: cualquiera con la anon key sigue
+  pudiendo leer/escribir todas las tablas `compras_*` sin pasar por ahí. `porteria.html` y
   `solicitud.html` siguen sin ningún control de acceso.
 - [ ] ¿Se borra el `admin.html` original de la raíz ahora que su funcionalidad está migrada a `index.html`?
 - [ ] Documentación: hoy el archivo viejo de un documento reemplazado queda en el Storage (no se borra,
@@ -1603,7 +1678,7 @@ Todavía sin decidir:
 - [ ] Categorización de proveedores (ver 5.3): clasificarlos por tipo (materia prima, pintura, insumos,
   etc.) para poder adaptar/filtrar el Dashboard de OC según categoría — todavía no tiene tabla ni UI.
 
-## 14. Próximos pasos sugeridos
+## 15. Próximos pasos sugeridos
 
 1. Correr `sql/schema.sql` contra el proyecto Supabase real (ya hecho — tablas `compras_*` creadas).
 2. Correr [`sql/002_seguros_archivo.sql`](sql/002_seguros_archivo.sql) (ya hecho) y
@@ -1644,9 +1719,12 @@ Todavía sin decidir:
 17. Correr [`sql/018_articulos_largo_barra.sql`](sql/018_articulos_largo_barra.sql) — crea
     `compras_articulos_largo_barra` para "Ajustar a barra entera" (ver sección 9.1/9.3) (**todavía
     falta**).
-18. Probar el circuito completo: pedir vehículo (solicitud.html) → aprobar y asignar (index.html) →
+18. Correr [`sql/019_usuarios_modulos.sql`](sql/019_usuarios_modulos.sql) — agrega
+    `modulos_habilitados` a `compras_usuarios` para el módulo Parametrización (ver sección 12)
+    (**todavía falta**).
+19. Probar el circuito completo: pedir vehículo (solicitud.html) → aprobar y asignar (index.html) →
    registrar salida/retorno (porteria.html) → ver el movimiento reflejado en el dashboard.
-19. Evaluar RLS (Row Level Security) en las tablas `compras_*` — hoy cualquiera con el link de
+20. Evaluar RLS (Row Level Security) en las tablas `compras_*` — hoy cualquiera con el link de
    `solicitud.html`/`porteria.html` puede leer/escribir todas las tablas, sin ningún login de por medio.
-20. Ir completando los módulos `[TBD]` de la sección 3 a medida que los necesites, usando el módulo
+21. Ir completando los módulos `[TBD]` de la sección 3 a medida que los necesites, usando el módulo
    Flota (carpeta `js/modules/`) como plantilla.

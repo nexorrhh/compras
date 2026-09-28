@@ -86,6 +86,24 @@ export function escJsArg(s) {
 // que una página vuelva incompleta. `makeQuery` tiene que devolver
 // un query NUEVO cada vez (no se puede reusar un builder ya usado).
 // ------------------------------------------------------------
+// ------------------------------------------------------------
+// Módulos del tablero disponibles para restringir por perfil (ver
+// módulo Parametrización, sección 12). El `key` de cada uno coincide
+// con el sufijo del id de su <div class="nav-group" id="nav-<key>">
+// en index.html — así main.js puede ocultar el grupo entero por perfil
+// sin tener que mantener una segunda lista de ids en otro archivo.
+// ------------------------------------------------------------
+export const MODULOS_APP = [
+  { key: 'flota', label: '🚗 Flota' },
+  { key: 'oc', label: '🧾 Órdenes de Compra' },
+  { key: 'stock', label: '📦 Stock' },
+  { key: 'proveedores', label: '🏭 Proveedores' },
+  { key: 'np', label: '📝 Notas de Pedido' },
+  { key: 'cot', label: '🧮 Cotizaciones' },
+  { key: 'ot', label: '🏷️ OT' },
+  { key: 'param', label: '⚙️ Parametrización' },
+];
+
 export async function fetchAll(makeQuery, pageSize = 1000) {
   let all = [];
   let from = 0;
