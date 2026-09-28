@@ -1274,6 +1274,13 @@ por error.
   cantidad y N° de solicitud de Capataz, para poder rastrear de dónde sale el total sin tener que
   adivinar.
 
+**Exportar para cotizar** (`exportarParaCotizarPendientes()`, mismo botón/nombre que la ficha
+individual, ver 9.2): mismo layout de columnas (Código/OT/Descripción/Detalle/Cantidad/Unidad/
+Equivalencia/Unidad), respetando el buscador `cotp_f_q` — la diferencia es que acá cada fila es un
+artículo agrupado entre varias solicitudes, así que la columna **OT** junta las distintas OT de origen
+separadas por coma (puede haber más de una) y Cantidad/Equivalencia son el total pendiente sumado, no
+el de una ficha puntual.
+
 ## 10. Módulo: OT `[DETALLADO]`
 
 Módulo de nav propio (grupo colapsable "🏷️ OT", como Flota/OC/Stock/Proveedores), pedido explícito del

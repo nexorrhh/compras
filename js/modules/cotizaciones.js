@@ -1805,7 +1805,7 @@ function agruparPendientesPorArticulo() {
     g.origenes.push({
       cotizacion_id: it.cotizacion_id, nombre: cot?.nombre || '(?)', bloque: it.bloque || '',
       cant_ums: it.cant_ums, cant_umc: it.cant_umc, itemId: it.id,
-      ganador_proveedor_id: it.ganador_proveedor_id, nro_solicitud: it.nro_solicitud,
+      ganador_proveedor_id: it.ganador_proveedor_id, nro_solicitud: it.nro_solicitud, n_ot: it.n_ot,
     });
   }
   PEND_GRUPOS = [...grupos.values()].sort((a, b) => (a.descripcion || '').localeCompare(b.descripcion || '', 'es'));
@@ -2153,6 +2153,32 @@ async function verificarCierreRemoto(cotizacionId) {
   if (COT_ACTUAL && COT_ACTUAL.id === cotizacionId) { COT_ACTUAL.estado = 'CERRADA'; renderHeaderDetalle(); }
 }
 
+// Baja exactamente lo que se está viendo (mismo buscador cotp_f_q) a un
+// Excel para mandarle al proveedor — mismo layout que exportarParaCotizar()
+// de una solicitud puntual (Código/OT/Descripción/Detalle/Cantidad/Unidad/
+// Equivalencia/Unidad), salvo que acá cada fila es un artículo agrupado
+// entre varias solicitudes: la columna OT junta las distintas OT de
+// origen separadas por coma (puede haber más de una, a diferencia de la
+// exportación de una sola solicitud) y Cantidad/Equivalencia son la suma
+// total pendiente de ese artículo, no la de una ficha puntual.
+function exportarParaCotizarPendientes() {
+  const q = (document.getElementById('cotp_f_q')?.value || '').trim().toUpperCase();
+  const lista = (q ? PEND_GRUPOS.filter(g => g.cod_articulo.toUpperCase().includes(q) || (g.descripcion || '').toUpperCase().includes(q)) : PEND_GRUPOS)
+    .slice().sort((a, b) => (a.descripcion || '').localeCompare(b.descripcion || '', 'es'));
+  if (!lista.length) { toast('No hay nada pendiente para exportar', 'er'); return; }
+
+  const encabezado = ['Código', 'OT', 'Descripción', 'Detalle', 'Cantidad', 'Unidad', 'Equivalencia', 'Unidad'];
+  const filas = lista.map(g => {
+    const ots = [...new Set(g.origenes.map(o => formatOTExport(o.n_ot)).filter(Boolean))];
+    return [g.cod_articulo, ots.join(', '), g.descripcion || '', g.desc_adicional || '', g.cant_ums, g.ums || '', g.cant_umc, g.umc || ''];
+  });
+  const ws = XLSX.utils.aoa_to_sheet([encabezado, ...filas]);
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, 'Pendientes');
+  XLSX.writeFile(wb, `Pendientes_para_cotizar_${new Date().toISOString().slice(0, 10)}.xlsx`);
+  toast(`✓ Exportado (${filas.length} artículo${filas.length === 1 ? '' : 's'})`);
+}
+
 function initAutocompleteInvitarGlobal() {
   const input = document.getElementById('cotp_prov_buscar');
   const box = document.getElementById('cotp_prov_sug');
@@ -2215,6 +2241,7 @@ function initDelegacionPendientes() {
     renderTablaPendientes();
     renderResumenPendientes();
   });
+  document.getElementById('cotp_exportar')?.addEventListener('click', exportarParaCotizarPendientes);
 }
 
 // ------------------------------------------------------------
