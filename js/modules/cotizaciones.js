@@ -326,6 +326,7 @@ async function abrirDetalle(id) {
   document.getElementById('cot-vista-detalle').style.display = '';
   renderHeaderDetalle();
   poblarFiltroGrupo();
+  poblarFiltroNroSolic();
   BLOQUE_TAB = '';
   poblarTabsBloque();
   renderInvitados();
@@ -494,6 +495,7 @@ function itemsVisibles() {
   const ocultarNo = document.getElementById('cot_f_ocultar_no_comprar')?.checked ?? true;
   const mostrarConfirmados = document.getElementById('cot_f_mostrar_confirmados')?.checked ?? false;
   const grupoF = document.getElementById('cot_f_grupo')?.value || '';
+  const nroSolicF = document.getElementById('cot_f_nrosolic')?.value || '';
   const bloque = bloqueActual();
   // Los ítems con la compra ya confirmada (ver confirmarCompraProveedor) se
   // ocultan por defecto de la comparativa — ya están resueltos, no hace
@@ -505,6 +507,7 @@ function itemsVisibles() {
   if (ocultarNo) lista = lista.filter(i => i.a_comprar);
   if (grupoF === SIN_CLASIFICAR) lista = lista.filter(i => !grupoNombreDeItem(i));
   else if (grupoF) lista = lista.filter(i => grupoNombreDeItem(i) === grupoF);
+  if (nroSolicF) lista = lista.filter(i => i.nro_solicitud === nroSolicF);
   return lista.slice().sort((a, b) => (a.descripcion || '').localeCompare(b.descripcion || '', 'es'));
 }
 
@@ -686,6 +689,24 @@ function poblarFiltroGrupo() {
   if (haySinClasificar) opciones.push(`<option value="${SIN_CLASIFICAR}">Sin clasificar</option>`);
   sel.innerHTML = opciones.join('');
   if ([...nombres, haySinClasificar ? SIN_CLASIFICAR : null].includes(anterior)) sel.value = anterior;
+}
+
+// Filtro por N° de solicitud de Capataz (columna nro_solic, ver 9.1) — pedido
+// del usuario, 2026-09-28, para poder enfocar la tabla en un solo pedido de
+// Capataz dentro de una solicitud nuestra que agrupa varios (ej. "Varias
+// OT"). El value de cada opción es el nro_solicitud CRUDO (con ceros, tal
+// cual se guarda en el ítem) para que itemsVisibles() lo compare exacto —
+// solo el texto que ve el usuario pasa por formatOTExport() para sacarle
+// los ceros.
+function poblarFiltroNroSolic() {
+  const sel = document.getElementById('cot_f_nrosolic');
+  if (!sel) return;
+  const anterior = sel.value;
+  const nros = [...new Set(ITEMS.map(it => it.nro_solicitud).filter(Boolean))].sort();
+  const opciones = ['<option value="">Todas las solicitudes (Capataz)</option>',
+    ...nros.map(n => `<option value="${escAttr(n)}">${escAttr(formatOTExport(n))}</option>`)];
+  sel.innerHTML = opciones.join('');
+  if (nros.includes(anterior)) sel.value = anterior;
 }
 
 function actualizarBarraBulk() {
@@ -1276,6 +1297,7 @@ function renderTablaComparativa() {
       <td><input type="checkbox" class="cot-check-row" data-id="${item.id}" style="width:auto"></td>
       <td>${escAttr(item.cod_articulo)}</td>
       <td>${escAttr(item.descripcion || '')}${item.desc_adicional ? `<div style="font-size:11px;color:var(--muted)">${escAttr(item.desc_adicional)}</div>` : ''}</td>
+      <td style="white-space:nowrap;color:var(--muted);font-size:12px">${escAttr(formatOTExport(item.nro_solicitud) || '–')}</td>
       <td style="text-align:right;white-space:nowrap">${celdaCantidad}</td>
       <td style="text-align:center"><span class="badge ${item.a_comprar ? 'aprobado' : 'rechazado'} cot-toggle-comprar" data-id="${item.id}" style="cursor:pointer">${item.a_comprar ? 'Sí' : 'No'}</span></td>
       ${celdasPrecio}
@@ -1291,11 +1313,11 @@ function renderTablaComparativa() {
   wrap.innerHTML = `<table>
     <thead><tr>
       <th><input type="checkbox" id="cot_check_all" style="width:auto"></th>
-      <th>Código</th><th>Descripción</th><th>Cantidad</th><th>Comprar</th>
+      <th>Código</th><th>Descripción</th><th>N° Sol.</th><th>Cantidad</th><th>Comprar</th>
       ${headProv}
       <th>Ganador</th>
     </tr></thead>
-    <tbody>${filas || `<tr><td colspan="${5 + invitados.length + 1}" style="text-align:center;padding:18px;color:var(--muted)">Sin ítems para mostrar en este bloque</td></tr>`}</tbody>
+    <tbody>${filas || `<tr><td colspan="${6 + invitados.length + 1}" style="text-align:center;padding:18px;color:var(--muted)">Sin ítems para mostrar en este bloque</td></tr>`}</tbody>
   </table>`;
 
   actualizarBarraBulk();
@@ -1695,6 +1717,7 @@ export function init() {
   document.getElementById('cot_exportar')?.addEventListener('click', exportarParaCotizar);
   document.getElementById('cot_informe_reparto')?.addEventListener('click', emitirInformeReparto);
   document.getElementById('cot_f_grupo')?.addEventListener('change', renderTablaComparativa);
+  document.getElementById('cot_f_nrosolic')?.addEventListener('change', renderTablaComparativa);
   document.getElementById('cot_tipo_cambio')?.addEventListener('input', () => {
     renderTablaComparativa();
     renderResumenProveedores();

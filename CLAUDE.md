@@ -854,6 +854,15 @@ necesariamente el mismo día que se pidió en Capataz). Si en algún momento se 
 trae una columna de fecha, agregarla es sumarla a `col`/`out.push()` en `parseWorkbookCotizacion()`
 (mismo patrón que el resto de las columnas) y mostrarla acá.
 
+**N° de solicitud por fila + filtro** (mismo pedido, 2026-09-28, ampliado): no alcanzaba con verlo
+agrupado en el encabezado — la comparativa suma una columna **"N° Sol."** (sin ceros a la izquierda,
+`formatOTExport()`) al lado de Descripción, y un segundo `<select>` **"Todas las solicitudes
+(Capataz)"** (`cot_f_nrosolic`, `poblarFiltroNroSolic()`) al lado del filtro de rubro — mismo patrón
+exacto que `cot_f_grupo`/`poblarFiltroGrupo()`, para poder aislar dentro de una solicitud nuestra
+("Varias OT") los ítems de un solo pedido de Capataz. El `value` de cada opción es el `nro_solicitud`
+crudo (con ceros) para que el filtro compare exacto contra lo guardado en el ítem — solo lo que ve el
+usuario pasa por `formatOTExport()`.
+
 ### 9.2 Cómo se usa
 
 1. **Crear una solicitud**: se le pone un nombre (para poder encontrarla después — ej. "Estructura
