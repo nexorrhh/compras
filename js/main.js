@@ -29,6 +29,7 @@ const MODULES = {
   'prov-dash': proveedores, 'prov-agenda': proveedores, 'prov-ranking': proveedores, 'prov-clasificar': proveedores, 'prov-catalogo': proveedores,
   'np-lista': notasPedido,
   'cot-lista': cotizaciones,
+  'cot-pendientes': cotizaciones,
   'ot-dash': ot, 'ot-cards': ot,
 };
 

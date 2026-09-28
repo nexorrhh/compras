@@ -31,6 +31,19 @@ let PROV_MODAL_ID = null;   // proveedor_id que se está cargando en el modal mC
 let BLOQUE_TAB = '';        // bloque actualmente seleccionado ('' = General) — reemplaza al viejo <select>, ver poblarTabsBloque()
 let DUPLICADOS = new Map(); // cod_articulo -> [{id, nombre}] de OTRAS solicitudes abiertas que también lo tienen a comprar (ver buscarDuplicadosEntreSolicitudes)
 
+// ------------------------------------------------------------
+// Vista "Pendientes (todas las solicitudes)" — junta lo que todavía no
+// está confirmado en NINGUNA solicitud ABIERTA, agrupado por artículo,
+// para poder cotizarlo/repartirlo una sola vez en vez de solicitud por
+// solicitud. Ver renderTablaPendientes() más abajo. Prefijo PEND_.
+// ------------------------------------------------------------
+let PEND_ITEMS = [];        // ítems a_comprar=true/confirmado=false de TODAS las solicitudes ABIERTAS (ya sin duplicados de Capataz, ver cargarPendientesGlobal())
+let PEND_COTS = new Map();  // cotizacion_id -> {id, nombre, created_at} de las solicitudes ABIERTAS
+let PEND_INVITADOS = [];    // [{proveedor_id, nombre}] invitados a esta sesión (derivados de compras_cotizaciones_proveedores)
+let PEND_PRECIOS = [];      // [{item_id, proveedor_id, precio_unitario, moneda}] de todos los PEND_ITEMS
+let PEND_COL_MONEDA = {};   // proveedor_id -> 'ARS'|'USD', default para el próximo precio (mismo criterio que COL_MONEDA)
+let PEND_GRUPOS = [];       // computado por agruparPendientesPorArticulo(): [{cod_articulo, descripcion, desc_adicional, ums, umc, cant_ums, cant_umc, itemIds, origenes:[{cotizacion_id,nombre,bloque,cant_ums,cant_umc,itemId,ganador_proveedor_id}]}]
+
 const SIMBOLO = m => m === 'USD' ? 'U$S' : '$';
 const numFmt = (n, dec = 2) => Number(n || 0).toLocaleString('es-AR', { maximumFractionDigits: dec });
 const fmtMonto = (n, moneda) => SIMBOLO(moneda) + (moneda === 'USD' ? ' ' : '') + numFmt(n, 2);
@@ -1692,9 +1705,528 @@ function initModalProveedor() {
   });
 }
 
+// ============================================================
+// Vista "Pendientes (todas las solicitudes)" — pedido explícito del
+// usuario, 2026-09-28: "tengo varias solicitudes donde me piden metal
+// desplegado" y a nadie se lo terminaban cotizando por estar repartido
+// en varias fichas separadas. Junta TODOS los ítems a_comprar=true/
+// confirmado=false de TODAS las solicitudes ABIERTAS, agrupados por
+// cod_articulo, para invitar proveedores/cargar precios/elegir ganador
+// UNA sola vez por artículo — cada acción acá escribe directo sobre las
+// mismas filas de compras_cotizaciones_items/_proveedores/_precios que
+// usa la ficha individual, así que se refleja sola en cada solicitud
+// (pedido explícito: "que si modifico algo... me modifique las
+// solicitudes individuales" — no hay tabla ni estado paralelo, es la
+// misma data mirada agrupada).
+// ============================================================
+
+// Carga (o recarga) todo lo pendiente. Se llama cada vez que se entra a
+// la vista — a diferencia de la lista de solicitudes, acá conviene
+// siempre traer datos frescos (mismo criterio que el módulo OT).
+async function cargarPendientesGlobal() {
+  const { data: cots, error: e1 } = await SB.from('compras_cotizaciones').select('id,nombre,created_at').eq('estado', 'ABIERTA');
+  if (e1) { toast(e1.message, 'er'); return; }
+  PEND_COTS = new Map((cots || []).map(c => [c.id, c]));
+  const ids = [...PEND_COTS.keys()];
+  if (!ids.length) { PEND_ITEMS = []; PEND_PRECIOS = []; PEND_INVITADOS = []; PEND_GRUPOS = []; return; }
+
+  const { data: itemsRaw, error: e2 } = await fetchAll(() =>
+    SB.from('compras_cotizaciones_items').select('*').in('cotizacion_id', ids).eq('a_comprar', true).eq('confirmado', false)
+  );
+  if (e2) { toast(e2.message, 'er'); return; }
+
+  // Mismo criterio que buscarDuplicadosEntreSolicitudes() (ver 9.2): si el
+  // mismo nro_solicitud de Capataz aparece en más de una solicitud
+  // abierta, cuenta una sola vez — la de la solicitud más vieja — salvo
+  // que ya se haya aceptado explícitamente (duplicado_aceptado).
+  const masVieja = new Map(); // nro_solicitud -> cotizacion_id de la más vieja
+  for (const it of itemsRaw || []) {
+    if (!it.nro_solicitud) continue;
+    const cot = PEND_COTS.get(it.cotizacion_id);
+    if (!cot) continue;
+    const actual = masVieja.get(it.nro_solicitud);
+    if (!actual || new Date(cot.created_at) < new Date(PEND_COTS.get(actual).created_at)) masVieja.set(it.nro_solicitud, it.cotizacion_id);
+  }
+  PEND_ITEMS = (itemsRaw || []).filter(it => it.duplicado_aceptado || !it.nro_solicitud || masVieja.get(it.nro_solicitud) === it.cotizacion_id);
+
+  // El pool de ítems pendientes junta TODAS las solicitudes abiertas, así
+  // que puede ser bastante más grande que el de una sola ficha — se
+  // trae en tandas de 150 ids para no repetir el problema de URL
+  // demasiado larga ya conocido con `.in()` (ver sección 11, mismo
+  // criterio que la eliminación por lotes de OC/Proveedores).
+  const itemIds = PEND_ITEMS.map(i => i.id);
+  PEND_PRECIOS = [];
+  for (let i = 0; i < itemIds.length; i += 150) {
+    const { data, error } = await fetchAll(() => SB.from('compras_cotizaciones_precios').select('*').in('item_id', itemIds.slice(i, i + 150)));
+    if (error) { toast(error.message, 'er'); return; }
+    PEND_PRECIOS.push(...(data || []));
+  }
+  const { data: invRaw, error: e4 } = await fetchAll(() => SB.from('compras_cotizaciones_proveedores').select('id,cotizacion_id,proveedor_id,bloque').in('cotizacion_id', ids));
+  if (e4) { toast(e4.message, 'er'); return; }
+
+  // Un proveedor cuenta como "invitado a esta sesión" si ya está invitado
+  // a AL MENOS uno de los pares (solicitud, bloque) que tienen algo
+  // pendiente — invitarlo desde acá escribe esos mismos pares (ver
+  // invitarProveedorGlobal()), así que abrir después esa solicitud
+  // puntual ya lo va a mostrar como columna ahí también.
+  const paresConPendiente = new Set(PEND_ITEMS.map(it => `${it.cotizacion_id}|${it.bloque || ''}`));
+  const provMap = new Map(PROVEEDORES.map(p => [p.id, p.nombre]));
+  const vistos = new Set();
+  PEND_INVITADOS = [];
+  for (const inv of invRaw || []) {
+    if (!paresConPendiente.has(`${inv.cotizacion_id}|${inv.bloque || ''}`)) continue;
+    if (vistos.has(inv.proveedor_id)) continue;
+    vistos.add(inv.proveedor_id);
+    PEND_INVITADOS.push({ proveedor_id: inv.proveedor_id, nombre: provMap.get(inv.proveedor_id) || '(?)' });
+  }
+  PEND_INVITADOS.forEach(inv => {
+    if (!(inv.proveedor_id in PEND_COL_MONEDA)) {
+      const conMoneda = PEND_PRECIOS.find(p => p.proveedor_id === inv.proveedor_id);
+      PEND_COL_MONEDA[inv.proveedor_id] = conMoneda?.moneda || 'ARS';
+    }
+  });
+
+  agruparPendientesPorArticulo();
+}
+
+function agruparPendientesPorArticulo() {
+  const grupos = new Map();
+  for (const it of PEND_ITEMS) {
+    let g = grupos.get(it.cod_articulo);
+    if (!g) {
+      g = { cod_articulo: it.cod_articulo, descripcion: it.descripcion, desc_adicional: it.desc_adicional,
+            ums: it.ums, umc: it.umc, cant_ums: 0, cant_umc: 0, itemIds: [], origenes: [] };
+      grupos.set(it.cod_articulo, g);
+    }
+    g.cant_ums += Number(it.cant_ums) || 0;
+    g.cant_umc += Number(it.cant_umc) || 0;
+    g.itemIds.push(it.id);
+    const cot = PEND_COTS.get(it.cotizacion_id);
+    g.origenes.push({
+      cotizacion_id: it.cotizacion_id, nombre: cot?.nombre || '(?)', bloque: it.bloque || '',
+      cant_ums: it.cant_ums, cant_umc: it.cant_umc, itemId: it.id,
+      ganador_proveedor_id: it.ganador_proveedor_id, nro_solicitud: it.nro_solicitud,
+    });
+  }
+  PEND_GRUPOS = [...grupos.values()].sort((a, b) => (a.descripcion || '').localeCompare(b.descripcion || '', 'es'));
+}
+
+// El ganador de un grupo solo tiene sentido si TODOS los orígenes están
+// de acuerdo — si algunos ítems ya tenían un ganador elegido a mano desde
+// antes de existir esta vista (en su propia solicitud) y otros no (o
+// distinto), se marca "mixto" en vez de inventar cuál vale.
+function grupoGanadorInfo(g) {
+  const valores = new Set(g.origenes.map(o => o.ganador_proveedor_id || null));
+  return valores.size === 1 ? { valor: [...valores][0], mixto: false } : { valor: null, mixto: true };
+}
+
+function cheapestForGrupo(g) {
+  const porProveedor = new Map();
+  for (const p of PEND_PRECIOS) if (g.itemIds.includes(p.item_id) && p.precio_unitario != null) porProveedor.set(p.proveedor_id, p);
+  const lista = [...porProveedor.values()];
+  if (!lista.length) return null;
+  if (new Set(lista.map(p => p.moneda)).size > 1) return null;
+  let mejor = lista[0];
+  for (const p of lista) if (Number(p.precio_unitario) < Number(mejor.precio_unitario)) mejor = p;
+  return { proveedorId: mejor.proveedor_id, precio: Number(mejor.precio_unitario), moneda: mejor.moneda };
+}
+
+// Solo sugiere mientras NINGÚN origen del grupo tenga ganador
+// todavía (ni elegido acá, ni de antes en su propia solicitud) — una vez
+// que hay uno, no se pisa solo; hay que cambiarlo a mano desde el
+// <select> del grupo.
+async function aplicarGanadorAutomaticoGrupo(g) {
+  if (g.origenes.some(o => o.ganador_proveedor_id)) return;
+  const mejor = cheapestForGrupo(g);
+  if (!mejor) return;
+  await setGanadorGrupo(g, mejor.proveedorId);
+}
+
+async function setGanadorGrupo(g, proveedorId) {
+  const valor = proveedorId || null;
+  for (let i = 0; i < g.itemIds.length; i += 100) {
+    const { error } = await SB.from('compras_cotizaciones_items').update({ ganador_proveedor_id: valor, ganador_manual: true }).in('id', g.itemIds.slice(i, i + 100));
+    if (error) { toast(error.message, 'er'); return; }
+  }
+  g.origenes.forEach(o => { o.ganador_proveedor_id = valor; });
+  renderTablaPendientes();
+  renderResumenPendientes();
+}
+
+async function guardarPrecioPendiente(codArticulo, proveedorId, valorStr) {
+  const g = PEND_GRUPOS.find(x => x.cod_articulo === codArticulo);
+  if (!g) return;
+  const v = (valorStr || '').trim();
+  if (v === '') {
+    for (let i = 0; i < g.itemIds.length; i += 100) {
+      const { error } = await SB.from('compras_cotizaciones_precios').delete().eq('proveedor_id', proveedorId).in('item_id', g.itemIds.slice(i, i + 100));
+      if (error) { toast(error.message, 'er'); return; }
+    }
+    PEND_PRECIOS = PEND_PRECIOS.filter(p => !(p.proveedor_id === proveedorId && g.itemIds.includes(p.item_id)));
+  } else {
+    const precio = Number(v.replace(',', '.'));
+    if (!isFinite(precio)) { toast('Precio inválido', 'er'); renderTablaPendientes(); return; }
+    const moneda = PEND_COL_MONEDA[proveedorId] || 'ARS';
+    const rows = g.itemIds.map(id => ({ item_id: id, proveedor_id: proveedorId, precio_unitario: precio, moneda }));
+    const { data, error } = await SB.from('compras_cotizaciones_precios').upsert(rows, { onConflict: 'item_id,proveedor_id' }).select();
+    if (error) { toast(error.message, 'er'); return; }
+    PEND_PRECIOS = [...PEND_PRECIOS.filter(p => !(p.proveedor_id === proveedorId && g.itemIds.includes(p.item_id))), ...(data || [])];
+  }
+  await aplicarGanadorAutomaticoGrupo(g);
+  renderTablaPendientes();
+  renderResumenPendientes();
+}
+
+async function cambiarMonedaColumnaPendiente(proveedorId, nuevaMoneda, forzado = false) {
+  PEND_COL_MONEDA[proveedorId] = nuevaMoneda;
+  const itemIdsPendientes = new Set(PEND_ITEMS.map(i => i.id));
+  const aCorregir = PEND_PRECIOS.filter(p => p.proveedor_id === proveedorId && itemIdsPendientes.has(p.item_id) && p.moneda !== nuevaMoneda);
+  if (!aCorregir.length && forzado) toast(`Esta columna ya está toda en ${nuevaMoneda === 'USD' ? 'U$S' : '$'}`);
+  if (aCorregir.length) {
+    const cambiar = confirm(`Esta columna ya tiene ${aCorregir.length} precio${aCorregir.length === 1 ? '' : 's'} cargado${aCorregir.length === 1 ? '' : 's'} en la otra moneda.\n\n¿Corregirlos a ${nuevaMoneda === 'USD' ? 'U$S' : '$'} (sin tocar el número, solo la moneda)?`);
+    if (cambiar) {
+      const ids = aCorregir.map(p => p.id);
+      for (let i = 0; i < ids.length; i += 100) {
+        const { error } = await SB.from('compras_cotizaciones_precios').update({ moneda: nuevaMoneda }).in('id', ids.slice(i, i + 100));
+        if (error) { toast(error.message, 'er'); return; }
+      }
+      const idsSet = new Set(ids);
+      PEND_PRECIOS = PEND_PRECIOS.map(p => idsSet.has(p.id) ? { ...p, moneda: nuevaMoneda } : p);
+      toast(`✓ ${ids.length} precio${ids.length === 1 ? '' : 's'} corregido${ids.length === 1 ? '' : 's'} a ${nuevaMoneda === 'USD' ? 'U$S' : '$'}`);
+      const codsAfectados = new Set(PEND_GRUPOS.filter(g => g.itemIds.some(id => aCorregir.some(p => p.item_id === id))).map(g => g.cod_articulo));
+      for (const cod of codsAfectados) await aplicarGanadorAutomaticoGrupo(PEND_GRUPOS.find(g => g.cod_articulo === cod));
+    }
+  }
+  renderTablaPendientes();
+  renderResumenPendientes();
+}
+
+function sugerenciasProveedoresParaInvitarGlobal(q) {
+  const yaInvitados = new Set(PEND_INVITADOS.map(i => i.proveedor_id));
+  return obtenerCandidatosParaInvitar()
+    .filter(p => !(p.id && yaInvitados.has(p.id)) && p.nombre.toUpperCase().includes(q))
+    .slice(0, 12);
+}
+
+function filtrarSugerenciasInvitarGlobal() {
+  const input = document.getElementById('cotp_prov_buscar');
+  const box = document.getElementById('cotp_prov_sug');
+  if (!input || !box) return;
+  const q = input.value.trim().toUpperCase();
+  if (!q) { box.style.display = 'none'; box.innerHTML = ''; return; }
+  const coincidencias = sugerenciasProveedoresParaInvitarGlobal(q);
+  if (!coincidencias.length) { box.style.display = 'none'; box.innerHTML = ''; return; }
+  box.innerHTML = coincidencias.map(p => `<div class="ac-item" data-id="${p.id || ''}" data-nombre="${escAttr(p.nombre)}" data-cod="${escAttr(p.cod_tango || '')}">
+    ${escAttr(p.nombre)}${p.virtual ? ' <span style="color:var(--muted);font-size:11px">(detectado, sin ficha — se le crea una al invitarlo)</span>' : ''}
+  </div>`).join('');
+  box.style.display = '';
+}
+
+// Invitar acá escribe una fila de invitación en CADA par (solicitud,
+// bloque) que tenga algo pendiente en este momento — necesario para que
+// el proveedor aparezca como columna al abrir cualquiera de esas
+// solicitudes puntuales (ver 9.2), no solo para poder cargarle un precio
+// acá. `ignoreDuplicates` porque puede que ya estuviera invitado a
+// alguno de esos pares desde antes.
+async function invitarProveedorGlobal(proveedorId) {
+  const pares = new Set(PEND_ITEMS.map(it => `${it.cotizacion_id}|${it.bloque || ''}`));
+  const rows = [...pares].map(par => {
+    const i = par.indexOf('|');
+    return { cotizacion_id: par.slice(0, i), proveedor_id: proveedorId, bloque: par.slice(i + 1) };
+  });
+  if (rows.length) {
+    const { error } = await SB.from('compras_cotizaciones_proveedores').upsert(rows, { onConflict: 'cotizacion_id,proveedor_id,bloque', ignoreDuplicates: true });
+    if (error) { toast(error.message, 'er'); return; }
+  }
+  const prov = obtenerCandidatosParaInvitar().find(p => p.id === proveedorId) || PROVEEDORES.find(p => p.id === proveedorId);
+  if (!PEND_INVITADOS.some(i => i.proveedor_id === proveedorId)) {
+    PEND_INVITADOS.push({ proveedor_id: proveedorId, nombre: prov?.nombre || '(?)' });
+    PEND_COL_MONEDA[proveedorId] = PEND_COL_MONEDA[proveedorId] || 'ARS';
+  }
+  renderInvitadosPendientes();
+  renderTablaPendientes();
+  renderResumenPendientes();
+}
+
+async function invitarDetectadoGlobal(nombre, codTango) {
+  const { data: nuevo, error } = await SB.from('compras_proveedores').insert({ nombre, cod_tango: codTango || null }).select().single();
+  if (error) { toast(error.message, 'er'); return; }
+  PROVEEDORES.push(nuevo);
+  toast(`✓ Ficha creada para "${nombre}"`);
+  await invitarProveedorGlobal(nuevo.id);
+}
+
+async function quitarInvitadoGlobal(proveedorId) {
+  if (!confirm('¿Quitar a este proveedor de la vista de Pendientes? Se van a borrar los precios que le cargaste acá, en todas las solicitudes donde aparecía.')) return;
+  const itemIds = PEND_ITEMS.map(i => i.id);
+  for (let i = 0; i < itemIds.length; i += 100) {
+    const { error } = await SB.from('compras_cotizaciones_precios').delete().eq('proveedor_id', proveedorId).in('item_id', itemIds.slice(i, i + 100));
+    if (error) { toast(error.message, 'er'); return; }
+  }
+  const pares = new Set(PEND_ITEMS.map(it => `${it.cotizacion_id}|${it.bloque || ''}`));
+  for (const par of pares) {
+    const i = par.indexOf('|');
+    await SB.from('compras_cotizaciones_proveedores').delete().eq('cotizacion_id', par.slice(0, i)).eq('proveedor_id', proveedorId).eq('bloque', par.slice(i + 1));
+  }
+  const afectados = PEND_ITEMS.filter(it => it.ganador_proveedor_id === proveedorId).map(it => it.id);
+  for (let i = 0; i < afectados.length; i += 100) {
+    await SB.from('compras_cotizaciones_items').update({ ganador_proveedor_id: null, ganador_manual: false }).in('id', afectados.slice(i, i + 100));
+  }
+  PEND_PRECIOS = PEND_PRECIOS.filter(p => !(p.proveedor_id === proveedorId && itemIds.includes(p.item_id)));
+  PEND_ITEMS.forEach(it => { if (it.ganador_proveedor_id === proveedorId) it.ganador_proveedor_id = null; });
+  PEND_INVITADOS = PEND_INVITADOS.filter(i => i.proveedor_id !== proveedorId);
+  agruparPendientesPorArticulo();
+  renderInvitadosPendientes();
+  renderTablaPendientes();
+  renderResumenPendientes();
+}
+
+function renderInvitadosPendientes() {
+  const cont = document.getElementById('cotp_invitados_chips');
+  if (!cont) return;
+  if (!PEND_INVITADOS.length) { cont.innerHTML = '<span style="color:var(--muted);font-size:13px">Todavía no invitaste a ningún proveedor acá</span>'; return; }
+  cont.innerHTML = PEND_INVITADOS.map(inv => `
+    <span class="cot-chip">${escAttr(inv.nombre)}
+      <button type="button" class="cotp-quitar-invitado" data-prov="${inv.proveedor_id}" title="Quitar">×</button>
+    </span>`).join('');
+}
+
+function tipoCambioActualPend() {
+  const v = (document.getElementById('cotp_tipo_cambio')?.value || '').trim().replace(',', '.');
+  const n = Number(v);
+  return isFinite(n) && n > 0 ? n : null;
+}
+
+function renderTablaPendientes() {
+  const wrap = document.getElementById('cotp-tabla-wrap');
+  if (!wrap) return;
+
+  const activo = document.activeElement;
+  let foco = null;
+  if (activo && wrap.contains(activo) && activo.classList.contains('cotp-precio-input')) {
+    foco = { cod: activo.dataset.cod, prov: activo.dataset.prov, valor: activo.value };
+  }
+
+  const q = (document.getElementById('cotp_f_q')?.value || '').trim().toUpperCase();
+  const lista = q ? PEND_GRUPOS.filter(g => g.cod_articulo.toUpperCase().includes(q) || (g.descripcion || '').toUpperCase().includes(q)) : PEND_GRUPOS;
+  const tc = tipoCambioActualPend();
+
+  const headProv = PEND_INVITADOS.map(inv => {
+    const monedasProv = new Set(PEND_PRECIOS.filter(p => p.proveedor_id === inv.proveedor_id && p.precio_unitario != null).map(p => p.moneda));
+    const aviso = monedasProv.size > 1 ? ` <span title="Esta columna tiene precios cargados en más de una moneda" style="cursor:help">⚠️</span>` : '';
+    return `<th style="min-width:78px;max-width:92px">
+      <div title="${escAttr(inv.nombre)}" style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:92px">${escAttr(inv.nombre)}</div>${aviso}
+      <select class="cotp-moneda-col" data-prov="${inv.proveedor_id}" style="font-size:11px;margin-top:3px;width:auto">
+        <option value="ARS" ${(PEND_COL_MONEDA[inv.proveedor_id] || 'ARS') === 'ARS' ? 'selected' : ''}>$</option>
+        <option value="USD" ${PEND_COL_MONEDA[inv.proveedor_id] === 'USD' ? 'selected' : ''}>U$S</option>
+      </select>
+      <button type="button" class="bsm cotp-moneda-aplicar" data-prov="${inv.proveedor_id}" title="Corregir a esta moneda los precios ya cargados en esta columna" style="padding:1px 5px;font-size:10px;margin-top:2px">🔁 corregir</button>
+    </th>`;
+  }).join('');
+
+  const filas = lista.map(g => {
+    const precioPorProv = new Map();
+    for (const p of PEND_PRECIOS) if (g.itemIds.includes(p.item_id) && p.precio_unitario != null) precioPorProv.set(p.proveedor_id, p);
+    const mejor = cheapestForGrupo(g);
+    const celdasPrecio = PEND_INVITADOS.map(inv => {
+      const p = precioPorProv.get(inv.proveedor_id);
+      const esMejor = mejor && mejor.proveedorId === inv.proveedor_id;
+      const simbolo = p ? `<span style="font-size:10px;color:var(--muted);margin-right:1px">${SIMBOLO(p.moneda)}</span>` : '';
+      const equivalencia = (tc && p && p.moneda === 'USD') ? `<div style="font-size:10px;color:var(--muted)">≈ ${fmtMonto(Number(p.precio_unitario) * tc, 'ARS')}</div>` : '';
+      return `<td class="${esMejor ? 'cot-precio-min' : ''}" style="white-space:nowrap">
+        ${simbolo}<input type="text" inputmode="decimal" class="cotp-precio-input" data-cod="${escAttr(g.cod_articulo)}" data-prov="${inv.proveedor_id}"
+          value="${p ? p.precio_unitario : ''}" placeholder="—">${equivalencia}
+      </td>`;
+    }).join('');
+
+    const conPrecio = PEND_INVITADOS.filter(inv => precioPorProv.has(inv.proveedor_id));
+    const ganInfo = grupoGanadorInfo(g);
+    const opcionesGanador = ['<option value="">–</option>', ...conPrecio.map(inv =>
+      `<option value="${inv.proveedor_id}" ${ganInfo.valor === inv.proveedor_id ? 'selected' : ''}>${escAttr(inv.nombre)}</option>`
+    )].join('');
+    const avisoMixta = ganInfo.mixto ? `<div style="font-size:10px;color:var(--yellow)" title="Las solicitudes de este artículo ya tenían ganadores distintos elegidos antes — elegí uno acá para unificarlas">⚠️ ya tenía ganadores distintos</div>` : '';
+    const avisoFilaMixta = (!mejor && conPrecio.length > 1) ? `<div style="font-size:10px;color:var(--muted)">⚠️ monedas mezcladas</div>` : '';
+
+    const origenesHtml = g.origenes.slice().sort((a, b) => a.nombre.localeCompare(b.nombre, 'es')).map(o =>
+      `<div>${escAttr(o.nombre)} (${escAttr(o.bloque || 'General')})${o.nro_solicitud ? ` — N° ${escAttr(formatOTExport(o.nro_solicitud))}` : ''}: ${numFmt(o.cant_ums)} ${escAttr(g.ums || '')}${g.ums !== g.umc ? ` / ${numFmt(o.cant_umc)} ${escAttr(g.umc || '')}` : ''}</div>`
+    ).join('');
+
+    return `<tr class="oc-row">
+      <td><span class="oc-chevron">▸</span> ${escAttr(g.cod_articulo)}</td>
+      <td>${escAttr(g.descripcion || '')}${g.desc_adicional ? `<div style="font-size:11px;color:var(--muted)">${escAttr(g.desc_adicional)}</div>` : ''}</td>
+      <td style="text-align:right;white-space:nowrap">${numFmt(g.cant_ums)} ${escAttr(g.ums || '')}${g.ums !== g.umc ? `<div style="font-size:11px;color:var(--muted)">${numFmt(g.cant_umc)} ${escAttr(g.umc || '')}</div>` : ''}</td>
+      ${celdasPrecio}
+      <td>
+        <select class="cotp-ganador-sel" data-cod="${escAttr(g.cod_articulo)}" ${conPrecio.length ? '' : 'disabled'}>${opcionesGanador}</select>
+        ${avisoMixta}${avisoFilaMixta}
+      </td>
+    </tr>
+    <tr class="oc-detail" style="display:none"><td colspan="${4 + PEND_INVITADOS.length}">
+      <strong style="font-size:12px">De dónde viene (${g.origenes.length}):</strong>
+      <div style="font-size:12px;color:var(--muted);margin-top:4px">${origenesHtml}</div>
+    </td></tr>`;
+  }).join('');
+
+  wrap.innerHTML = `<table>
+    <thead><tr>
+      <th>Código</th><th>Descripción</th><th>Cantidad total</th>
+      ${headProv}
+      <th>Ganador</th>
+    </tr></thead>
+    <tbody>${filas || `<tr><td colspan="${4 + PEND_INVITADOS.length}" style="text-align:center;padding:18px;color:var(--muted)">No hay nada pendiente sin confirmar en ninguna solicitud abierta 🎉</td></tr>`}</tbody>
+  </table>`;
+
+  if (foco) {
+    const input = wrap.querySelector(`.cotp-precio-input[data-cod="${CSS.escape(foco.cod)}"][data-prov="${CSS.escape(foco.prov)}"]`);
+    if (input) { input.focus(); input.value = foco.valor; input.setSelectionRange(input.value.length, input.value.length); }
+  }
+}
+
+function renderResumenPendientes() {
+  const cont = document.getElementById('cotp_resumen_proveedores');
+  if (!cont) return;
+  if (!PEND_INVITADOS.length) { cont.innerHTML = ''; return; }
+  const tc = tipoCambioActualPend();
+  cont.innerHTML = PEND_INVITADOS.map(inv => {
+    const ganados = PEND_GRUPOS.filter(g => grupoGanadorInfo(g).valor === inv.proveedor_id);
+    const porUnidad = new Map();
+    const porMoneda = new Map();
+    for (const g of ganados) {
+      porUnidad.set(g.umc || '?', (porUnidad.get(g.umc || '?') || 0) + g.cant_umc);
+      const precio = PEND_PRECIOS.find(p => g.itemIds.includes(p.item_id) && p.proveedor_id === inv.proveedor_id);
+      if (precio && precio.precio_unitario != null) porMoneda.set(precio.moneda, (porMoneda.get(precio.moneda) || 0) + Number(precio.precio_unitario) * g.cant_umc);
+    }
+    const chipsUnidad = [...porUnidad.entries()].map(([u, c]) => `${numFmt(c)} ${escAttr(u)}`).join(' · ') || '–';
+    const chipsMonto = [...porMoneda.entries()].map(([m, v]) => fmtMonto(v, m)).join(' + ') || '–';
+    const combinado = (tc && porMoneda.size > 1)
+      ? `<div style="font-size:11px;color:var(--muted)">≈ Total combinado: ${fmtMonto([...porMoneda.entries()].reduce((acc, [m, v]) => acc + (m === 'USD' ? v * tc : v), 0), 'ARS')}</div>` : '';
+    const pendientes = ganados.length;
+    return `<div class="cot-resumen-card">
+      <div style="font-weight:600">${escAttr(inv.nombre)}</div>
+      <div style="font-size:13px;color:var(--muted);margin-top:4px">${ganados.length} artículo${ganados.length === 1 ? '' : 's'} ganado${ganados.length === 1 ? '' : 's'} (todas las solicitudes)</div>
+      <div style="font-size:13px;margin-top:6px"><strong>Cantidad:</strong> ${chipsUnidad}</div>
+      <div style="font-size:13px;margin-top:2px"><strong>Monto:</strong> ${chipsMonto}</div>
+      ${combinado}
+      <button type="button" class="bsm g cotp-confirmar-compra" data-prov="${inv.proveedor_id}" ${pendientes ? '' : 'disabled'} style="margin-top:8px">✅ Confirmar compra (${pendientes})</button>
+    </div>`;
+  }).join('');
+}
+
+// Confirma de una el ítem en TODAS las solicitudes donde el proveedor
+// ganó (pedido explícito del usuario, 2026-09-28) — a diferencia del
+// "Confirmar compra" dentro de una solicitud puntual, esto puede tocar
+// varias solicitudes a la vez, así que después de confirmar se revisa
+// cada una para ver si le tocaba cerrarse sola (verificarCierreRemoto()).
+async function confirmarCompraPendienteProveedor(proveedorId) {
+  const grupos = PEND_GRUPOS.filter(g => grupoGanadorInfo(g).valor === proveedorId);
+  const itemIds = grupos.flatMap(g => g.itemIds);
+  if (!itemIds.length) return;
+  for (let i = 0; i < itemIds.length; i += 100) {
+    const { error } = await SB.from('compras_cotizaciones_items').update({ confirmado: true }).in('id', itemIds.slice(i, i + 100));
+    if (error) { toast(error.message, 'er'); return; }
+  }
+  const cotizacionesAfectadas = new Set(grupos.flatMap(g => g.origenes.map(o => o.cotizacion_id)));
+  toast(`✓ OC Generada (${itemIds.length} ítem${itemIds.length === 1 ? '' : 's'})`);
+  await cargarPendientesGlobal();
+  renderInvitadosPendientes();
+  renderTablaPendientes();
+  renderResumenPendientes();
+  for (const cotId of cotizacionesAfectadas) await verificarCierreRemoto(cotId);
+}
+
+// Igual que verificarCierreAutomatico() pero para una solicitud que NO
+// es necesariamente la que está abierta en la otra vista — trae sus
+// ítems frescos de la base (reusa buscarDuplicadosEntreSolicitudes() tal
+// cual, para no reimplementar el criterio de duplicados).
+async function verificarCierreRemoto(cotizacionId) {
+  const { data: cot, error: e1 } = await SB.from('compras_cotizaciones').select('id,estado,created_at').eq('id', cotizacionId).single();
+  if (e1 || !cot || cot.estado === 'CERRADA') return;
+  const { data: items, error: e2 } = await SB.from('compras_cotizaciones_items').select('id,a_comprar,confirmado,nro_solicitud,duplicado_aceptado').eq('cotizacion_id', cotizacionId);
+  if (e2 || !items) return;
+  const dup = await buscarDuplicadosEntreSolicitudes(items.filter(i => i.a_comprar).map(i => ({ nro_solicitud: i.nro_solicitud })), { id: cotizacionId, created_at: cot.created_at });
+  const aComprar = items.filter(it => it.a_comprar && (it.duplicado_aceptado || !dup.has(it.nro_solicitud)));
+  if (!aComprar.length || aComprar.some(it => !it.confirmado)) return;
+  const { error } = await SB.from('compras_cotizaciones').update({ estado: 'CERRADA' }).eq('id', cotizacionId);
+  if (error) return;
+  const c = COTIZACIONES.find(x => x.id === cotizacionId);
+  if (c) c.estado = 'CERRADA';
+  if (COT_ACTUAL && COT_ACTUAL.id === cotizacionId) { COT_ACTUAL.estado = 'CERRADA'; renderHeaderDetalle(); }
+}
+
+function initAutocompleteInvitarGlobal() {
+  const input = document.getElementById('cotp_prov_buscar');
+  const box = document.getElementById('cotp_prov_sug');
+  if (!input || !box) return;
+  input.addEventListener('input', filtrarSugerenciasInvitarGlobal);
+  input.addEventListener('focus', filtrarSugerenciasInvitarGlobal);
+  box.addEventListener('mousedown', e => {
+    const item = e.target.closest('.ac-item');
+    if (!item) return;
+    e.preventDefault();
+    if (item.dataset.id) invitarProveedorGlobal(item.dataset.id);
+    else invitarDetectadoGlobal(item.dataset.nombre, item.dataset.cod);
+    input.value = '';
+    box.style.display = 'none';
+  });
+  input.addEventListener('blur', () => setTimeout(() => { box.style.display = 'none'; }, 120));
+}
+
+function initDelegacionPendientes() {
+  const cont = document.getElementById('s-cot-pendientes');
+  if (!cont) return;
+
+  cont.addEventListener('click', e => {
+    const row = e.target.closest('.oc-row');
+    if (row && row.closest('#cotp-tabla-wrap')) {
+      const detailRow = row.nextElementSibling;
+      if (detailRow && detailRow.classList.contains('oc-detail')) {
+        const isOpen = detailRow.style.display !== 'none';
+        detailRow.style.display = isOpen ? 'none' : '';
+        const chevron = row.querySelector('.oc-chevron');
+        if (chevron) chevron.textContent = isOpen ? '▸' : '▾';
+      }
+      return;
+    }
+    const quitar = e.target.closest('.cotp-quitar-invitado');
+    if (quitar) { quitarInvitadoGlobal(quitar.dataset.prov); return; }
+    const monedaAplicar = e.target.closest('.cotp-moneda-aplicar');
+    if (monedaAplicar) {
+      const sel = monedaAplicar.closest('th')?.querySelector('.cotp-moneda-col');
+      if (sel) cambiarMonedaColumnaPendiente(monedaAplicar.dataset.prov, sel.value, true);
+      return;
+    }
+    const confirmarBtn = e.target.closest('.cotp-confirmar-compra');
+    if (confirmarBtn) { confirmarCompraPendienteProveedor(confirmarBtn.dataset.prov); return; }
+  });
+
+  cont.addEventListener('change', e => {
+    if (e.target.classList.contains('cotp-precio-input')) {
+      guardarPrecioPendiente(e.target.dataset.cod, e.target.dataset.prov, e.target.value);
+    } else if (e.target.classList.contains('cotp-ganador-sel')) {
+      const g = PEND_GRUPOS.find(x => x.cod_articulo === e.target.dataset.cod);
+      if (g) setGanadorGrupo(g, e.target.value);
+    } else if (e.target.classList.contains('cotp-moneda-col')) {
+      cambiarMonedaColumnaPendiente(e.target.dataset.prov, e.target.value);
+    }
+  });
+
+  document.getElementById('cotp_f_q')?.addEventListener('input', renderTablaPendientes);
+  document.getElementById('cotp_tipo_cambio')?.addEventListener('input', () => {
+    renderTablaPendientes();
+    renderResumenPendientes();
+  });
+}
+
 // ------------------------------------------------------------
 export async function render(secId) {
   if (!COTIZACIONES.length) await Promise.all([cargarListado(), cargarProveedores()]);
+  if (secId === 'cot-pendientes') {
+    await cargarPendientesGlobal();
+    renderInvitadosPendientes();
+    renderTablaPendientes();
+    renderResumenPendientes();
+    return;
+  }
   if (secId !== 'cot-lista') return;
   if (COT_ACTUAL) return; // se navegó de vuelta con el detalle todavía abierto — se deja como estaba
   renderLista();
@@ -1731,6 +2263,8 @@ export function init() {
   initAutocompleteInvitar();
   initDelegacionDetalle();
   initModalProveedor();
+  initAutocompleteInvitarGlobal();
+  initDelegacionPendientes();
 
   window.cotizaciones = { abrirDetalle };
 }

@@ -1219,6 +1219,61 @@ Cinco tablas (ver `sql/schema.sql` para el estado final), sin RLS (mismo criteri
   repo pero en `.gitignore` — tiene datos reales de compras/proveedores/precios, mismo criterio que
   `Excels/` (ver 5.5/6.5).
 
+### 9.5 Vista global: "Pendientes (todas)"
+
+Nace de un caso real del usuario (2026-09-28): tenía varias solicitudes abiertas ("Nuevo URG 1",
+"Pañol", "COT", "URG", "Varias OT") pidiendo el mismo artículo (metal desplegado) cada una por
+separado, y como nunca es demasiada cantidad en ninguna solicitud puntual, terminaba sin cotizarse en
+ninguna — nadie lo notaba junto. Es un segundo sub-ítem de nav dentro de Cotizaciones (`cot-pendientes`,
+"🌐 Pendientes (todas)"), que junta **todos** los ítems `a_comprar=true`/`confirmado=false` de **todas**
+las solicitudes `ABIERTA`, agrupados por `cod_articulo`, para invitar proveedores/cargar precios/elegir
+ganador **una sola vez por artículo** en vez de solicitud por solicitud.
+
+**No es una tabla ni un estado paralelo** — cada acción de esta vista escribe directo sobre las mismas
+filas de `compras_cotizaciones_items`/`compras_cotizaciones_proveedores`/`compras_cotizaciones_precios`
+que ya usa la ficha individual de cada solicitud (pedido explícito del usuario: "que si modifico algo
+en ese global de pendientes me modifique... las solicitudes individuales"). Por eso:
+
+- **Cargar un precio para un artículo acá** (`guardarPrecioPendiente()`) escribe el mismo
+  `precio_unitario`/`moneda` en `compras_cotizaciones_precios` para **todos** los `item_id` que tengan
+  ese `cod_articulo` entre las solicitudes pendientes — un solo número por proveedor y artículo, sin
+  importar en cuántas solicitudes esté repartida la cantidad.
+- **Invitar un proveedor acá** (`invitarProveedorGlobal()`) inserta una fila en
+  `compras_cotizaciones_proveedores` para **cada** par (solicitud, bloque) que tenga algo pendiente en
+  ese momento (`upsert` con `ignoreDuplicates`, por si ya estaba invitado a alguno) — necesario para que
+  ese proveedor aparezca como columna de verdad al abrir después cualquiera de esas solicitudes
+  puntuales, no solo acá.
+- **Elegir un ganador para un artículo** (`setGanadorGrupo()`) actualiza `ganador_proveedor_id` +
+  `ganador_manual=true` en **todos** los ítems de ese artículo entre solicitudes. Si alguno de esos
+  ítems ya tenía un ganador elegido a mano desde antes (en su propia solicitud, previo a esta vista) y
+  no coincide con el resto, la fila se marca **"⚠️ ya tenía ganadores distintos"** en vez de inventar
+  cuál vale — el usuario elige uno para unificarlos. Mientras ningún ítem del grupo tenga ganador
+  todavía, sigue sugiriendo el más barato solo, igual que la comparativa normal.
+- **"✅ Confirmar compra" por proveedor** (`confirmarCompraPendienteProveedor()`, pedido explícito del
+  usuario — no quedó solo en cotizar/elegir ganador) marca `confirmado=true` en todos los ítems que ese
+  proveedor ganó, **en todas las solicitudes que correspondan a la vez** — a diferencia del botón
+  homónimo dentro de una ficha puntual, que solo toca esa solicitud. Después de confirmar, cada
+  solicitud afectada se revisa con `verificarCierreRemoto()` (mismo criterio que
+  `verificarCierreAutomatico()`, incluida la exclusión de duplicados vía `buscarDuplicadosEntreSolicitudes()`
+  — no reimplementado, reusado tal cual) para cerrarse sola si ya no le queda nada pendiente.
+
+**Deduplicado de solicitudes de Capataz repetidas**: si el mismo `nro_solicitud` de Capataz aparece en
+más de una solicitud abierta (el caso ya cubierto por el tab "⚠️ Duplicado" dentro de cada ficha, ver
+9.2), acá se resuelve igual — cuenta una sola vez, la de la solicitud más vieja, salvo que ya se haya
+aceptado explícitamente (`duplicado_aceptado`). Confirmado con el usuario (2026-09-28): sumar todas las
+apariciones sin filtrar hubiera inflado la cantidad a cotizar de un pedido de Capataz cargado dos veces
+por error.
+
+**Alcance de esta primera versión** — decisiones tomadas para no sobre-extender la vista:
+- La **Cantidad** que se ve es de solo lectura (la suma de lo pedido en cada solicitud de origen,
+  desglosada al desplegar la fila) — corregirla (ej. redondeo a barra entera) se sigue haciendo en la
+  solicitud individual donde corresponda esa partida puntual.
+- No hay filtro de rubro ni de bloque acá (a propósito, para no repetir toda la UI de una ficha) — solo
+  un buscador de texto por código/descripción (`cotp_f_q`).
+- El detalle desplegable de cada fila ("De dónde viene") lista cada solicitud/bloque de origen con su
+  cantidad y N° de solicitud de Capataz, para poder rastrear de dónde sale el total sin tener que
+  adivinar.
+
 ## 10. Módulo: OT `[DETALLADO]`
 
 Módulo de nav propio (grupo colapsable "🏷️ OT", como Flota/OC/Stock/Proveedores), pedido explícito del

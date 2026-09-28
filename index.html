@@ -430,6 +430,7 @@
     <div class="nav-parent"><span>🧮</span> Cotizaciones <span class="nav-chevron">▾</span></div>
     <div class="nav-children">
       <div class="nav-item" data-sec="cot-lista"><span>📋</span> Solicitudes</div>
+      <div class="nav-item" data-sec="cot-pendientes"><span>🌐</span> Pendientes (todas)</div>
     </div>
   </div>
 
@@ -950,6 +951,37 @@
       <button type="button" class="btn p" id="cot_informe_reparto" style="margin-top:18px">📄 Emitir informe de reparto (.xlsx)</button>
     </div>
   </div>
+</div>
+
+<!-- ============ COTIZACIONES — PENDIENTES (TODAS LAS SOLICITUDES) ============ -->
+<div class="sec" id="s-cot-pendientes">
+  <div class="ptitle">Pendientes (todas las solicitudes)</div>
+  <div class="psub">Junta lo que todavía no está confirmado en NINGUNA solicitud abierta, agrupado por artículo — cotizalo acá una sola vez y se refleja en cada solicitud individual</div>
+
+  <div style="display:flex;gap:24px;flex-wrap:wrap;align-items:flex-end;margin-top:14px">
+    <div class="fg" style="max-width:280px;margin-bottom:0">
+      <input id="cotp_f_q" placeholder="Buscar por código o descripción...">
+    </div>
+    <div>
+      <div class="psub" style="margin:0 0 6px">Tipo de cambio (referencia, no se guarda)</div>
+      <div style="display:flex;align-items:center;gap:6px">
+        <span style="font-size:13px;color:var(--muted)">U$S 1 =</span>
+        <input id="cotp_tipo_cambio" type="text" inputmode="decimal" placeholder="ej: 1450" style="width:110px">
+      </div>
+    </div>
+  </div>
+
+  <div class="psub" style="margin:16px 0 6px">Proveedores invitados a esta sesión de pendientes</div>
+  <div class="fg" style="position:relative;max-width:340px">
+    <input id="cotp_prov_buscar" autocomplete="off" placeholder="Buscar proveedor para invitar...">
+    <div class="ac-box" id="cotp_prov_sug" style="display:none"></div>
+  </div>
+  <div id="cotp_invitados_chips" style="display:flex;flex-wrap:wrap;gap:8px;margin:10px 0 18px"></div>
+
+  <div class="tw" id="cotp-tabla-wrap"></div>
+
+  <div class="psub" style="margin:18px 0 8px">Resumen por proveedor</div>
+  <div id="cotp_resumen_proveedores" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:10px"></div>
 </div>
 
 <!-- ============ OT — DASHBOARD ============ -->
