@@ -842,6 +842,18 @@ que realmente le confirma su proveedor) y el sistema lo recuerda solo de ahí en
 `compras_articulos_grupo` en Proveedores (sección 7.1) — así que la próxima vez que el mismo artículo
 aparezca en cualquier otra solicitud, el largo ya sale precargado en el input.
 
+**N° de solicitud (Capataz) en el encabezado** (pedido del usuario, 2026-09-28): debajo del
+nombre/estado de la ficha se muestra "N° solicitud (Capataz): ..." con los distintos `nro_solicitud`
+(columna `nro_solic` del Excel, ver 9.1) que aparecen entre los ítems de esta solicitud nuestra —
+una solicitud nuestra puede agrupar varias de Capataz (ej. "Varias OT"), así que se listan todas, sin
+los ceros a la izquierda (`formatOTExport()`, reusada tal cual). El usuario también pidió mostrar la
+fecha en que Ingeniería pidió el material "según el Excel", pero confirmó que no está seguro de que el
+export de Capataz traiga esa fecha en ninguna columna (el parseo de 9.1 no lee ninguna) — por ahora la
+única fecha disponible sigue siendo `cot_det_fecha` (cuándo se cargó la solicitud a la app, no
+necesariamente el mismo día que se pidió en Capataz). Si en algún momento se confirma que el Excel sí
+trae una columna de fecha, agregarla es sumarla a `col`/`out.push()` en `parseWorkbookCotizacion()`
+(mismo patrón que el resto de las columnas) y mostrarla acá.
+
 ### 9.2 Cómo se usa
 
 1. **Crear una solicitud**: se le pone un nombre (para poder encontrarla después — ej. "Estructura

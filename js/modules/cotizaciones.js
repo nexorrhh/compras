@@ -345,6 +345,17 @@ function renderHeaderDetalle() {
   if (nombreInput) nombreInput.value = COT_ACTUAL.nombre;
   const fechaEl = document.getElementById('cot_det_fecha');
   if (fechaEl) fechaEl.textContent = fmt(COT_ACTUAL.fecha);
+  // N° de solicitud que ya trae el Excel de Capataz (nro_solic, ver 9.1) — una
+  // solicitud nuestra puede agrupar varias (ej. "Varias OT"), así que se
+  // listan todas las distintas que aparezcan entre los ítems. El Excel de
+  // Capataz no trae ninguna fecha propia del pedido (confirmado con el
+  // usuario, 2026-09-28) — la única fecha disponible sigue siendo
+  // `cot_det_fecha` (cuándo se cargó esta solicitud a la app).
+  const nrosEl = document.getElementById('cot_det_nrosolic');
+  if (nrosEl) {
+    const nros = [...new Set(ITEMS.map(it => it.nro_solicitud).filter(Boolean))].map(formatOTExport).sort();
+    nrosEl.textContent = nros.length ? `N° solicitud (Capataz): ${nros.join(', ')}` : '';
+  }
   const badge = document.getElementById('cot_det_estado_badge');
   if (badge) {
     badge.className = `badge ${COT_ACTUAL.estado === 'ABIERTA' ? 'vigente' : 'comp'}`;
