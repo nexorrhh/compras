@@ -1295,9 +1295,9 @@ function renderTablaComparativa() {
 
     return `<tr${item.confirmado ? ' style="background:var(--row-hover)"' : ''}>
       <td><input type="checkbox" class="cot-check-row" data-id="${item.id}" style="width:auto"></td>
+      <td style="white-space:nowrap;color:var(--muted);font-size:12px">${escAttr(formatOTExport(item.nro_solicitud) || '–')}</td>
       <td>${escAttr(item.cod_articulo)}</td>
       <td>${escAttr(item.descripcion || '')}${item.desc_adicional ? `<div style="font-size:11px;color:var(--muted)">${escAttr(item.desc_adicional)}</div>` : ''}</td>
-      <td style="white-space:nowrap;color:var(--muted);font-size:12px">${escAttr(formatOTExport(item.nro_solicitud) || '–')}</td>
       <td style="text-align:right;white-space:nowrap">${celdaCantidad}</td>
       <td style="text-align:center"><span class="badge ${item.a_comprar ? 'aprobado' : 'rechazado'} cot-toggle-comprar" data-id="${item.id}" style="cursor:pointer">${item.a_comprar ? 'Sí' : 'No'}</span></td>
       ${celdasPrecio}
@@ -1313,7 +1313,7 @@ function renderTablaComparativa() {
   wrap.innerHTML = `<table>
     <thead><tr>
       <th><input type="checkbox" id="cot_check_all" style="width:auto"></th>
-      <th>Código</th><th>Descripción</th><th>N° Sol.</th><th>Cantidad</th><th>Comprar</th>
+      <th>N° Sol.</th><th>Código</th><th>Descripción</th><th>Cantidad</th><th>Comprar</th>
       ${headProv}
       <th>Ganador</th>
     </tr></thead>

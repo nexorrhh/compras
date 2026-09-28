@@ -856,7 +856,8 @@ trae una columna de fecha, agregarla es sumarla a `col`/`out.push()` en `parseWo
 
 **N° de solicitud por fila + filtro** (mismo pedido, 2026-09-28, ampliado): no alcanzaba con verlo
 agrupado en el encabezado — la comparativa suma una columna **"N° Sol."** (sin ceros a la izquierda,
-`formatOTExport()`) al lado de Descripción, y un segundo `<select>` **"Todas las solicitudes
+`formatOTExport()`) como **primera columna, antes de Código** (pedido explícito del usuario), y un
+segundo `<select>` **"Todas las solicitudes
 (Capataz)"** (`cot_f_nrosolic`, `poblarFiltroNroSolic()`) al lado del filtro de rubro — mismo patrón
 exacto que `cot_f_grupo`/`poblarFiltroGrupo()`, para poder aislar dentro de una solicitud nuestra
 ("Varias OT") los ítems de un solo pedido de Capataz. El `value` de cada opción es el `nro_solicitud`
