@@ -4,9 +4,9 @@
 // vida de cada módulo (por ahora solo Flota está implementado;
 // el resto de secciones del CLAUDE.md quedan como placeholder).
 // ============================================================
-import { initSupabaseConnection } from './supabase-client.js';
+import { initSupabaseConnection, SB } from './supabase-client.js';
 import { om, cm } from './utils.js';
-import { getUsuarioActual } from './login.js';
+import { getUsuarioActual, mostrarLogin } from './login.js';
 
 import * as dashboard from './modules/flota-dashboard.js';
 import * as vehiculos from './modules/flota-vehiculos.js';
@@ -160,6 +160,11 @@ function startAutoRefresh() {
 // esta pantalla. Es una restricción de INTERFAZ únicamente, no de
 // acceso a los datos (ver CLAUDE.md sección 12).
 function aplicarPermisos() {
+  // Se resetea primero (todos visibles) antes de restringir de nuevo —
+  // necesario para "Cerrar sesión": si el perfil anterior tenía módulos
+  // ocultos, el siguiente que entre (puede tener más acceso) no debería
+  // arrastrar ese display:none.
+  document.querySelectorAll('.nav-group[id^="nav-"]').forEach(g => { g.style.display = ''; });
   const habilitados = getUsuarioActual()?.modulos_habilitados;
   if (habilitados == null) return null;
   const set = new Set(habilitados);
@@ -173,6 +178,31 @@ function aplicarPermisos() {
   return primerSecDisponible;
 }
 
+// Se corre una vez al conectar y de nuevo cada vez que alguien entra
+// después de "Cerrar sesión" — a diferencia de onConnected(), NO vuelve
+// a inicializar los módulos (evitaría duplicar listeners), solo aplica
+// los permisos del perfil recién elegido y aterriza en su primera
+// sección disponible.
+function entrarComoUsuarioActual() {
+  const u = getUsuarioActual();
+  const nombreEl = document.getElementById('usuario-actual');
+  if (nombreEl) nombreEl.textContent = u?.nombre ? `👤 ${u.nombre.split(',')[0]}` : '';
+  const primerDisponible = aplicarPermisos();
+  go(primerDisponible || 'dash');
+}
+
+// "Cerrar sesión" (pedido del usuario, 2026-09-28) — vuelve a mostrar la
+// grilla de perfiles (mismo `mostrarLogin()` de siempre, se puede llamar
+// de nuevo sin problema) para que otra persona pueda entrar con el suyo
+// sin tener que recargar la página entera.
+function cerrarSesion() {
+  document.getElementById('app').style.display = 'none';
+  mostrarLogin(SB, () => {
+    document.getElementById('app').style.display = 'block';
+    entrarComoUsuarioActual();
+  });
+}
+
 async function onConnected() {
   [...new Set(Object.values(MODULES))].forEach(m => m.init?.());
   wireNav();
@@ -180,8 +210,8 @@ async function onConnected() {
   initTheme();
   startClock();
   startAutoRefresh();
-  const primerDisponible = aplicarPermisos();
-  go(primerDisponible || 'dash');
+  document.getElementById('logout-btn')?.addEventListener('click', cerrarSesion);
+  entrarComoUsuarioActual();
 }
 
 initSupabaseConnection(onConnected);

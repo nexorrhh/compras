@@ -1584,18 +1584,37 @@ tabla): `modulos_habilitados jsonb`.
 - **"🚫 Desactivar" / "✅ Reactivar"** cambia `compras_usuarios.activo` (columna que ya existía) — un
   perfil inactivo deja de aparecer en la grilla de perfiles del login (`js/login.js` ya filtraba por
   `activo=true`) sin borrar nada de lo que esa persona haya cargado antes.
+- **"🗑️ Eliminar"** (pedido explícito del usuario, 2026-09-28) borra la fila de `compras_usuarios` para
+  siempre — a diferencia de Desactivar, no se puede deshacer. No hace falta tocar ninguna otra tabla al
+  borrar: el nombre queda como texto libre copiado en otros lados (ej.
+  `compras_notas_pedido.revisado_por`), no hay ninguna FK que dependa de este perfil. Bloqueado a mano
+  para el perfil con el que se está logueado en el momento (`getUsuarioActual()`), para no poder
+  borrarse a uno mismo en medio de la sesión.
 
 ### 12.4 Aplicación del permiso — `js/main.js`
 
-`aplicarPermisos()` corre una sola vez, justo después de loguearse (dentro de `onConnected()`): si
-`getUsuarioActual().modulos_habilitados` es `null`, no hace nada (admin, ve todo — ni siquiera recorre
-el nav). Si es un array, oculta (`display:none`) cada `.nav-group` cuyo `id` no esté en la lista, y
-devuelve el `data-default-sec` del primer grupo permitido — necesario porque la pantalla de arranque de
-siempre (`dash`, el Dashboard de Flota) vive dentro del grupo Flota: si a ese perfil no le tocó Flota,
-aterrizar ahí mostraría igual el contenido de un módulo que se supone no debería ver. Es una sola
-pasada al entrar, no un guard en cada `go()` — como el nav ya queda oculto, no hay manera de navegar ahí
+`aplicarPermisos()` resetea primero todos los `.nav-group` a visibles y recién ahí, si
+`getUsuarioActual().modulos_habilitados` no es `null`, oculta (`display:none`) los que no estén en la
+lista — el reset primero es necesario para "Cerrar sesión" (ver más abajo): si el perfil anterior tenía
+módulos ocultos, el siguiente que entre (puede tener más acceso) no debería arrastrar ese
+`display:none`. Devuelve el `data-default-sec` del primer grupo permitido — necesario porque la
+pantalla de arranque de siempre (`dash`, el Dashboard de Flota) vive dentro del grupo Flota: si a ese
+perfil no le tocó Flota, aterrizar ahí mostraría igual el contenido de un módulo que se supone no
+debería ver. No es un guard en cada `go()` — como el nav ya queda oculto, no hay manera de navegar ahí
 haciendo click; solo se podría forzando la URL/consola, que es exactamente el nivel de "no seguridad
 real" que se confirmó que alcanzaba (ver 12.1).
+
+**"🚪 Cerrar sesión"** (botón en el header, al lado del toggle de tema — pedido explícito del usuario,
+2026-09-28): antes no había forma de que otra persona entrara con su propio perfil sin recargar la
+página entera. `cerrarSesion()` en `js/main.js` oculta `#app` y vuelve a llamar a `mostrarLogin()` (el
+mismo de siempre, se puede invocar de nuevo sin problema — cada llamada vuelve a pintar la grilla de
+perfiles con datos frescos de `compras_usuarios`); al elegir un perfil y confirmar el PIN, se vuelve a
+mostrar `#app` y se corre `entrarComoUsuarioActual()` — la parte de `onConnected()` que se puede
+repetir en cada login (aplicar permisos + aterrizar en la primera sección disponible), separada a
+propósito de la inicialización de módulos/nav (`init()`, `wireNav()`, etc.), que solo debe correr una
+vez por carga de página — repetirla en cada login duplicaría los event listeners de toda la app. El
+header también muestra quién está logueado (`#usuario-actual`, "👤 Apellido") para que quede claro con
+qué perfil se está viendo el tablero antes de decidir cerrar sesión.
 
 ## 13. Notas específicas de entorno
 

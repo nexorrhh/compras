@@ -20,6 +20,7 @@
 // ============================================================
 import { SB } from '../supabase-client.js';
 import { toast, om, cm, escAttr, MODULOS_APP } from '../utils.js';
+import { getUsuarioActual } from '../login.js';
 
 let USUARIOS = [];
 let EDITANDO_ID = null; // null = alta nueva; si no, solo se editan los módulos (ver abrirModalUsuario)
@@ -48,6 +49,7 @@ function renderTablaUsuarios() {
       <td style="white-space:nowrap">
         <button type="button" class="bsm param-editar" data-id="${u.id}">✏️ Módulos</button>
         <button type="button" class="bsm param-toggle-activo" data-id="${u.id}">${u.activo ? '🚫 Desactivar' : '✅ Reactivar'}</button>
+        <button type="button" class="bsm d param-eliminar" data-id="${u.id}" title="Borra el perfil para siempre — si preferís que deje de poder entrar sin perder el registro, usá Desactivar">🗑️ Eliminar</button>
       </td>
     </tr>`).join('') || `<tr><td colspan="5" style="text-align:center;padding:18px;color:var(--muted)">Sin perfiles todavía</td></tr>`;
 }
@@ -108,6 +110,23 @@ async function guardarUsuario() {
   renderTablaUsuarios();
 }
 
+// Borrado permanente (a diferencia de Desactivar) — pedido explícito
+// del usuario, 2026-09-28. No toca ninguna otra tabla: el nombre queda
+// como texto libre copiado en otros lados (ej. compras_notas_pedido.
+// revisado_por), así que borrar el perfil no rompe ni desprolija nada
+// de lo que esa persona ya haya cargado antes.
+async function eliminarUsuario(usuarioId) {
+  const u = USUARIOS.find(x => x.id === usuarioId);
+  if (!u) return;
+  if (usuarioId === getUsuarioActual()?.id) { toast('No podés eliminar el perfil con el que estás logueado ahora', 'er'); return; }
+  if (!confirm(`¿Eliminar el perfil de "${u.nombre}" para siempre? No se puede deshacer.\n\nSi preferís que deje de poder entrar sin perder el registro, cancelá esto y usá "Desactivar" en su lugar.`)) return;
+  const { error } = await SB.from('compras_usuarios').delete().eq('id', usuarioId);
+  if (error) { toast(error.message, 'er'); return; }
+  USUARIOS = USUARIOS.filter(x => x.id !== usuarioId);
+  toast(`✓ Perfil de "${u.nombre}" eliminado`);
+  renderTablaUsuarios();
+}
+
 async function toggleActivo(usuarioId) {
   const u = USUARIOS.find(x => x.id === usuarioId);
   if (!u) return;
@@ -134,5 +153,7 @@ export function init() {
     if (editar) { abrirModalUsuario(editar.dataset.id); return; }
     const toggle = e.target.closest('.param-toggle-activo');
     if (toggle) { toggleActivo(toggle.dataset.id); return; }
+    const eliminar = e.target.closest('.param-eliminar');
+    if (eliminar) { eliminarUsuario(eliminar.dataset.id); return; }
   });
 }
