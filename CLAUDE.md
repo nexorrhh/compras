@@ -1141,6 +1141,17 @@ deje aceptarlo". El botón "✅ Aceptar de todas formas" de cada fila del tab Du
 `sql/017_cotizaciones_duplicado_aceptado.sql`) — desde ese momento el ítem vuelve a contar en su bloque
 real como cualquier otro, para siempre (no se resetea solo si la otra solicitud se cierra después).
 
+**"🔁 Quedarme con este" — consolidar en una sola cotización final** (pedido explícito del usuario,
+2026-09-29): el caso real es tener el mismo artículo repartido entre esta solicitud y otra(s) más
+vieja(s) y querer terminar con **una sola** cotización viva para ese artículo — hasta acá eso eran dos
+pasos manuales (aceptar acá + ir a la otra solicitud a buscar ese mismo ítem y marcarlo "No comprar" a
+mano). El botón `aceptarYDescartarEnOtras()`, al lado de "✅ Aceptar de todas formas", hace las dos
+partes de una: acepta el duplicado en ESTA solicitud (mismo `duplicado_aceptado = true` de siempre) y
+además le pone `a_comprar = false` directo en la base al ítem equivalente (mismo `cod_articulo` +
+`nro_solicitud`) en cada una de las otras solicitudes listadas en "También cargada en" — sin tener que
+abrirlas. Si el mismo `nro_solicitud` estaba repartido en más de una solicitud vieja a la vez (ver la
+columna "COT, URG" en la captura del usuario), se descarta en todas de una.
+
 ### 9.3 Modelo de datos — `sql/013_cotizaciones.sql` + `sql/014_cotizaciones_bloques.sql` + `sql/015_cotizaciones_confirmado.sql` + `sql/016_cotizaciones_condicion_pago.sql` + `sql/017_cotizaciones_duplicado_aceptado.sql` + `sql/018_articulos_largo_barra.sql`
 
 Cinco tablas (ver `sql/schema.sql` para el estado final), sin RLS (mismo criterio que el resto de

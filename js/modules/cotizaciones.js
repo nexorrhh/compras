@@ -1164,7 +1164,10 @@ function renderTablaDuplicados(wrap) {
       <td>${escAttr(it.nro_solicitud || '–')}</td>
       <td style="text-align:right;white-space:nowrap">${it.cant_umc != null ? numFmt(it.cant_umc) : '–'} ${escAttr(it.umc || '')}</td>
       <td style="color:var(--yellow)">${otras}</td>
-      <td><button type="button" class="bsm cot-aceptar-duplicado" data-item="${it.id}" title="Excepcional: cotizar/comprar este ítem también acá, a pesar del duplicado">✅ Aceptar de todas formas</button></td>
+      <td style="white-space:nowrap">
+        <button type="button" class="bsm cot-aceptar-duplicado" data-item="${it.id}" title="Excepcional: cotizar/comprar este ítem también acá, a pesar del duplicado">✅ Aceptar de todas formas</button>
+        <button type="button" class="bsm cot-quedarme-aca" data-item="${it.id}" title="Acepta este ítem acá Y lo marca 'No comprar' en la otra solicitud — para quedarte con una sola cotización final">🔁 Quedarme con este</button>
+      </td>
     </tr>`;
   }).join('');
   wrap.innerHTML = `<table>
@@ -1437,6 +1440,46 @@ async function aceptarDuplicado(itemId) {
   renderResumenProveedores();
 }
 
+// Caso real del usuario (2026-09-29): tiene el mismo artículo repartido
+// entre esta solicitud y otra(s) más vieja(s), y quiere quedarse con UNA
+// sola cotización final — hasta ahora eso significaba aceptar acá
+// (aceptarDuplicado()) y DESPUÉS ir a mano a cada otra solicitud a
+// buscar ese mismo ítem y marcarlo "No comprar", solicitud por
+// solicitud. Este botón hace las dos partes de una: acepta acá (mismo
+// efecto que el botón de siempre) y le pone `a_comprar = false` al
+// ítem equivalente (mismo cod_articulo + nro_solicitud) en cada una de
+// las otras solicitudes donde aparece — no hace falta abrirlas.
+async function aceptarYDescartarEnOtras(itemId) {
+  const item = ITEMS.find(i => i.id === itemId);
+  if (!item) return;
+  const otras = DUPLICADOS.get(claveDuplicado(item)) || [];
+  const nombres = otras.map(o => o.nombre).join(', ') || 'la otra solicitud';
+  const ok = confirm(`Vas a quedarte con este ítem ACÁ y marcarlo "No comprar" en: ${nombres}.\n\n¿Confirmás?`);
+  if (!ok) return;
+
+  const { error: e1 } = await SB.from('compras_cotizaciones_items').update({ duplicado_aceptado: true }).eq('id', itemId);
+  if (e1) { toast(e1.message, 'er'); return; }
+  item.duplicado_aceptado = true;
+
+  let totalDescartados = 0;
+  for (const otra of otras) {
+    const { data, error } = await SB.from('compras_cotizaciones_items')
+      .update({ a_comprar: false })
+      .eq('cotizacion_id', otra.id)
+      .eq('cod_articulo', item.cod_articulo)
+      .eq('nro_solicitud', item.nro_solicitud)
+      .select('id');
+    if (error) { toast(error.message, 'er'); continue; }
+    totalDescartados += (data || []).length;
+  }
+
+  toast(`✓ "${item.cod_articulo}" queda acá — marcado "No comprar" en ${totalDescartados} ítem${totalDescartados === 1 ? '' : 's'} de ${nombres}`);
+  poblarTabsBloque();
+  renderInvitados();
+  renderTablaComparativa();
+  renderResumenProveedores();
+}
+
 // Cierra la decisión de compra a este proveedor: los ítems que ganó en
 // este bloque (los que todavía no estaban confirmados) pasan a
 // `confirmado = true` y se ocultan de la comparativa. No depende de que
@@ -1632,6 +1675,9 @@ function initDelegacionDetalle() {
 
     const aceptarDupBtn = e.target.closest('.cot-aceptar-duplicado');
     if (aceptarDupBtn) { aceptarDuplicado(aceptarDupBtn.dataset.item); return; }
+
+    const quedarmeBtn = e.target.closest('.cot-quedarme-aca');
+    if (quedarmeBtn) { aceptarYDescartarEnOtras(quedarmeBtn.dataset.item); return; }
 
     const ajustarBarraBtn = e.target.closest('.cot-ajustar-barra');
     if (ajustarBarraBtn) {
