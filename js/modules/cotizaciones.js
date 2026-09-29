@@ -247,6 +247,102 @@ async function buscarDuplicadosEntreSolicitudes(items, cotizacionActual) {
   return resultado;
 }
 
+// Junta, para cada nro_solicitud duplicado detectado, el/los ítem(s)
+// VIEJO(s) que ya tienen precios cargados — son los candidatos a migrar
+// al archivo que se está por importar (ver migrarPreciosDesdeSolicitudesViejas()).
+// Filtra por a_comprar=true/confirmado=false (mismo criterio de "pendiente
+// activo" que buscarDuplicadosEntreSolicitudes()) para no traer precios de
+// algo que ya se compró o ya se descartó del todo.
+async function buscarPreciosParaMigrar(duplicados) {
+  const vacio = { porClave: new Map() };
+  if (!duplicados.size) return vacio;
+  const cotIds = [...new Set([...duplicados.values()].flatMap(cots => cots.map(c => c.id)))];
+  const nros = [...duplicados.keys()];
+  const { data: oldItems, error: e1 } = await fetchAll(() =>
+    SB.from('compras_cotizaciones_items').select('id,cotizacion_id,cod_articulo,nro_solicitud')
+      .in('cotizacion_id', cotIds).in('nro_solicitud', nros).eq('a_comprar', true).eq('confirmado', false)
+  );
+  if (e1 || !oldItems?.length) return vacio;
+
+  const oldItemIds = oldItems.map(it => it.id);
+  const { data: precios, error: e2 } = await fetchAll(() => SB.from('compras_cotizaciones_precios').select('*').in('item_id', oldItemIds));
+  if (e2) return vacio;
+  const preciosPorItem = new Map();
+  (precios || []).forEach(p => {
+    if (!preciosPorItem.has(p.item_id)) preciosPorItem.set(p.item_id, []);
+    preciosPorItem.get(p.item_id).push(p);
+  });
+
+  // clave "nro_solicitud|cod_articulo" -> {oldItemId, cotizacionId, precios}
+  // — si el mismo artículo apareciera en más de una solicitud vieja, se usa
+  // la primera que se encuentre (caso raro, no vale la pena resolverlo mejor).
+  const porClave = new Map();
+  oldItems.forEach(it => {
+    const lista = preciosPorItem.get(it.id);
+    if (!lista?.length) return;
+    const clave = `${it.nro_solicitud}|${it.cod_articulo}`;
+    if (!porClave.has(clave)) porClave.set(clave, { oldItemId: it.id, cotizacionId: it.cotizacion_id, precios: lista });
+  });
+  return { porClave };
+}
+
+// Migra los precios ya cargados (pedido explícito del usuario, 2026-09-29:
+// "no tengo la solicitud de compra hecha... podemos hacer que lo traslade a
+// este nuevo pedido") — copia los precios por proveedor al ítem NUEVO
+// equivalente (mismo nro_solicitud + cod_articulo), invita a esos mismos
+// proveedores en el bloque General de la solicitud nueva (si no, no
+// aparecerían como columna) y sugiere el ganador más barato solo (no se
+// arrastra un `ganador_manual` viejo, se recalcula). El ítem VIEJO pasa a
+// `a_comprar = false` — ya no hace falta seguir cotizándolo ahí, quedó
+// reemplazado por este.
+async function migrarPreciosDesdeSolicitudesViejas(cotId, nuevosItems, porClave) {
+  const nuevoPorClave = new Map(nuevosItems.map(it => [`${it.nro_solicitud}|${it.cod_articulo}`, it.id]));
+  const filasPrecio = [];
+  const oldItemIds = [];
+  const cotizacionesAfectadas = new Set();
+  const ganadorPorItem = new Map();
+  const proveedoresAInvitar = new Set();
+
+  for (const [clave, { oldItemId, cotizacionId, precios }] of porClave) {
+    const nuevoId = nuevoPorClave.get(clave);
+    if (!nuevoId) continue;
+    precios.forEach(p => {
+      filasPrecio.push({ item_id: nuevoId, proveedor_id: p.proveedor_id, precio_unitario: p.precio_unitario, moneda: p.moneda });
+      proveedoresAInvitar.add(p.proveedor_id);
+    });
+    oldItemIds.push(oldItemId);
+    cotizacionesAfectadas.add(cotizacionId);
+    if (new Set(precios.map(p => p.moneda)).size === 1) {
+      let mejor = precios[0];
+      for (const p of precios) if (Number(p.precio_unitario) < Number(mejor.precio_unitario)) mejor = p;
+      ganadorPorItem.set(nuevoId, mejor.proveedor_id);
+    }
+  }
+  if (!filasPrecio.length) return { migrados: 0, cotizacionesAfectadas: new Set() };
+
+  for (let i = 0; i < filasPrecio.length; i += 500) {
+    const { error } = await SB.from('compras_cotizaciones_precios').insert(filasPrecio.slice(i, i + 500));
+    if (error) toast('Error migrando precios: ' + error.message, 'er');
+  }
+
+  const invitaciones = [...proveedoresAInvitar].map(proveedor_id => ({ cotizacion_id: cotId, proveedor_id, bloque: '' }));
+  if (invitaciones.length) {
+    const { error } = await SB.from('compras_cotizaciones_proveedores').upsert(invitaciones, { onConflict: 'cotizacion_id,proveedor_id,bloque', ignoreDuplicates: true });
+    if (error) toast(error.message, 'er');
+  }
+
+  for (const [itemId, proveedorId] of ganadorPorItem) {
+    await SB.from('compras_cotizaciones_items').update({ ganador_proveedor_id: proveedorId, ganador_manual: false }).eq('id', itemId);
+  }
+
+  for (let i = 0; i < oldItemIds.length; i += 100) {
+    const { error } = await SB.from('compras_cotizaciones_items').update({ a_comprar: false }).in('id', oldItemIds.slice(i, i + 100));
+    if (error) toast(error.message, 'er');
+  }
+
+  return { migrados: new Set(filasPrecio.map(f => f.item_id)).size, cotizacionesAfectadas };
+}
+
 async function onArchivoCotizacion(file) {
   const nombre = (document.getElementById('cot_nombre_nueva')?.value || '').trim();
   if (!nombre) { toast('Ponele un nombre a la solicitud antes de elegir el archivo', 'er'); return; }
@@ -264,13 +360,18 @@ async function onArchivoCotizacion(file) {
   const articulos = new Set(filas.map(f => f.cod_articulo)).size;
   let msg = `Se leyeron ${filas.length} filas (${articulos} artículos).\n\nSe va a crear la solicitud "${nombre}" con estos ítems.`;
 
-  const itemsACotizar = filas.filter(f => f.a_comprar).map(f => ({ nro_solicitud: f.nro_solicitud }));
+  // Todas las filas recién parseadas están implícitamente "a comprar"
+  // (el default de la columna, todavía no se insertaron) — no hay que
+  // filtrar por a_comprar acá como si ya existiera, a diferencia de
+  // ITEMS ya cargados en otras partes del módulo.
+  const itemsACotizar = filas.map(f => ({ nro_solicitud: f.nro_solicitud }));
   const duplicados = await buscarDuplicadosEntreSolicitudes(itemsACotizar, null);
+  const { porClave: migrarPorClave } = await buscarPreciosParaMigrar(duplicados);
   if (duplicados.size) {
     // Cuántas filas de ESTE archivo caen bajo cada nro_solicitud duplicado, para que el mensaje diga
     // "8 artículos" en vez de solo el número de solicitud pelado.
     const porNumero = new Map();
-    filas.forEach(f => { if (f.a_comprar && duplicados.has(f.nro_solicitud)) porNumero.set(f.nro_solicitud, (porNumero.get(f.nro_solicitud) || 0) + 1); });
+    filas.forEach(f => { if (duplicados.has(f.nro_solicitud)) porNumero.set(f.nro_solicitud, (porNumero.get(f.nro_solicitud) || 0) + 1); });
     const detalle = [...duplicados.entries()].slice(0, 15)
       .map(([nro, cots]) => {
         const n = porNumero.get(nro) || 0;
@@ -278,6 +379,9 @@ async function onArchivoCotizacion(file) {
       }).join('\n');
     const extra = duplicados.size > 15 ? `\n...y ${duplicados.size - 15} solicitud${duplicados.size - 15 === 1 ? '' : 'es'} más` : '';
     msg += `\n\n⚠️ ${duplicados.size} solicitud${duplicados.size === 1 ? '' : 'es'} de Capataz de este archivo ya está${duplicados.size === 1 ? '' : 'n'} cargada${duplicados.size === 1 ? '' : 's'} en otra solicitud abierta:\n${detalle}${extra}`;
+  }
+  if (migrarPorClave.size) {
+    msg += `\n\n✅ ${migrarPorClave.size} de esos artículos ya tenían precios cargados en la solicitud vieja — se van a traer acá (el ganador se recalcula solo, al más barato) y esa solicitud vieja va a dejar de tenerlos pendientes (se cierra sola si no le queda nada más).`;
   }
   msg += '\n\n¿Continuar?';
   const ok = confirm(msg);
@@ -288,15 +392,28 @@ async function onArchivoCotizacion(file) {
 
   const filasConId = filas.map(f => ({ ...f, cotizacion_id: cot.id }));
   const chunkSize = 500;
+  const nuevosItems = [];
   for (let i = 0; i < filasConId.length; i += chunkSize) {
-    const { error } = await SB.from('compras_cotizaciones_items').insert(filasConId.slice(i, i + chunkSize));
+    const { data, error } = await SB.from('compras_cotizaciones_items').insert(filasConId.slice(i, i + chunkSize)).select('id,nro_solicitud,cod_articulo');
     if (error) { toast('Error insertando ítems: ' + error.message, 'er'); return; }
+    nuevosItems.push(...(data || []));
+  }
+
+  let migrados = 0;
+  let cotizacionesAfectadas = new Set();
+  if (migrarPorClave.size && nuevosItems.length) {
+    const res = await migrarPreciosDesdeSolicitudesViejas(cot.id, nuevosItems, migrarPorClave);
+    migrados = res.migrados;
+    cotizacionesAfectadas = res.cotizacionesAfectadas;
   }
 
   COTIZACIONES.unshift(cot);
   ITEMS_RESUMEN = ITEMS_RESUMEN.concat(filasConId.map(() => ({ cotizacion_id: cot.id, a_comprar: true })));
   document.getElementById('cot_nombre_nueva').value = '';
-  toast(`✓ Solicitud "${nombre}" creada con ${filas.length} ítems`);
+  toast(`✓ Solicitud "${nombre}" creada con ${filas.length} ítems` + (migrados ? ` — ${migrados} con precios migrados` : ''));
+
+  for (const cotIdAfectada of cotizacionesAfectadas) await verificarCierreRemoto(cotIdAfectada);
+
   await abrirDetalle(cot.id);
 }
 

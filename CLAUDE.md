@@ -1119,7 +1119,27 @@ archivo legítimo entero por una sola solicitud de Capataz repetida; mejor avisa
 1. **Al cargar un archivo nuevo** (`onArchivoCotizacion()`): el `confirm()` de siempre suma un párrafo
    listando qué números de solicitud del archivo ya están cargados en qué otra solicitud, antes de crear
    la solicitud — mismo criterio que el aviso de "OC desaparecidas" en Órdenes de Compra (ver 5.2),
-   avisar antes de un cambio en vez de un chequeo silencioso.
+   avisar antes de un cambio en vez de un chequeo silencioso. **Bug real corregido (2026-09-29):** este
+   chequeo estaba roto desde siempre — filtraba las filas recién parseadas por `f.a_comprar` antes de
+   compararlas, pero una fila recién leída del Excel todavía no tiene ese campo seteado (es un default
+   que solo existe después de insertarse), así que el filtro descartaba TODO y el aviso nunca disparaba.
+   Se sacó ese filtro (todas las filas nuevas están implícitamente "a comprar").
+
+   **Migrar precios ya cargados en la solicitud vieja** (pedido explícito del usuario, 2026-09-29: "no
+   tengo la solicitud de compra hecha... podemos hacer que lo traslade a este nuevo pedido" — caso real:
+   un tornillo en "Pañol" ya tenía precio cargado a cada proveedor pero todavía sin comprar, y quería que
+   al re-cargar un Excel más actualizado ese trabajo no se perdiera). `buscarPreciosParaMigrar()` busca,
+   entre los duplicados detectados, cuáles ya tienen precios cargados (mismo criterio de "pendiente
+   activo" — `a_comprar=true`/`confirmado=false` — que el resto del sistema de duplicados) y el `confirm()`
+   suma un aviso aparte listando cuántos se van a traer. Al confirmar, `migrarPreciosDesdeSolicitudesViejas()`:
+   copia esos precios al ítem nuevo equivalente (mismo `nro_solicitud` + `cod_articulo`), invita a esos
+   mismos proveedores en el bloque General de la solicitud nueva (si no, no aparecerían como columna) y
+   sugiere el ganador más barato solo — **no** se migra un `ganador_manual` viejo, se recalcula siempre
+   (decisión tomada con el usuario: más seguro que arrastrar una elección que puede ya no aplicar). El
+   ítem viejo pasa a `a_comprar = false` en su solicitud original — ya no hace falta seguir cotizándolo
+   ahí. Si esa solicitud vieja se queda sin nada más pendiente, se cierra sola
+   (`verificarCierreRemoto()`, la misma función que ya usa la vista Pendientes — reusada tal cual, no
+   duplicada).
 2. **Dentro de una solicitud ya abierta** (`abrirDetalle()`, guardado en `DUPLICADOS`): un ítem
    duplicado activo (`esDuplicadoActivo()`) **no cuenta en su bloque real** (General/Pañol/Despacho) ni
    en su comparativa/resumen/informe — pedido explícito del usuario tras la primera versión (que solo
