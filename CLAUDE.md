@@ -1082,6 +1082,14 @@ del workbook pero se mueve al frente (`wb.SheetNames.unshift(wb.SheetNames.pop()
 primera pestaña que se ve al abrir el archivo — es la que le importa a quien lo recibe desde afuera de
 Compras, las hojas de detalle quedan atrás para quien arma la OC.
 
+**Columna "Cantidad" en el Consolidado** (pedido explícito del usuario, 2026-09-30): además de cuánto se
+le paga a cada proveedor, quería ver cuánto se le compró de verdad (en KGS sobre todo, el rubro de la
+empresa es mayormente por peso) sin abrir las hojas de detalle. Se agregó entre "Monto" y "OT" —
+`acumularConsolidado()` ahora también suma por unidad real (KGS/LTS/UNI..., sin convertir, mismo
+criterio de siempre — ver 9.2 punto 8) y `chipsCantidadConsolidado()` la muestra igual que el "Resumen
+por proveedor" en pantalla ("2.399,76 KGS" o "2.399,76 KGS · 80 LTS" si el proveedor vendió en más de
+una unidad), con KGS siempre primero si está presente.
+
 **Seguimiento por OT:** vive en su propio módulo (**OT**, ver sección 10) y no acá — nació como una
 sub-vista de Cotizaciones (2026-09-02) pero el usuario pidió pasarlo a un módulo de nav propio con
 tarjetas por OT y gráficos de detalle en vez de una tabla más. El dato de OT (`n_ot`, columna 9.1) sigue

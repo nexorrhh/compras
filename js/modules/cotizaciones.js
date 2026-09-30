@@ -724,12 +724,27 @@ function emitirInformeReparto() {
   // del módulo, ver 9.2 punto 7), con todas las OT que cubre juntas en
   // una sola celda separadas por coma en vez de una fila por OT.
   const consolidadoMap = new Map();
-  const acumularConsolidado = (inv, ot, moneda, monto) => {
+  // `cantidades` suma por unidad real (KGS/LTS/UNI...), sin convertir —
+  // mismo criterio de siempre (ver 9.2 punto 8) — para poder mostrar en
+  // el Consolidado cuánto se le compró de verdad a cada proveedor, no
+  // solo el monto (pedido explícito del usuario, 2026-09-30).
+  const acumularConsolidado = (inv, ot, moneda, monto, cantUmc, umc) => {
     const clave = `${inv.proveedor_id}|${moneda}`;
+    const unidad = umc || '?';
     const actual = consolidadoMap.get(clave);
-    if (actual) { actual.monto += monto; actual.ots.add(ot); }
-    else consolidadoMap.set(clave, { proveedor: inv.nombre, ots: new Set([ot]), moneda, monto, condicionPago: inv.condicion_pago || '' });
+    if (actual) {
+      actual.monto += monto;
+      actual.ots.add(ot);
+      actual.cantidades.set(unidad, (actual.cantidades.get(unidad) || 0) + cantUmc);
+    } else {
+      consolidadoMap.set(clave, { proveedor: inv.nombre, ots: new Set([ot]), moneda, monto, condicionPago: inv.condicion_pago || '', cantidades: new Map([[unidad, cantUmc]]) });
+    }
   };
+  // KGS primero si está presente (es la unidad de referencia del rubro,
+  // mismo criterio que chipsUnidades() del módulo OT), el resto alfabético.
+  const chipsCantidadConsolidado = cantidades => [...cantidades.entries()]
+    .sort(([ua], [ub]) => (ua === 'KGS' ? -1 : ub === 'KGS' ? 1 : ua.localeCompare(ub, 'es')))
+    .map(([u, c]) => `${numFmt(c)} ${u}`).join(' · ') || '–';
 
   invitadosVisibles().forEach(inv => {
     const ganados = itemsBloque
@@ -752,7 +767,7 @@ function emitirInformeReparto() {
       // completa del cálculo interno, ilegible en el Excel real).
       if (subtotalExacto != null) {
         totalesPorMoneda[moneda || 'ARS'] = (totalesPorMoneda[moneda || 'ARS'] || 0) + subtotalExacto;
-        acumularConsolidado(inv, formatOTExport(it.n_ot) || '(Sin OT)', moneda || 'ARS', subtotalExacto);
+        acumularConsolidado(inv, formatOTExport(it.n_ot) || '(Sin OT)', moneda || 'ARS', subtotalExacto, Number(it.cant_umc) || 0, it.umc);
       }
       const precio = precioExacto != null ? Math.round(precioExacto * 100) / 100 : null;
       const subtotal = subtotalExacto != null ? Math.round(subtotalExacto * 100) / 100 : null;
@@ -789,8 +804,8 @@ function emitirInformeReparto() {
   if (consolidadoMap.size) {
     const filasConsolidado = [...consolidadoMap.values()]
       .sort((a, b) => a.proveedor.localeCompare(b.proveedor, 'es'))
-      .map(c => [c.proveedor, c.moneda, `$ ${numFmt(Math.round(c.monto * 100) / 100)}`, [...c.ots].sort((a, b) => a.localeCompare(b, 'es')).join(', '), c.condicionPago || 'Sin definir']);
-    const encabezadoCons = ['Proveedor', '$', 'Monto', 'OT', 'Cond.'];
+      .map(c => [c.proveedor, c.moneda, `$ ${numFmt(Math.round(c.monto * 100) / 100)}`, chipsCantidadConsolidado(c.cantidades), [...c.ots].sort((a, b) => a.localeCompare(b, 'es')).join(', '), c.condicionPago || 'Sin definir']);
+    const encabezadoCons = ['Proveedor', '$', 'Monto', 'Cantidad', 'OT', 'Cond.'];
     const wsCons = XLSX.utils.aoa_to_sheet([encabezadoCons, ...filasConsolidado]);
     XLSX.utils.book_append_sheet(wb, wsCons, nombreHojaUnico('Consolidado'));
     wb.SheetNames.unshift(wb.SheetNames.pop());
