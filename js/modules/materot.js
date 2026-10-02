@@ -501,29 +501,42 @@ async function guardarFactorKg(cod, ume, valorTxt) {
 // Agrupar OT — administración de la relación hija → madre
 // ------------------------------------------------------------
 function otsDisponiblesSelect() {
-  const madres = mapaMadres();
-  const todas = [...new Set(ITEMS.map(it => (it.n_ot || '').trim()).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'es'));
-  return { todas, madres };
+  const madres = mapaMadres(); // hija -> madre
+  const madresSet = new Set(GRUPOS.map(g => g.n_ot_madre)); // OT que ya son madre de alguna hija
+  const todas = [...new Set(ITEMS.map(it => (it.n_ot || '').trim()).filter(Boolean))]
+    .filter(ot => !esArchivada(ot)) // una OT archivada no se vuelve a tocar acá
+    .sort((a, b) => a.localeCompare(b, 'es'));
+  return { todas, madres, madresSet };
 }
 
 let MRG_MADRE_SEL = ''; // OT madre elegida en "Agrupar OT" — se mantiene entre renders
 
-// Una OT que ya es hija de otra no puede volver a elegirse como hija NI
-// como madre de otra (evita cadenas hija→hija→madre, que dejarían
-// artículos "a mitad de camino" sin llegar nunca a la madre real).
-function otsRaiz() {
+// Candidatas para "OT madre": cualquier OT no archivada que todavía no
+// sea hija de otra (una OT que ya tiene madre no puede tener una
+// segunda) — SÍ puede ya ser madre de otras hijas, elegirla de nuevo es
+// cómo se le suman más adicionales.
+function otsCandidatasMadre() {
   const { todas, madres } = otsDisponiblesSelect();
   return todas.filter(ot => !madres.has(ot));
 }
 
+// Candidatas para tildar como "adicional" de la madre elegida: además de
+// no ser ya hija de otra, tampoco puede ser YA madre de sus propias
+// hijas (evita cadenas hija→hija→madre — una OT no puede tener 2 madres
+// ni ser a la vez madre y adicional de otra) ni ser la madre elegida.
+function otsCandidatasHija(madreSeleccionada) {
+  const { todas, madres, madresSet } = otsDisponiblesSelect();
+  return todas.filter(ot => ot !== madreSeleccionada && !madres.has(ot) && !madresSet.has(ot));
+}
+
 function renderGrupos() {
-  const raiz = otsRaiz();
+  const candidatasMadre = otsCandidatasMadre();
 
   const selMadre = document.getElementById('mrog_madre');
   if (selMadre) {
-    const opciones = raiz.map(ot => `<option value="${escAttr(ot)}">${escAttr(formatOT(ot))}</option>`).join('');
+    const opciones = candidatasMadre.map(ot => `<option value="${escAttr(ot)}">${escAttr(formatOT(ot))}</option>`).join('');
     selMadre.innerHTML = `<option value="">— Elegí una OT —</option>${opciones}`;
-    selMadre.value = raiz.includes(MRG_MADRE_SEL) ? MRG_MADRE_SEL : '';
+    selMadre.value = candidatasMadre.includes(MRG_MADRE_SEL) ? MRG_MADRE_SEL : '';
     MRG_MADRE_SEL = selMadre.value;
   }
   renderPanelHijas();
@@ -540,9 +553,8 @@ function renderGrupos() {
 }
 
 // Lista de checkboxes con las OT disponibles para ser adicionales de la
-// madre elegida (todas las "raíz" salvo la madre misma) — permite tildar
-// varias de una y agruparlas todas juntas en un solo click, en vez de
-// repetir el flujo OT por OT.
+// madre elegida — permite tildar varias de una y agruparlas todas
+// juntas en un solo click, en vez de repetir el flujo OT por OT.
 function renderPanelHijas() {
   const panel = document.getElementById('mrog_panel_hijas');
   const cont = document.getElementById('mrog_hijas_lista');
@@ -551,7 +563,7 @@ function renderPanelHijas() {
   panel.style.display = '';
 
   const q = (document.getElementById('mrog_f_q')?.value || '').trim().toUpperCase();
-  let candidatas = otsRaiz().filter(ot => ot !== MRG_MADRE_SEL);
+  let candidatas = otsCandidatasHija(MRG_MADRE_SEL);
   if (q) candidatas = candidatas.filter(ot => formatOT(ot).toUpperCase().includes(q));
 
   cont.innerHTML = candidatas.map(ot => `

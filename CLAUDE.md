@@ -1752,9 +1752,18 @@ pedido explícito del usuario tras la primera versión (dos `<select>` sueltos, 
 para la madre, que solo permitía agrupar de a una por vez y además confundía: al abrir la pantalla los
 dos arrancaban mostrando la misma OT por default, sin dejar claro cuál era cuál). El resto del módulo
 (`agruparPorOTMadre()`) suma los ítems de toda OT hija bajo su madre antes de mostrar tarjetas/
-Dashboard — una OT que ya es hija de otra no puede volverse a elegir ni como hija ni como madre de una
-tercera (se filtra de las dos listas, `otsRaiz()`), para no armar cadenas hija→hija→madre que dejarían
-artículos "a mitad de camino" sin llegar nunca a la madre real.
+Dashboard.
+
+Reglas de qué OT aparece en cada lista (`otsCandidatasMadre()`/`otsCandidatasHija()`, pedido explícito
+del usuario tras probar la primera versión, 2026-10-02):
+- Una OT **archivada** no aparece ni como candidata a madre ni como candidata a adicional — ya está
+  cerrada, no tiene sentido seguir agrupándola.
+- Una OT que **ya es hija** de otra no puede volver a elegirse ni como hija de una tercera ni como
+  madre de nadie — "una OT no puede tener 2 madres" (palabras del usuario).
+- Una OT que **ya es madre** de otras hijas tampoco puede tildarse como adicional de una tercera OT —
+  evita que una madre con hijas propias termine, a su vez, "adentro" de otra madre (una cadena
+  hija→hija→madre dejaría artículos a mitad de camino, sin llegar nunca a la madre real). Sí puede
+  seguir eligiéndose como madre las veces que haga falta, para sumarle más adicionales.
 
 ### 13.4 Vistas
 
