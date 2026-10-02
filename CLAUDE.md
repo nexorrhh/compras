@@ -1742,13 +1742,19 @@ sufijo/letra/patrón que distinga una OT adicional de su madre, y cada una tiene
 usuario: **es una relación que solo él conoce** (misma obra, números de OT distintos) y la carga a
 mano — no se puede inferir del archivo.
 
-Por eso existe la sub-vista **Agrupar OT** (`materot-grupos`): dos `<select>` (OT adicional / es
-adicional de OT madre) + botón "Agrupar", guardado en `compras_materot_ot_grupos` (`n_ot_hija` como
-PK, para que cada OT sea adicional de una sola madre). El resto del módulo (`agruparPorOTMadre()` en
-`js/modules/materot.js`) suma los ítems de toda OT hija bajo su madre antes de mostrar tarjetas/
-Dashboard — una OT que ya es hija de otra no puede volverse a elegir como hija de una tercera (se
-filtra del `<select>`), para no armar cadenas hija→hija→madre que compliquen la agrupación sin
-necesidad real.
+Por eso existe la sub-vista **Agrupar OT** (`materot-grupos`): se elige primero la OT madre en un
+`<select>`, y recién ahí aparece una grilla de checkboxes con el resto de las OT disponibles para
+tildar como adicionales de esa madre — de a varias a la vez, con un buscador arriba para ubicarlas
+rápido entre las 142+ OT reales (`renderPanelHijas()`/`actualizarContadorHijas()` en
+`js/modules/materot.js`). El botón "Agrupar seleccionadas (N)" hace un único `upsert` en bloque contra
+`compras_materot_ot_grupos` (`n_ot_hija` como PK, para que cada OT sea adicional de una sola madre) —
+pedido explícito del usuario tras la primera versión (dos `<select>` sueltos, uno para la hija y otro
+para la madre, que solo permitía agrupar de a una por vez y además confundía: al abrir la pantalla los
+dos arrancaban mostrando la misma OT por default, sin dejar claro cuál era cuál). El resto del módulo
+(`agruparPorOTMadre()`) suma los ítems de toda OT hija bajo su madre antes de mostrar tarjetas/
+Dashboard — una OT que ya es hija de otra no puede volverse a elegir ni como hija ni como madre de una
+tercera (se filtra de las dos listas, `otsRaiz()`), para no armar cadenas hija→hija→madre que dejarían
+artículos "a mitad de camino" sin llegar nunca a la madre real.
 
 ### 13.4 Vistas
 

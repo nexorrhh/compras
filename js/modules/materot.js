@@ -506,24 +506,27 @@ function otsDisponiblesSelect() {
   return { todas, madres };
 }
 
-function renderGrupos() {
-  const { todas, madres } = otsDisponiblesSelect();
+let MRG_MADRE_SEL = ''; // OT madre elegida en "Agrupar OT" — se mantiene entre renders
 
-  const selHija = document.getElementById('mrog_hija');
+// Una OT que ya es hija de otra no puede volver a elegirse como hija NI
+// como madre de otra (evita cadenas hija→hija→madre, que dejarían
+// artículos "a mitad de camino" sin llegar nunca a la madre real).
+function otsRaiz() {
+  const { todas, madres } = otsDisponiblesSelect();
+  return todas.filter(ot => !madres.has(ot));
+}
+
+function renderGrupos() {
+  const raiz = otsRaiz();
+
   const selMadre = document.getElementById('mrog_madre');
-  if (selHija && selMadre) {
-    // Una OT que ya es hija de otra no puede volver a elegirse como hija
-    // NI como madre (evita cadenas hija→hija→madre, que dejarían
-    // artículos "a mitad de camino" sin llegar nunca a la madre real) —
-    // mismas opciones disponibles en los dos selects. Arrancan sin nada
-    // elegido (placeholder) para no sugerir una agrupación por default
-    // con el primer valor de la lista (confundía: los dos selects
-    // mostraban la misma OT al abrir la pantalla).
-    const disponibles = todas.filter(ot => !madres.has(ot));
-    const opciones = disponibles.map(ot => `<option value="${escAttr(ot)}">${escAttr(formatOT(ot))}</option>`).join('');
-    selHija.innerHTML = `<option value="">— Elegí una OT —</option>${opciones}`;
+  if (selMadre) {
+    const opciones = raiz.map(ot => `<option value="${escAttr(ot)}">${escAttr(formatOT(ot))}</option>`).join('');
     selMadre.innerHTML = `<option value="">— Elegí una OT —</option>${opciones}`;
+    selMadre.value = raiz.includes(MRG_MADRE_SEL) ? MRG_MADRE_SEL : '';
+    MRG_MADRE_SEL = selMadre.value;
   }
+  renderPanelHijas();
 
   const tbody = document.getElementById('t-mro-grupos');
   if (tbody) {
@@ -536,21 +539,47 @@ function renderGrupos() {
   }
 }
 
+// Lista de checkboxes con las OT disponibles para ser adicionales de la
+// madre elegida (todas las "raíz" salvo la madre misma) — permite tildar
+// varias de una y agruparlas todas juntas en un solo click, en vez de
+// repetir el flujo OT por OT.
+function renderPanelHijas() {
+  const panel = document.getElementById('mrog_panel_hijas');
+  const cont = document.getElementById('mrog_hijas_lista');
+  if (!panel || !cont) return;
+  if (!MRG_MADRE_SEL) { panel.style.display = 'none'; return; }
+  panel.style.display = '';
+
+  const q = (document.getElementById('mrog_f_q')?.value || '').trim().toUpperCase();
+  let candidatas = otsRaiz().filter(ot => ot !== MRG_MADRE_SEL);
+  if (q) candidatas = candidatas.filter(ot => formatOT(ot).toUpperCase().includes(q));
+
+  cont.innerHTML = candidatas.map(ot => `
+    <label style="display:flex;align-items:center;gap:6px;font-size:13px;cursor:pointer">
+      <input type="checkbox" class="mrog-check-hija" value="${escAttr(ot)}" style="width:auto">
+      ${escAttr(formatOT(ot))}
+    </label>`).join('') || '<div style="color:var(--muted);grid-column:1/-1">No hay otras OT disponibles para agrupar</div>';
+  actualizarContadorHijas();
+}
+
+function actualizarContadorHijas() {
+  const n = document.querySelectorAll('.mrog-check-hija:checked').length;
+  const span = document.getElementById('mrog_contador');
+  if (span) span.textContent = n;
+}
+
 async function agruparOT() {
-  const hija = document.getElementById('mrog_hija')?.value;
-  const madre = document.getElementById('mrog_madre')?.value;
-  if (!hija || !madre) { toast('Elegí las dos OT', 'er'); return; }
-  if (hija === madre) { toast('Una OT no puede ser adicional de sí misma', 'er'); return; }
-  const { error } = await SB.from('compras_materot_ot_grupos').upsert({ n_ot_hija: hija, n_ot_madre: madre });
+  const madre = MRG_MADRE_SEL;
+  const hijas = [...document.querySelectorAll('.mrog-check-hija:checked')].map(c => c.value);
+  if (!madre) { toast('Elegí la OT madre', 'er'); return; }
+  if (!hijas.length) { toast('Tildá al menos una OT adicional', 'er'); return; }
+
+  const filas = hijas.map(hija => ({ n_ot_hija: hija, n_ot_madre: madre }));
+  const { error } = await SB.from('compras_materot_ot_grupos').upsert(filas);
   if (error) { toast(error.message, 'er'); return; }
-  toast(`✓ OT ${formatOT(hija)} agrupada bajo ${formatOT(madre)}`);
+  toast(`✓ ${hijas.length} OT agrupada${hijas.length === 1 ? '' : 's'} bajo ${formatOT(madre)}`);
   await cargarTodo();
   renderGrupos();
-  // Si una misma OT madre tiene varias adicionales, conviene no tener
-  // que volver a elegirla cada vez — se mantiene seleccionada después de
-  // agrupar (la OT ya usada como hija desaparece sola de la lista).
-  const selMadre = document.getElementById('mrog_madre');
-  if (selMadre && [...selMadre.options].some(o => o.value === madre)) selMadre.value = madre;
 }
 
 async function quitarGrupo(nOtHija) {
@@ -604,6 +633,14 @@ export function init() {
     e.target.value = '';
   });
 
+  document.getElementById('mrog_madre')?.addEventListener('change', e => {
+    MRG_MADRE_SEL = e.target.value;
+    renderPanelHijas();
+  });
+  document.getElementById('mrog_f_q')?.addEventListener('input', renderPanelHijas);
+  document.getElementById('mrog_hijas_lista')?.addEventListener('change', e => {
+    if (e.target.classList.contains('mrog-check-hija')) actualizarContadorHijas();
+  });
   document.getElementById('mrog_agrupar')?.addEventListener('click', agruparOT);
   document.getElementById('t-mro-grupos')?.addEventListener('click', e => {
     const btn = e.target.closest('.mro-quitar-grupo');
