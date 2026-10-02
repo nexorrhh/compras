@@ -1812,10 +1812,15 @@ Mismo patrón de nav colapsable que el resto ("📐 Materiales OT ▾"):
   DIF, ítems sin OT) + 2 gráficos (donut OK vs. DIF, barras "Top 10 OT por KGS comprados").
 - **Por OT** (`materot-cards`) — grilla de tarjetas (mismo patrón visual `.ot-card` que el módulo OT,
   sección 10.3), una por OT madre (con un badge "+N adicionales" si tiene hijas agrupadas), mostrando
-  KGS comprados/solicitados y la cantidad de ítems con diferencia (DIF) de un vistazo. Acá vive el botón
-  **"📤 Cargar archivo (.xlsx)"**. Click en una tarjeta abre el detalle con sub-pestañas **Resumen**
-  (KPIs + donut OK/DIF) y **Detalle** (tabla artículo por artículo con las 7 cantidades en kg, directo
-  del archivo — ver 13.2 —, y el badge de Estado).
+  KGS comprado/solicitado/**asignado de stock** y la cantidad de ítems con diferencia (DIF) de un
+  vistazo (pedido explícito del usuario, 2026-10-02, que ya tenía comprado y solicitado pero quería ver
+  también lo cubierto con stock sin entrar al detalle). Acá vive el botón **"📤 Cargar archivo (.xlsx)"**.
+  Click en una tarjeta abre el detalle con sub-pestañas **Resumen** (KPIs + donut OK/DIF) y **Detalle**
+  (tabla artículo por artículo con las 7 cantidades en kg, directo del archivo — ver 13.2 —, el badge de
+  Estado y una columna **OT** al principio: cuando la tarjeta agrupa adicionales, mezcla ítems de más de
+  una OT real y esta columna muestra de cuál viene cada fila — con un badge si es de una adicional,
+  texto simple si es de la OT madre misma — pedido explícito del usuario para poder rastrear el origen
+  de cada material sin tener que desarmar la agrupación).
 - **Agrupar OT** (`materot-grupos`) — administración de la relación OT adicional → OT madre (ver 13.3).
 
 ### 13.6 Archivado de OT viejas/cerradas

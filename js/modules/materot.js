@@ -426,6 +426,7 @@ function renderCards() {
       ${info?.nombre_proyecto || info?.cliente ? `<div style="font-size:12px;color:var(--muted);margin-top:-2px" title="${escAttr([info?.nombre_proyecto, info?.cliente].filter(Boolean).join(' — '))}">${escAttr(info?.nombre_proyecto || '')}${info?.nombre_proyecto && info?.cliente ? ' · ' : ''}${escAttr(info?.cliente || '')}</div>` : ''}
       <div style="font-size:13px;margin-top:8px">🛒 Comprado: <strong>${numFmt(st.tot.comprado)} KGS</strong></div>
       <div style="font-size:13px">📋 Solicitado: <strong>${numFmt(st.tot.solic)} KGS</strong></div>
+      <div style="font-size:13px">📦 Asignado de stock: <strong>${numFmt(st.tot.asig)} KGS</strong></div>
       <div style="font-size:12px;color:var(--muted);margin-top:4px">${st.nItems} ítem${st.nItems === 1 ? '' : 's'}</div>
       ${st.nDIF ? `<div style="font-size:12px;color:var(--red);margin-top:6px">⚠️ ${st.nDIF} con diferencia (DIF)</div>` : ''}
       <div style="margin-top:8px">
@@ -518,7 +519,9 @@ function renderDetalle() {
       .sort((a, b) => (a.descripcion || '').localeCompare(b.descripcion || '', 'es'))
       .map(it => {
         const k = kgsItem(it);
+        const otItem = (it.n_ot || '').trim();
         return `<tr>
+          <td>${otItem && otItem !== OT_ACTUAL ? `<span class="badge" title="Ítem de la OT adicional ${escAttr(formatOT(otItem))}, agrupada acá">${escAttr(formatOT(otItem))}</span>` : escAttr(formatOT(otItem) || '–')}</td>
           <td>${escAttr(it.cod_articulo)}</td>
           <td>${escAttr(it.descripcion || '')}</td>
           <td>${escAttr(it.ume || '–')}</td>
@@ -532,7 +535,7 @@ function renderDetalle() {
           <td><span class="badge ${(it.estado || '').toUpperCase() === 'DIF' ? 'rechazado' : 'aprobado'}">${escAttr(it.estado || '–')}</span></td>
         </tr>`;
       }).join('');
-    tbody.innerHTML = filas || `<tr><td colspan="11" style="text-align:center;padding:18px;color:var(--muted)">Sin ítems</td></tr>`;
+    tbody.innerHTML = filas || `<tr><td colspan="12" style="text-align:center;padding:18px;color:var(--muted)">Sin ítems</td></tr>`;
   }
 
   mostrarTabOT(OT_TAB);
