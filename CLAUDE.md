@@ -1567,7 +1567,8 @@ tablero-compras/
     ├── 017_cotizaciones_duplicado_aceptado.sql
     ├── 018_articulos_largo_barra.sql
     ├── 019_usuarios_modulos.sql
-    └── 020_materiales_ot.sql
+    ├── 020_materiales_ot.sql
+    └── 021_materot_archivado.sql
 ```
 
 > `porteria.html` y `solicitud.html` son entry points separados (audiencias distintas: portero de
@@ -1764,9 +1765,31 @@ Mismo patrón de nav colapsable que el resto ("📐 Materiales OT ▾"):
   kg cuando hay equivalencia, el badge de Estado y la columna "kg/unidad" editable — ver 13.2).
 - **Agrupar OT** (`materot-grupos`) — administración de la relación OT adicional → OT madre (ver 13.3).
 
-### 13.5 Modelo de datos — `sql/020_materiales_ot.sql`
+### 13.5 Archivado de OT viejas/cerradas
 
-Tres tablas (ver `sql/schema.sql` para el estado final), sin RLS (mismo criterio que el resto de
+Pedido explícito del usuario (2026-10-02): poder sacar del Dashboard y de la grilla "Por OT" las OT ya
+terminadas, para que el panorama general se quede enfocado en lo activo. Se archiva por **OT efectiva**
+(la madre, si tiene adicionales agrupadas — ver 13.3): madre + hijas se archivan juntas como una sola
+unidad, consistente con que ya se muestran/cuentan juntas en todo el resto del módulo. Guardado en
+`compras_materot_ot_archivadas` (`n_ot` como PK) — persiste entre cargas del Excel, a diferencia de
+`compras_materot_items` que se reemplaza entero en cada carga (ver 13.1).
+
+Confirmado con el usuario: el archivado **sí afecta los números del Dashboard** (KPIs y los dos
+gráficos se calculan solo sobre OT activas — `renderDashboard()` filtra `agruparPorOTMadre()` antes de
+sumar nada) — una OT archivada es "ya cerrada, no tiene que pesar en el panorama general". En cambio,
+**entrar al detalle de una OT archivada sigue mostrando sus propios indicadores sin ningún cambio**
+(Resumen + Detalle funcionan igual esté o no archivada) — el archivado no es un borrado ni un bloqueo,
+solo saca a esa OT de las vistas "generales".
+
+En "Por OT", las archivadas quedan ocultas por defecto; el checkbox **"Mostrar archivadas"**
+(`mro_f_archivadas`) las trae de vuelta mezcladas con las activas, marcadas con el badge "📦 Archivada"
+y con menor opacidad. Cada tarjeta tiene su botón "📦 Archivar"/"♻️ Reactivar"
+(`toggleArchivoOT()` en `js/modules/materot.js`), y el mismo botón se repite arriba del título al abrir
+el detalle de una OT puntual, para poder archivarla/reactivarla sin tener que volver a la grilla.
+
+### 13.6 Modelo de datos — `sql/020_materiales_ot.sql` + `sql/021_materot_archivado.sql`
+
+Cuatro tablas (ver `sql/schema.sql` para el estado final), sin RLS (mismo criterio que el resto de
 `compras_*`):
 
 - `compras_materot_items` — foto completa del archivo, reemplazada entera en cada carga (igual criterio
@@ -1777,8 +1800,10 @@ Tres tablas (ver `sql/schema.sql` para el estado final), sin RLS (mismo criterio
 - `compras_articulos_kg_equivalencia` — el factor kg-por-unidad por artículo (ver 13.2), con su
   `ume` (a qué unidad aplica) y `fuente` (`manual` por ahora — se deja el campo para cuando se importen
   en bloque desde el segundo Excel que el usuario va a compartir).
+- `compras_materot_ot_archivadas` — qué OT efectiva está archivada (ver 13.5). `n_ot` como PK; sobrevive
+  a cada reemplazo completo de `compras_materot_items` porque es una tabla aparte.
 
-### 13.6 Decisiones tomadas y alcance actual
+### 13.7 Decisiones tomadas y alcance actual
 
 - **Instructivo de carga sin confirmar todavía**: el paso a paso que muestra el modal antes de elegir
   el archivo (`js/main.js`, `INSTRUCTIVOS.materot`) asume el mismo menú de Capataz que usa Cotizaciones
@@ -1864,6 +1889,9 @@ Ya decidido al construir el módulo Materiales OT (2026-10-02):
   propia — ver sección 13.1.
 - [x] Nuevo grupo de nav + tabla propia en Supabase (mismo patrón que OC/Stock/Cotizaciones), no una
   sub-vista de otro módulo ni una herramienta de solo lectura sin persistencia.
+- [x] El archivado de OT (sección 13.5) **sí** excluye del Dashboard (KPIs y gráficos) — una OT
+  archivada no pesa en el panorama general, pero su propio detalle se sigue viendo igual que cualquier
+  otra. Se archiva por OT efectiva (madre + adicionales juntas), no hija por hija.
 
 Todavía sin decidir:
 - [ ] Materiales OT: falta que el usuario comparta el segundo Excel (Cotizado/Planificado/Solicitado en
@@ -1936,10 +1964,13 @@ Todavía sin decidir:
     (**todavía falta**).
 19. Correr [`sql/020_materiales_ot.sql`](sql/020_materiales_ot.sql) — crea
     `compras_materot_items`, `compras_materot_ot_grupos` y `compras_articulos_kg_equivalencia` para el
-    módulo Materiales OT (ver sección 13) (**todavía falta**).
-20. Probar el circuito completo: pedir vehículo (solicitud.html) → aprobar y asignar (index.html) →
+    módulo Materiales OT (ver sección 13) (ya hecho — el usuario ya lo corrió).
+20. Correr [`sql/021_materot_archivado.sql`](sql/021_materot_archivado.sql) — crea
+    `compras_materot_ot_archivadas` para poder archivar OT viejas/cerradas (ver sección 13.5)
+    (**todavía falta**).
+21. Probar el circuito completo: pedir vehículo (solicitud.html) → aprobar y asignar (index.html) →
    registrar salida/retorno (porteria.html) → ver el movimiento reflejado en el dashboard.
-21. Evaluar RLS (Row Level Security) en las tablas `compras_*` — hoy cualquiera con el link de
+22. Evaluar RLS (Row Level Security) en las tablas `compras_*` — hoy cualquiera con el link de
    `solicitud.html`/`porteria.html` puede leer/escribir todas las tablas, sin ningún login de por medio.
-22. Ir completando los módulos `[TBD]` de la sección 3 a medida que los necesites, usando el módulo
+23. Ir completando los módulos `[TBD]` de la sección 3 a medida que los necesites, usando el módulo
    Flota (carpeta `js/modules/`) como plantilla.

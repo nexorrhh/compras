@@ -1072,7 +1072,7 @@
 <!-- ============ MATERIALES OT — DASHBOARD ============ -->
 <div class="sec" id="s-materot-dash">
   <div class="ptitle">Materiales OT — Dashboard</div>
-  <div class="psub">Seguimiento por OT del export de Capataz (Cotizado → Planificado → Solicitado → Comprado → Asignado → Recibido → Entregado), visto en KGS cuando hay equivalencia cargada</div>
+  <div class="psub">Seguimiento por OT del export de Capataz (Cotizado → Planificado → Solicitado → Comprado → Asignado → Recibido → Entregado), visto en KGS cuando hay equivalencia cargada — solo OT activas (las archivadas no suman acá, ver "Agrupar OT"/"Por OT")</div>
   <div class="kpi-grid">
     <div class="kpi"><div class="kpi-val text-accent" id="mrd_k_ot">–</div><div class="kpi-lbl">OTs con datos</div></div>
     <div class="kpi"><div class="kpi-val text-green" id="mrd_k_ok">–</div><div class="kpi-lbl">Ítems OK</div></div>
@@ -1097,6 +1097,10 @@
     <div class="sh">
       <div class="filters">
         <input placeholder="Buscar OT..." id="mro_f_q">
+        <label style="display:flex;align-items:center;gap:7px;font-size:13px;color:var(--muted);cursor:pointer">
+          <input type="checkbox" id="mro_f_archivadas" style="width:auto">
+          Mostrar archivadas
+        </label>
       </div>
       <button type="button" class="btn p" data-instructivo="materot">📤 Cargar archivo (.xlsx)</button>
       <input type="file" id="mro_file" accept=".xlsx,.xls" style="display:none">
@@ -1106,7 +1110,10 @@
 
   <div id="mro-vista-detalle" style="display:none">
     <button type="button" class="bsm" id="mro_det_volver">← Volver a Por OT</button>
-    <div class="ptitle" style="margin-top:10px" id="mro_det_titulo">OT</div>
+    <div class="sh" style="margin-top:10px">
+      <div class="ptitle" id="mro_det_titulo">OT</div>
+      <button type="button" class="bsm" id="mro_det_toggle_archivo">📦 Archivar esta OT</button>
+    </div>
 
     <div class="subtabs" id="mro_det_tabs" style="margin:10px 0 16px">
       <button type="button" class="subtab active" data-tab="resumen">📊 Resumen</button>

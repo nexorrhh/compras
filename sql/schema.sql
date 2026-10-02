@@ -399,6 +399,14 @@ create table compras_articulos_kg_equivalencia (
   updated_at timestamptz not null default now()
 );
 
+-- Archivado de OT viejas/cerradas en Materiales OT (ver
+-- sql/021_materot_archivado.sql y CLAUDE.md sección 13) — por OT
+-- efectiva (madre + adicionales agrupadas juntas).
+create table compras_materot_ot_archivadas (
+  n_ot text primary key,
+  archivado_en timestamptz not null default now()
+);
+
 -- ------------------------------------------------------------
 -- ÍNDICES
 -- ------------------------------------------------------------

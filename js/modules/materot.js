@@ -49,9 +49,11 @@ import { toast, norm, txt, num, fetchAll, escAttr } from '../utils.js';
 let ITEMS = [];      // compras_materot_items, todas las filas
 let GRUPOS = [];      // compras_materot_ot_grupos — [{n_ot_hija, n_ot_madre}]
 let KGEQ = new Map(); // cod_articulo -> {ume, kg_por_unidad, fuente}
+let ARCHIVADAS = new Set(); // n_ot (OT efectiva) ya archivadas
 
 let OT_ACTUAL = null; // OT madre que se está viendo en el detalle; null = vista de tarjetas
 let OT_TAB = 'resumen';
+let MOSTRAR_ARCHIVADAS = false; // checkbox de "Por OT" — oculta archivadas por defecto
 
 const numFmt = (n, dec = 2) => Number(n || 0).toLocaleString('es-AR', { maximumFractionDigits: dec });
 function setTxt(id, v) { const el = document.getElementById(id); if (el) el.textContent = v; }
@@ -160,17 +162,21 @@ async function cargarArchivo(file) {
 // Carga de datos
 // ------------------------------------------------------------
 async function cargarTodo() {
-  const [{ data: items, error: e1 }, { data: grupos, error: e2 }, { data: kgeq, error: e3 }] = await Promise.all([
+  const [{ data: items, error: e1 }, { data: grupos, error: e2 }, { data: kgeq, error: e3 }, { data: arch, error: e4 }] = await Promise.all([
     fetchAll(() => SB.from('compras_materot_items').select('*')),
     SB.from('compras_materot_ot_grupos').select('*').then(r => r),
     fetchAll(() => SB.from('compras_articulos_kg_equivalencia').select('*')),
+    SB.from('compras_materot_ot_archivadas').select('n_ot').then(r => r),
   ]);
-  const error = e1 || e2 || e3;
+  const error = e1 || e2 || e3 || e4;
   if (error) { toast(error.message, 'er'); return; }
   ITEMS = items || [];
   GRUPOS = grupos || [];
   KGEQ = new Map((kgeq || []).map(k => [k.cod_articulo, k]));
+  ARCHIVADAS = new Set((arch || []).map(a => a.n_ot));
 }
+
+const esArchivada = ot => ARCHIVADAS.has(ot);
 
 // ------------------------------------------------------------
 // Agrupación OT hija → madre
@@ -293,22 +299,31 @@ function renderBarrasTopOT(canvasId, grupos) {
 // ------------------------------------------------------------
 // Dashboard
 // ------------------------------------------------------------
+// El Dashboard (KPIs + gráficos) solo mira OT ACTIVAS (no archivadas) —
+// pedido explícito del usuario (2026-10-02): una OT archivada es "ya
+// cerrada", no tiene que pesar en el panorama general. El detalle de una
+// OT puntual (renderDetalle) sigue mostrando sus propios indicadores
+// esté o no archivada — el archivado solo afecta a este panorama y, por
+// defecto, a la grilla de tarjetas (ver renderCards/MOSTRAR_ARCHIVADAS).
 function renderDashboard() {
   aplicarTemaChart();
   const grupos = agruparPorOTMadre();
-  const nOK = ITEMS.filter(it => (it.estado || '').toUpperCase() === 'OK').length;
-  const nDIF = ITEMS.filter(it => (it.estado || '').toUpperCase() === 'DIF').length;
+  const gruposActivos = new Map([...grupos].filter(([ot]) => !esArchivada(ot)));
+  const itemsActivos = [...gruposActivos.values()].flat();
+
+  const nOK = itemsActivos.filter(it => (it.estado || '').toUpperCase() === 'OK').length;
+  const nDIF = itemsActivos.filter(it => (it.estado || '').toUpperCase() === 'DIF').length;
   const articulosSinEquivalencia = new Set(
-    ITEMS.filter(it => (it.ume || '').toUpperCase() !== 'KGS' && factorKg(it) == null).map(it => it.cod_articulo)
+    itemsActivos.filter(it => (it.ume || '').toUpperCase() !== 'KGS' && factorKg(it) == null).map(it => it.cod_articulo)
   ).size;
 
-  setTxt('mrd_k_ot', grupos.size);
+  setTxt('mrd_k_ot', gruposActivos.size);
   setTxt('mrd_k_ok', nOK);
   setTxt('mrd_k_dif', nDIF);
   setTxt('mrd_k_sinkg', articulosSinEquivalencia);
 
   renderDonutOKDIF('mrd_chart_okdif', nOK, nDIF);
-  renderBarrasTopOT('mrd_chart_topot', grupos);
+  renderBarrasTopOT('mrd_chart_topot', gruposActivos);
 }
 
 // ------------------------------------------------------------
@@ -325,6 +340,11 @@ function renderCards() {
   const grupos = agruparPorOTMadre();
 
   let filas = [...grupos.entries()];
+  // Las archivadas quedan ocultas por defecto (pedido del usuario: el
+  // archivado es para OT viejas/cerradas que no hace falta seguir
+  // viendo) — el checkbox las vuelve a mostrar, mezcladas con el resto
+  // pero marcadas con el badge "📦 Archivada".
+  if (!MOSTRAR_ARCHIVADAS) filas = filas.filter(([ot]) => !esArchivada(ot));
   if (q) filas = filas.filter(([ot]) => (ot || 'SIN OT').toUpperCase().includes(q));
   filas.sort((a, b) => !a[0] ? 1 : !b[0] ? -1 : a[0].localeCompare(b[0], 'es'));
 
@@ -333,14 +353,19 @@ function renderCards() {
   grid.innerHTML = filas.map(([ot, items]) => {
     const st = estadisticasOT(items);
     const hijas = hijasDe(ot);
-    return `<div class="ot-card" data-ot="${escAttr(ot)}">
+    const archivada = esArchivada(ot);
+    return `<div class="ot-card" data-ot="${escAttr(ot)}" style="${archivada ? 'opacity:.6' : ''}">
       <div style="font-weight:600;font-size:15px">${ot ? escAttr(formatOT(ot)) : '<span style="color:var(--muted)">(Sin OT)</span>'}
         ${hijas.length ? `<span class="badge" style="margin-left:6px;font-weight:400" title="${escAttr(hijas.map(formatOT).join(', '))}">+${hijas.length} adicional${hijas.length === 1 ? '' : 'es'}</span>` : ''}
+        ${archivada ? '<span class="badge" style="margin-left:6px;font-weight:400">📦 Archivada</span>' : ''}
       </div>
       <div style="font-size:13px;margin-top:8px">🛒 Comprado: <strong>${numFmt(st.tot.comprado)} KGS</strong></div>
       <div style="font-size:13px">📋 Solicitado: <strong>${st.tot.solic != null ? numFmt(st.tot.solic) + ' KGS' : '–'}</strong></div>
       <div style="font-size:12px;color:var(--muted);margin-top:4px">${st.nItems} ítem${st.nItems === 1 ? '' : 's'}${st.sinEquivalencia ? ` · ${st.sinEquivalencia} sin equiv. kg` : ''}</div>
       ${st.nDIF ? `<div style="font-size:12px;color:var(--red);margin-top:6px">⚠️ ${st.nDIF} con diferencia (DIF)</div>` : ''}
+      <div style="margin-top:8px">
+        <button type="button" class="bsm mro-toggle-archivo" data-ot="${escAttr(ot)}" data-archivada="${archivada ? '1' : '0'}">${archivada ? '♻️ Reactivar' : '📦 Archivar'}</button>
+      </div>
     </div>`;
   }).join('');
 }
@@ -353,6 +378,24 @@ function abrirDetalle(ot) {
   if (vc) vc.style.display = 'none';
   if (vd) vd.style.display = '';
   renderDetalle();
+}
+
+// Archiva/reactiva por OT EFECTIVA (la madre, si tiene adicionales — ver
+// nota de cabecera de compras_materot_ot_archivadas): no tiene sentido
+// archivar una hija sola, siempre se ven y cuentan como una sola unidad.
+async function toggleArchivoOT(ot, archivadaActual) {
+  if (archivadaActual) {
+    const { error } = await SB.from('compras_materot_ot_archivadas').delete().eq('n_ot', ot);
+    if (error) { toast(error.message, 'er'); return; }
+    ARCHIVADAS.delete(ot);
+    toast(`✓ OT ${formatOT(ot)} reactivada`);
+  } else {
+    const { error } = await SB.from('compras_materot_ot_archivadas').upsert({ n_ot: ot });
+    if (error) { toast(error.message, 'er'); return; }
+    ARCHIVADAS.add(ot);
+    toast(`✓ OT ${formatOT(ot)} archivada`);
+  }
+  if (OT_ACTUAL !== null) renderDetalle(); else renderCards();
 }
 
 function volverACards() {
@@ -382,8 +425,13 @@ function renderDetalle() {
   const st = estadisticasOT(items);
   const hijas = hijasDe(OT_ACTUAL);
 
+  const archivada = esArchivada(OT_ACTUAL);
   const titulo = document.getElementById('mro_det_titulo');
-  if (titulo) titulo.textContent = (OT_ACTUAL ? `OT ${formatOT(OT_ACTUAL)}` : '(Sin OT)') + (hijas.length ? ` (+ adicionales: ${hijas.map(formatOT).join(', ')})` : '');
+  if (titulo) {
+    titulo.innerHTML = `${escAttr(OT_ACTUAL ? `OT ${formatOT(OT_ACTUAL)}` : '(Sin OT)')}${hijas.length ? ` <span style="font-weight:400;font-size:14px;color:var(--muted)">(+ adicionales: ${escAttr(hijas.map(formatOT).join(', '))})</span>` : ''}`;
+  }
+  const btnToggle = document.getElementById('mro_det_toggle_archivo');
+  if (btnToggle) btnToggle.textContent = archivada ? '♻️ Reactivar esta OT' : '📦 Archivar esta OT';
 
   setTxt('mrod_k_items', st.nItems);
   setTxt('mrod_k_ok', st.nOK);
@@ -516,9 +564,18 @@ export async function render(secId) {
 
 export function init() {
   document.getElementById('mro_f_q')?.addEventListener('input', renderCards);
+  document.getElementById('mro_f_archivadas')?.addEventListener('change', e => {
+    MOSTRAR_ARCHIVADAS = e.target.checked;
+    renderCards();
+  });
   document.getElementById('mro_det_volver')?.addEventListener('click', volverACards);
   document.getElementById('mrd-ir-cards')?.addEventListener('click', () => document.querySelector('.nav-item[data-sec="materot-cards"]')?.click());
+  document.getElementById('mro_det_toggle_archivo')?.addEventListener('click', () => {
+    if (OT_ACTUAL !== null) toggleArchivoOT(OT_ACTUAL, esArchivada(OT_ACTUAL));
+  });
   document.getElementById('mro_cards_grid')?.addEventListener('click', e => {
+    const btnArch = e.target.closest('.mro-toggle-archivo');
+    if (btnArch) { toggleArchivoOT(btnArch.dataset.ot, btnArch.dataset.archivada === '1'); return; }
     const card = e.target.closest('.ot-card');
     if (card) abrirDetalle(card.dataset.ot);
   });
