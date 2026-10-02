@@ -45,6 +45,7 @@ import { toast, norm, txt, num, fetchAll, escAttr } from '../utils.js';
 let ITEMS = [];      // compras_materot_items, todas las filas
 let GRUPOS = [];      // compras_materot_ot_grupos — [{n_ot_hija, n_ot_madre}]
 let ARCHIVADAS = new Set(); // n_ot (OT efectiva) ya archivadas
+let OT_INFO = new Map(); // n_ot -> {nombre_proyecto, cliente} — compras_materot_ot_info
 
 let OT_ACTUAL = null; // OT madre que se está viendo en el detalle; null = vista de tarjetas
 let OT_TAB = 'resumen';
@@ -162,18 +163,90 @@ async function cargarArchivo(file) {
 }
 
 // ------------------------------------------------------------
+// Nombre de proyecto / cliente por OT — export de REFERENCIA aparte
+// (distinto del de ítems, ver nota de cabecera y CLAUDE.md 13).
+// Solo sirve para mostrar, no se cruza con ninguna otra tabla.
+// ------------------------------------------------------------
+function parseWorkbookOtInfo(arrayBuffer, filename) {
+  const wb = XLSX.read(arrayBuffer, { type: 'array', cellDates: true });
+  const sheet = wb.Sheets[wb.SheetNames[0]];
+  const rows = XLSX.utils.sheet_to_json(sheet, { header: 1, cellDates: true, defval: null });
+  if (!rows.length) return [];
+
+  const header = rows[0].map(norm);
+  const idx = name => header.indexOf(name);
+  const col = { nOt: idx('N_OT'), nombre: idx('NOMBRE'), cliente: idx('RAZON_SOCI'), fecha: idx('FECHA') };
+  if (col.nOt === -1) throw new Error('No se encontró la columna esperada en el archivo (falta "n_ot").');
+
+  // El mismo n_ot puede aparecer más de una vez (distintos presupuestos/
+  // versiones a lo largo del tiempo) — se usa la fila de fecha más
+  // reciente para quedarse con el nombre/cliente vigente.
+  const porOT = new Map();
+  for (let i = 1; i < rows.length; i++) {
+    const r = rows[i];
+    if (!r || r.every(c => c === null || c === '')) continue;
+    const nOt = txt(r[col.nOt]);
+    if (!nOt) continue;
+    const fecha = col.fecha >= 0 && r[col.fecha] instanceof Date ? r[col.fecha].getTime() : 0;
+    const previa = porOT.get(nOt);
+    if (previa && previa.fecha >= fecha) continue;
+    porOT.set(nOt, {
+      n_ot: nOt,
+      nombre_proyecto: col.nombre >= 0 ? txt(r[col.nombre]) : null,
+      cliente: col.cliente >= 0 ? txt(r[col.cliente]) : null,
+      archivo_origen: filename,
+      fecha,
+    });
+  }
+  return [...porOT.values()].map(({ fecha, ...resto }) => resto);
+}
+
+async function cargarArchivoInfo(file) {
+  let filas;
+  try {
+    const buf = await file.arrayBuffer();
+    filas = parseWorkbookOtInfo(buf, file.name);
+  } catch (e) {
+    toast('No se pudo leer el archivo: ' + e.message, 'er');
+    return;
+  }
+  if (!filas.length) { toast('No se encontraron filas en el archivo', 'er'); return; }
+
+  const ok = confirm(
+    `Se leyeron nombres de proyecto/cliente para ${filas.length} OT.\n\n` +
+    `Esto REEMPLAZA todos los nombres cargados anteriormente.\n\n¿Continuar?`
+  );
+  if (!ok) return;
+
+  const { error: delErr } = await SB.from('compras_materot_ot_info').delete().not('n_ot', 'is', null);
+  if (delErr) { toast(delErr.message, 'er'); return; }
+
+  const chunkSize = 500;
+  for (let i = 0; i < filas.length; i += chunkSize) {
+    const chunk = filas.slice(i, i + chunkSize);
+    const { error } = await SB.from('compras_materot_ot_info').insert(chunk);
+    if (error) { toast('Error insertando: ' + error.message, 'er'); return; }
+  }
+  toast(`✓ Nombres cargados para ${filas.length} OT`);
+  await cargarTodo();
+  if (OT_ACTUAL !== null) renderDetalle(); else renderCards();
+}
+
+// ------------------------------------------------------------
 // Carga de datos
 // ------------------------------------------------------------
 async function cargarTodo() {
-  const [{ data: items, error: e1 }, { data: grupos, error: e2 }, { data: arch, error: e3 }] = await Promise.all([
+  const [{ data: items, error: e1 }, { data: grupos, error: e2 }, { data: arch, error: e3 }, { data: info, error: e4 }] = await Promise.all([
     fetchAll(() => SB.from('compras_materot_items').select('*')),
     SB.from('compras_materot_ot_grupos').select('*').then(r => r),
     SB.from('compras_materot_ot_archivadas').select('n_ot').then(r => r),
+    fetchAll(() => SB.from('compras_materot_ot_info').select('*')),
   ]);
-  const error = e1 || e2 || e3;
+  const error = e1 || e2 || e3 || e4;
   if (error) { toast(error.message, 'er'); return; }
   ITEMS = items || [];
   GRUPOS = grupos || [];
+  OT_INFO = new Map((info || []).map(i => [i.n_ot, i]));
   ARCHIVADAS = new Set((arch || []).map(a => a.n_ot));
 }
 
@@ -327,7 +400,14 @@ function renderCards() {
   // viendo) — el checkbox las vuelve a mostrar, mezcladas con el resto
   // pero marcadas con el badge "📦 Archivada".
   if (!MOSTRAR_ARCHIVADAS) filas = filas.filter(([ot]) => !esArchivada(ot));
-  if (q) filas = filas.filter(([ot]) => (ot || 'SIN OT').toUpperCase().includes(q));
+  if (q) {
+    filas = filas.filter(([ot]) => {
+      const info = OT_INFO.get(ot);
+      return (ot || 'SIN OT').toUpperCase().includes(q)
+        || (info?.nombre_proyecto || '').toUpperCase().includes(q)
+        || (info?.cliente || '').toUpperCase().includes(q);
+    });
+  }
   filas.sort((a, b) => !a[0] ? 1 : !b[0] ? -1 : a[0].localeCompare(b[0], 'es'));
 
   if (!filas.length) { grid.innerHTML = '<div style="color:var(--muted);padding:12px">Sin datos todavía — cargá un archivo desde "Por OT".</div>'; return; }
@@ -336,11 +416,14 @@ function renderCards() {
     const st = estadisticasOT(items);
     const hijas = hijasDe(ot);
     const archivada = esArchivada(ot);
+    const info = OT_INFO.get(ot);
+    const tituloHijas = hijas.map(h => `${formatOT(h)}${OT_INFO.get(h)?.nombre_proyecto ? ' — ' + OT_INFO.get(h).nombre_proyecto : ''}`).join('\n');
     return `<div class="ot-card" data-ot="${escAttr(ot)}" style="${archivada ? 'opacity:.6' : ''}">
       <div style="font-weight:600;font-size:15px">${ot ? escAttr(formatOT(ot)) : '<span style="color:var(--muted)">(Sin OT)</span>'}
-        ${hijas.length ? `<span class="badge" style="margin-left:6px;font-weight:400" title="${escAttr(hijas.map(formatOT).join(', '))}">+${hijas.length} adicional${hijas.length === 1 ? '' : 'es'}</span>` : ''}
+        ${hijas.length ? `<span class="badge" style="margin-left:6px;font-weight:400" title="${escAttr(tituloHijas)}">+${hijas.length} adicional${hijas.length === 1 ? '' : 'es'}</span>` : ''}
         ${archivada ? '<span class="badge" style="margin-left:6px;font-weight:400">📦 Archivada</span>' : ''}
       </div>
+      ${info?.nombre_proyecto || info?.cliente ? `<div style="font-size:12px;color:var(--muted);margin-top:-2px" title="${escAttr([info?.nombre_proyecto, info?.cliente].filter(Boolean).join(' — '))}">${escAttr(info?.nombre_proyecto || '')}${info?.nombre_proyecto && info?.cliente ? ' · ' : ''}${escAttr(info?.cliente || '')}</div>` : ''}
       <div style="font-size:13px;margin-top:8px">🛒 Comprado: <strong>${numFmt(st.tot.comprado)} KGS</strong></div>
       <div style="font-size:13px">📋 Solicitado: <strong>${numFmt(st.tot.solic)} KGS</strong></div>
       <div style="font-size:12px;color:var(--muted);margin-top:4px">${st.nItems} ítem${st.nItems === 1 ? '' : 's'}</div>
@@ -408,9 +491,16 @@ function renderDetalle() {
   const hijas = hijasDe(OT_ACTUAL);
 
   const archivada = esArchivada(OT_ACTUAL);
+  const info = OT_INFO.get(OT_ACTUAL);
   const titulo = document.getElementById('mro_det_titulo');
   if (titulo) {
     titulo.innerHTML = `${escAttr(OT_ACTUAL ? `OT ${formatOT(OT_ACTUAL)}` : '(Sin OT)')}${hijas.length ? ` <span style="font-weight:400;font-size:14px;color:var(--muted)">(+ adicionales: ${escAttr(hijas.map(formatOT).join(', '))})</span>` : ''}`;
+  }
+  const subtitulo = document.getElementById('mro_det_subtitulo');
+  if (subtitulo) {
+    subtitulo.textContent = info?.nombre_proyecto || info?.cliente
+      ? [info?.nombre_proyecto, info?.cliente].filter(Boolean).join(' — ')
+      : '';
   }
   const btnToggle = document.getElementById('mro_det_toggle_archivo');
   if (btnToggle) btnToggle.textContent = archivada ? '♻️ Reactivar esta OT' : '📦 Archivar esta OT';
@@ -589,6 +679,12 @@ export function init() {
   document.getElementById('mro_file')?.addEventListener('change', e => {
     const file = e.target.files[0];
     if (file) cargarArchivo(file);
+    e.target.value = '';
+  });
+  document.getElementById('mro_btn_cargar_info')?.addEventListener('click', () => document.getElementById('mro_file_info')?.click());
+  document.getElementById('mro_file_info')?.addEventListener('change', e => {
+    const file = e.target.files[0];
+    if (file) cargarArchivoInfo(file);
     e.target.value = '';
   });
 

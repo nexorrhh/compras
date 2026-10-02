@@ -395,6 +395,16 @@ create table compras_materot_ot_grupos (
   created_at timestamptz not null default now()
 );
 
+-- Nombre de proyecto y cliente por OT (ver sql/023_materot_ot_info.sql)
+-- — export de referencia aparte, distinto del de ítems.
+create table compras_materot_ot_info (
+  n_ot text primary key,
+  nombre_proyecto text,
+  cliente text,
+  archivo_origen text,
+  created_at timestamptz not null default now()
+);
+
 -- Archivado de OT viejas/cerradas en Materiales OT (ver
 -- sql/021_materot_archivado.sql y CLAUDE.md sección 13) — por OT
 -- efectiva (madre + adicionales agrupadas juntas).

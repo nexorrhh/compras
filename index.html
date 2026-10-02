@@ -1102,6 +1102,8 @@
           Mostrar archivadas
         </label>
       </div>
+      <button type="button" class="bsm" id="mro_btn_cargar_info" title="Nombre de proyecto y cliente por OT, export aparte de Tango">📋 Cargar nombres de proyecto (.xlsx)</button>
+      <input type="file" id="mro_file_info" accept=".xlsx,.xls" style="display:none">
       <button type="button" class="btn p" data-instructivo="materot">📤 Cargar archivo (.xlsx)</button>
       <input type="file" id="mro_file" accept=".xlsx,.xls" style="display:none">
     </div>
@@ -1111,7 +1113,10 @@
   <div id="mro-vista-detalle" style="display:none">
     <button type="button" class="bsm" id="mro_det_volver">← Volver a Por OT</button>
     <div class="sh" style="margin-top:10px">
-      <div class="ptitle" id="mro_det_titulo">OT</div>
+      <div>
+        <div class="ptitle" id="mro_det_titulo">OT</div>
+        <div class="psub" id="mro_det_subtitulo" style="margin-top:2px"></div>
+      </div>
       <button type="button" class="bsm" id="mro_det_toggle_archivo">📦 Archivar esta OT</button>
     </div>
 

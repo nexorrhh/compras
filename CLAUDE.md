@@ -1548,6 +1548,7 @@ tablero-compras/
 ├── Cotizar.xlsx           (archivo de ejemplo de Cotizaciones — también en .gitignore, datos reales)
 ├── MatxPro.xlsx           (archivo de ejemplo de Materiales OT, formato original — en .gitignore, datos reales)
 ├── MatxPronew.xlsx        (archivo de ejemplo de Materiales OT, formato con kg por etapa — también en .gitignore)
+├── Significado OT.xlsx    (archivo de ejemplo de nombre de proyecto/cliente por OT — también en .gitignore)
 └── sql/
     ├── schema.sql
     ├── 002_seguros_archivo.sql
@@ -1570,7 +1571,8 @@ tablero-compras/
     ├── 019_usuarios_modulos.sql
     ├── 020_materiales_ot.sql
     ├── 021_materot_archivado.sql
-    └── 022_materot_kg_por_etapa.sql
+    ├── 022_materot_kg_por_etapa.sql
+    └── 023_materot_ot_info.sql
 ```
 
 > `porteria.html` y `solicitud.html` son entry points separados (audiencias distintas: portero de
@@ -1729,7 +1731,7 @@ había ningún kg equivalente en el archivo, así que esta primera versión del 
 conversión con un factor kg-por-unidad cargado/editado a mano por artículo
 (`compras_articulos_kg_equivalencia`, mismo criterio que `compras_articulos_largo_barra` en
 Cotizaciones). Quedó obsoleto en cuanto Capataz empezó a traer el kg real de cada etapa — la tabla se
-renombró a `compras_articulos_kg_equivalencia_old` en vez de borrarse (ver 13.6), por si hiciera falta
+renombró a `compras_articulos_kg_equivalencia_old` en vez de borrarse (ver 13.7), por si hiciera falta
 consultarla, pero el módulo ya no la usa ni muestra la columna "kg/unidad" editable que tenía el
 detalle de cada OT.
 
@@ -1766,7 +1768,43 @@ del usuario tras probar la primera versión, 2026-10-02):
   hija→hija→madre dejaría artículos a mitad de camino, sin llegar nunca a la madre real). Sí puede
   seguir eligiéndose como madre las veces que haga falta, para sumarle más adicionales.
 
-### 13.4 Vistas
+**Carga inicial asistida (2026-10-02):** el usuario pasó `Significado OT.xlsx` (export de Tango con
+`nombre`/`nota_proy` en texto libre por cada OT, ver 13.4) pidiendo "leé ahí los nombres de los
+proyectos y podés intentar hilarlos con su OT madre y sus sub OT". Se armó un cruce puntual (no es una
+función del código, fue un análisis manual con Python sobre el archivo): buscar frases tipo "Adicional
+a OT 540", "Adicional OT371", "SE TRABAJA TODO EN LA OT 582" en `nombre`/`nota_proy`, restringido a las
+OT que realmente aparecen en `MatxPronew.xlsx`. De 94 menciones de "adicional"/"OT" encontradas, 18
+daban una única OT madre candidata (sin ambigüedad) y se cargaron directo en `compras_materot_ot_grupos`
+vía API — entre ellas, 491 quedó como madre de 5 adicionales (505/510/512/517/518) y 540 de 2
+(555/556). Un caso quedó ambiguo (**587**, "Adicional a OT 550/551" — no aclara cuál de las dos) y el
+usuario prefirió dejarlo sin agrupar para revisarlo él mismo. Cuatro menciones más (564→445, 460→382,
+471→451, 461→425) señalan una OT madre que no aparece en el archivo actual, así que no hay nada para
+agrupar ahí todavía. Este cruce no quedó como una función reusable del módulo — fue trabajo puntual
+sobre datos reales, documentado acá para que quede registro de qué se cargó y por qué.
+
+### 13.4 Nombre de proyecto y cliente por OT
+
+Pedido del usuario (2026-10-02): "podés agregarle el nombre del proyecto y el cliente" a las tarjetas/
+detalle de OT. A diferencia del resto del módulo, este dato **no sale de Capataz** (ni del archivo de
+ítems ni del de agrupación) sino de un export distinto de **Tango** — archivo de ejemplo real
+`Significado OT.xlsx` (NO va al repo, mismo criterio que `MatxPro.xlsx`/`MatxPronew.xlsx`), con columnas
+`n_ot`, `nombre`, `razon_soci` (cliente) y `fecha` entre otras. Es una tabla de **referencia** aparte,
+`compras_materot_ot_info`, con su propio botón de carga ("📋 Cargar nombres de proyecto (.xlsx)", en
+"Por OT") — no se cruza con `compras_materot_items`, solo sirve para mostrar.
+
+- El archivo puede traer **más de una fila para la misma OT** (distintos presupuestos/versiones a lo
+  largo del tiempo para el mismo número) — `parseWorkbookOtInfo()` en `js/modules/materot.js` se queda
+  con la fila de `fecha` más reciente antes de insertar, así que `n_ot` queda único en la tabla.
+- Es una **foto completa**: cada carga reemplaza toda `compras_materot_ot_info`, igual criterio que
+  `compras_materot_items`.
+- Se muestra debajo del número de OT en cada tarjeta (nombre · cliente, con tooltip si no entra) y
+  debajo del título al abrir el detalle de una OT. El buscador de "Por OT" (`mro_f_q`) también busca por
+  nombre de proyecto/cliente, no solo por número de OT. El tooltip del badge "+N adicionales" lista
+  también el nombre de cada hija, cuando está cargado.
+- El menú exacto de Tango para bajar este export no está confirmado con el usuario — pendiente (ver
+  sección 15).
+
+### 13.5 Vistas
 
 Mismo patrón de nav colapsable que el resto ("📐 Materiales OT ▾"):
 
@@ -1780,7 +1818,7 @@ Mismo patrón de nav colapsable que el resto ("📐 Materiales OT ▾"):
   del archivo — ver 13.2 —, y el badge de Estado).
 - **Agrupar OT** (`materot-grupos`) — administración de la relación OT adicional → OT madre (ver 13.3).
 
-### 13.5 Archivado de OT viejas/cerradas
+### 13.6 Archivado de OT viejas/cerradas
 
 Pedido explícito del usuario (2026-10-02): poder sacar del Dashboard y de la grilla "Por OT" las OT ya
 terminadas, para que el panorama general se quede enfocado en lo activo. Se archiva por **OT efectiva**
@@ -1802,10 +1840,10 @@ y con menor opacidad. Cada tarjeta tiene su botón "📦 Archivar"/"♻️ React
 (`toggleArchivoOT()` en `js/modules/materot.js`), y el mismo botón se repite arriba del título al abrir
 el detalle de una OT puntual, para poder archivarla/reactivarla sin tener que volver a la grilla.
 
-### 13.6 Modelo de datos — `sql/020_materiales_ot.sql` + `sql/021_materot_archivado.sql` + `sql/022_materot_kg_por_etapa.sql`
+### 13.7 Modelo de datos — `sql/020_materiales_ot.sql` + `sql/021_materot_archivado.sql` + `sql/022_materot_kg_por_etapa.sql` + `sql/023_materot_ot_info.sql`
 
-Tres tablas vigentes (ver `sql/schema.sql` para el estado final), sin RLS (mismo criterio que el resto
-de `compras_*`):
+Cuatro tablas vigentes (ver `sql/schema.sql` para el estado final), sin RLS (mismo criterio que el
+resto de `compras_*`):
 
 - `compras_materot_items` — foto completa del archivo, reemplazada entera en cada carga (igual criterio
   que `compras_stock_saldos`). Guarda todas las columnas del export tal cual (incluido `estado`, sin
@@ -1814,15 +1852,18 @@ de `compras_*`):
   13.2).
 - `compras_materot_ot_grupos` — la relación manual OT adicional → OT madre (ver 13.3). `n_ot_hija` como
   PK (una OT no puede ser adicional de más de una madre a la vez).
-- `compras_materot_ot_archivadas` — qué OT efectiva está archivada (ver 13.5). `n_ot` como PK; sobrevive
+- `compras_materot_ot_archivadas` — qué OT efectiva está archivada (ver 13.6). `n_ot` como PK; sobrevive
   a cada reemplazo completo de `compras_materot_items` porque es una tabla aparte.
+- `compras_materot_ot_info` — nombre de proyecto y cliente por OT (ver 13.4), export aparte de Tango.
+  Foto completa, igual criterio que `compras_materot_items` pero sin relación con esa tabla (solo se
+  cruza por `n_ot` al mostrar, no hay FK).
 
 **Tabla obsoleta:** `compras_articulos_kg_equivalencia` (el factor kg-por-unidad de la primera versión,
 ver 13.2) se renombró a `compras_articulos_kg_equivalencia_old` en `sql/022_materot_kg_por_etapa.sql`
 en vez de borrarse — mismo criterio que `compras_seguros_old`/`compras_permisos_old` (sección 4.4): no
 se pierde nada, solo deja de usarse. El módulo ya no la lee ni la escribe.
 
-### 13.7 Decisiones tomadas y alcance actual
+### 13.8 Decisiones tomadas y alcance actual
 
 - **Instructivo de carga sin confirmar todavía**: el paso a paso que muestra el modal antes de elegir
   el archivo (`js/main.js`, `INSTRUCTIVOS.materot`) asume el mismo menú de Capataz que usa Cotizaciones
@@ -1908,13 +1949,15 @@ Ya decidido al construir el módulo Materiales OT (2026-10-02):
   propia — ver sección 13.1.
 - [x] Nuevo grupo de nav + tabla propia en Supabase (mismo patrón que OC/Stock/Cotizaciones), no una
   sub-vista de otro módulo ni una herramienta de solo lectura sin persistencia.
-- [x] El archivado de OT (sección 13.5) **sí** excluye del Dashboard (KPIs y gráficos) — una OT
+- [x] El archivado de OT (sección 13.6) **sí** excluye del Dashboard (KPIs y gráficos) — una OT
   archivada no pesa en el panorama general, pero su propio detalle se sigue viendo igual que cualquier
   otra. Se archiva por OT efectiva (madre + adicionales juntas), no hija por hija.
 
 Todavía sin decidir:
 - [ ] Materiales OT: confirmar el nombre exacto de la variante del export de Capataz (el instructivo de
-  carga en `js/main.js` asume el mismo menú que Cotizaciones, sin confirmar — ver sección 13.6).
+  carga en `js/main.js` asume el mismo menú que Cotizaciones, sin confirmar — ver sección 13.7).
+- [ ] Materiales OT: confirmar el menú exacto de Tango para exportar el nombre de proyecto/cliente por
+  OT (ver sección 13.4).
 - [ ] ¿Se integra el combustible/YPF Ruta al módulo Flota o queda como módulo aparte?
 - [ ] ¿Las alertas de vencimiento se envían por mail (reutilizando Resend, ya integrado en Nexo RRHH) o solo se muestran en el tablero?
 - [ ] ¿Este tablero va a alimentar de datos a la sección "Flota" del Tablero de Control Ejecutivo, o van a ser fuentes de datos separadas?
@@ -1982,14 +2025,16 @@ Todavía sin decidir:
     `compras_materot_items`, `compras_materot_ot_grupos` y `compras_articulos_kg_equivalencia` para el
     módulo Materiales OT (ver sección 13) (ya hecho — el usuario ya lo corrió).
 20. Correr [`sql/021_materot_archivado.sql`](sql/021_materot_archivado.sql) — crea
-    `compras_materot_ot_archivadas` para poder archivar OT viejas/cerradas (ver sección 13.5)
-    (**todavía falta**).
+    `compras_materot_ot_archivadas` para poder archivar OT viejas/cerradas (ver sección 13.6) (ya
+    hecho — el usuario ya archivó OT reales con esto).
 21. Correr [`sql/022_materot_kg_por_etapa.sql`](sql/022_materot_kg_por_etapa.sql) — agrega las columnas
     `kg_cotiz/kg_plan/kg_solic/kg_asig/kg_recibido/kg_entregado` a `compras_materot_items` y renombra
-    `compras_articulos_kg_equivalencia` a `_old` (ver sección 13.2/13.6) (**todavía falta**).
-22. Probar el circuito completo: pedir vehículo (solicitud.html) → aprobar y asignar (index.html) →
+    `compras_articulos_kg_equivalencia` a `_old` (ver sección 13.2/13.7) (ya hecho).
+22. Correr [`sql/023_materot_ot_info.sql`](sql/023_materot_ot_info.sql) — crea `compras_materot_ot_info`
+    para mostrar nombre de proyecto/cliente por OT (ver sección 13.4) (**todavía falta**).
+23. Probar el circuito completo: pedir vehículo (solicitud.html) → aprobar y asignar (index.html) →
    registrar salida/retorno (porteria.html) → ver el movimiento reflejado en el dashboard.
-23. Evaluar RLS (Row Level Security) en las tablas `compras_*` — hoy cualquiera con el link de
+24. Evaluar RLS (Row Level Security) en las tablas `compras_*` — hoy cualquiera con el link de
    `solicitud.html`/`porteria.html` puede leer/escribir todas las tablas, sin ningún login de por medio.
-24. Ir completando los módulos `[TBD]` de la sección 3 a medida que los necesites, usando el módulo
+25. Ir completando los módulos `[TBD]` de la sección 3 a medida que los necesites, usando el módulo
    Flota (carpeta `js/modules/`) como plantilla.
