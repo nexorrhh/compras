@@ -1072,12 +1072,12 @@
 <!-- ============ MATERIALES OT — DASHBOARD ============ -->
 <div class="sec" id="s-materot-dash">
   <div class="ptitle">Materiales OT — Dashboard</div>
-  <div class="psub">Seguimiento por OT del export de Capataz (Cotizado → Planificado → Solicitado → Comprado → Asignado → Recibido → Entregado), visto en KGS cuando hay equivalencia cargada — solo OT activas (las archivadas no suman acá, ver "Agrupar OT"/"Por OT")</div>
+  <div class="psub">Seguimiento por OT del export de Capataz (Cotizado → Planificado → Solicitado → Comprado → Asignado → Recibido → Entregado), en KGS (Capataz ya trae el kg equivalente de cada etapa) — solo OT activas (las archivadas no suman acá, ver "Agrupar OT"/"Por OT")</div>
   <div class="kpi-grid">
     <div class="kpi"><div class="kpi-val text-accent" id="mrd_k_ot">–</div><div class="kpi-lbl">OTs con datos</div></div>
     <div class="kpi"><div class="kpi-val text-green" id="mrd_k_ok">–</div><div class="kpi-lbl">Ítems OK</div></div>
     <div class="kpi"><div class="kpi-val text-red" id="mrd_k_dif">–</div><div class="kpi-lbl">Ítems con diferencia (DIF)</div></div>
-    <div class="kpi"><div class="kpi-val text-yellow" id="mrd_k_sinkg">–</div><div class="kpi-lbl">Artículos sin equivalencia KG</div></div>
+    <div class="kpi"><div class="kpi-val text-yellow" id="mrd_k_sinot">–</div><div class="kpi-lbl">Ítems sin OT</div></div>
   </div>
   <div class="charts-grid">
     <div class="chart-card"><h3>Ítems OK vs. DIF</h3><div class="chart-wrap"><canvas id="mrd_chart_okdif"></canvas></div></div>
@@ -1125,15 +1125,14 @@
         <div class="kpi"><div class="kpi-val" id="mrod_k_items">–</div><div class="kpi-lbl">Ítems</div></div>
         <div class="kpi"><div class="kpi-val text-green" id="mrod_k_ok">–</div><div class="kpi-lbl">OK</div></div>
         <div class="kpi"><div class="kpi-val text-red" id="mrod_k_dif">–</div><div class="kpi-lbl">DIF</div></div>
-        <div class="kpi"><div class="kpi-val text-yellow" id="mrod_k_sinkg">–</div><div class="kpi-lbl">Sin equivalencia KG</div></div>
       </div>
       <div class="charts-grid"><div class="chart-card"><h3>Ítems OK vs. DIF</h3><div class="chart-wrap"><canvas id="mrod_chart_okdif"></canvas></div></div></div>
     </div>
 
     <div id="mro_det_panel_detalle" style="display:none">
-      <div class="psub" style="margin:0 0 8px">Las cantidades se muestran en KGS cuando el artículo ya está en esa unidad o tiene un factor kg/unidad cargado (columna derecha, editable) — "Comprado" siempre es el kg que ya calcula Capataz</div>
+      <div class="psub" style="margin:0 0 8px">Las cantidades se muestran en KGS — Capataz ya trae el kg equivalente de cada etapa, no se recalcula nada</div>
       <div class="tw"><table>
-        <thead><tr><th>Código</th><th>Descripción</th><th>Unidad</th><th>Cotiz. (kg)</th><th>Plan. (kg)</th><th>Solic. (kg)</th><th>Comprado (kg)</th><th>Asig. (kg)</th><th>Recibido (kg)</th><th>Entregado (kg)</th><th>Estado</th><th>kg/unidad</th></tr></thead>
+        <thead><tr><th>Código</th><th>Descripción</th><th>Unidad</th><th>Cotiz. (kg)</th><th>Plan. (kg)</th><th>Solic. (kg)</th><th>Comprado (kg)</th><th>Asig. (kg)</th><th>Recibido (kg)</th><th>Entregado (kg)</th><th>Estado</th></tr></thead>
         <tbody id="t-mro-detalle"></tbody>
       </table></div>
     </div>

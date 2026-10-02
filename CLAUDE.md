@@ -1546,7 +1546,8 @@ tablero-compras/
 │       └── parametrizacion.js  (Parametrización — alta de perfiles y módulos habilitados, ver sección 12)
 ├── Excels/                (archivos de ejemplo de OC, Stock y NP — en .gitignore, no se suben al repo)
 ├── Cotizar.xlsx           (archivo de ejemplo de Cotizaciones — también en .gitignore, datos reales)
-├── MatxPro.xlsx           (archivo de ejemplo de Materiales OT — también en .gitignore, datos reales)
+├── MatxPro.xlsx           (archivo de ejemplo de Materiales OT, formato original — en .gitignore, datos reales)
+├── MatxPronew.xlsx        (archivo de ejemplo de Materiales OT, formato con kg por etapa — también en .gitignore)
 └── sql/
     ├── schema.sql
     ├── 002_seguros_archivo.sql
@@ -1568,7 +1569,8 @@ tablero-compras/
     ├── 018_articulos_largo_barra.sql
     ├── 019_usuarios_modulos.sql
     ├── 020_materiales_ot.sql
-    └── 021_materot_archivado.sql
+    ├── 021_materot_archivado.sql
+    └── 022_materot_kg_por_etapa.sql
 ```
 
 > `porteria.html` y `solicitud.html` son entry points separados (audiencias distintas: portero de
@@ -1670,7 +1672,10 @@ hace falta, puede variar) → Solicitado (lo que Ingeniería pidió por sistema 
 pendiente de comprar) → Comprado (con OC) → Asignado de stock → Recibido → Entregado, más un flag
 `Estado` (OK/DIF) que ya calcula Capataz. El archivo de ejemplo real que pasó el usuario para diseñar
 el parseo (`MatxPro.xlsx`, 4141 filas × 21 columnas) tiene datos reales de compras — queda en la raíz
-del repo pero en `.gitignore`, mismo criterio que `Excels/`/`Cotizar.xlsx` (ver 5.5/6.5/9.4).
+del repo pero en `.gitignore`, mismo criterio que `Excels/`/`Cotizar.xlsx` (ver 5.5/6.5/9.4). El mismo
+día el usuario ajustó el reporte en Capataz y pasó un segundo archivo de ejemplo con el formato nuevo
+(`MatxPronew.xlsx`, 2304 filas × 27 columnas, también en `.gitignore`) — ver 13.2, deja obsoleta la
+necesidad de cargar un factor de conversión a mano.
 
 ### 13.1 De dónde viene el dato
 
@@ -1702,35 +1707,31 @@ Semántica de cada cantidad (explicada por el usuario, 2026-10-02):
   pidiendo ese excedente formalmente para que Compras lo asigne/compre y "cierre todo correctamente".
   Esta bandera se **muestra tal cual la trae el archivo, no se recalcula** — mismo criterio de "no
   inventar" que el resto del tablero (ver IMPORTE/CANT_PEN en Órdenes de Compra, sección 5.1).
-- `cant_cotiz/cant_plan/cant_solic/comprado/cant_asig/recibido/entregado` vienen todas en la unidad que
-  indica `ume` **de esa fila** (no siempre metros — se confirmó con datos reales que `ume` varía:
-  `UNI`, `MTS`, `MT2`, `LTS`, `KGS` y algún caso raro `SINUNIDAD`). `KgsComprados` es la **única**
-  cantidad que el archivo ya trae convertida a kg — el equivalente en kg de `comprado` únicamente.
+- `cant_cotiz/cant_plan/cant_solic/comprado/cant_asig/recibido/entregado` vienen en la unidad que
+  indica `ume` **de esa fila** (no siempre metros — con datos reales `ume` varía: `UNI`, `MTS`, `MT2`,
+  `LTS`, `KGS`). Ver 13.2 para cómo se resuelve el equivalente en kg de cada una.
 
 ### 13.2 Conversión a KGS
 
-El usuario quería ver todo esto "en realidad en KGS" — pero el archivo solo trae el kg equivalente de
-lo **comprado** (`KgsComprados`). Para las demás cantidades (que vienen en metros/m²/litros/unidades
-según el artículo) no hay ningún kg equivalente en el archivo. Se resolvió con un **factor kg-por-
-unidad por artículo**, guardado en `compras_articulos_kg_equivalencia` — mismo criterio que
-`compras_articulos_largo_barra` en Cotizaciones (sección 9.1, "Ajustar a barra entera"): no hay una
-tabla universal confiable para esto (el mismo artículo puede pesar distinto por metro según el
-proveedor/lote), así que se carga una vez por artículo y el sistema la recuerda de ahí en más.
+**Versión actual (desde 2026-10-02, archivo `MatxPronew.xlsx`):** el usuario ajustó el reporte en
+Capataz y ahora el archivo trae, al lado de cada cantidad, su **kg equivalente ya calculado**:
+`kg_cotiz`, `kg_plan`, `kg_solic` (además del `KgsComprados` que ya traía la versión original) y,
+sumados en esta vuelta, `kg_asig`, `kg_recibido`, `kg_entregado`. Confirmado con datos reales: en las
+filas donde `ume` ya es `KGS`, el valor de la columna kg coincide exactamente con el de la columna
+nativa (ej. `cant_cotiz = kg_cotiz = 2800`) — es la misma lógica de conversión para cualquier unidad,
+sin casos especiales. El módulo usa estos valores **tal cual vienen**, sin derivar ni recalcular nada
+(`kgsItem()` en `js/modules/materot.js` es ahora un simple mapeo de columnas) — mismo criterio de "no
+inventar" que el resto del tablero.
 
-- El usuario ofreció pasar un **segundo Excel** (mismo origen, con Cotizado/Planificado/Solicitado
-  cargados en metros Y en kg a la vez, aunque sin la parte de compras) para que esos factores se
-  aprendan de datos reales en vez de cargarlos todos a mano desde cero — pendiente de que lo comparta
-  (ver sección 15, Decisiones abiertas). La idea confirmada con el usuario es que el **uso diario** del
-  módulo siga siendo subir solo `MatxPro.xlsx` — ese segundo archivo es solo insumo puntual para
-  sembrar la tabla de equivalencias, no algo que se vuelva a subir cada vez.
-- Mientras tanto, la columna **"kg/unidad"** en el detalle de cada OT (`js/modules/materot.js`,
-  `renderDetalle()`) es un input editable por artículo: se puede cargar o corregir el factor a mano ahí
-  mismo, sin necesitar una pantalla aparte (mismo espíritu que las celdas de precio editables en
-  Cotizaciones, sección 9.2 punto 6) — vaciar el campo borra el factor cargado.
-- Un artículo cuya unidad ya es `KGS` no necesita factor (ya está en kg, columna "kg/unidad" muestra
-  "—"). Un artículo sin factor cargado y sin unidad `KGS` queda con sus cantidades (salvo Comprado) en
-  "–" en vez de inventar un número — el Dashboard cuenta cuántos artículos están en esta situación
-  ("Artículos sin equivalencia KG") para saber cuánto falta completar.
+**Versión anterior (archivo `MatxPro.xlsx` original, ya reemplazada):** el primer archivo que pasó el
+usuario solo traía el kg equivalente de lo **comprado** (`KgsComprados`) — para las demás cantidades no
+había ningún kg equivalente en el archivo, así que esta primera versión del módulo resolvía la
+conversión con un factor kg-por-unidad cargado/editado a mano por artículo
+(`compras_articulos_kg_equivalencia`, mismo criterio que `compras_articulos_largo_barra` en
+Cotizaciones). Quedó obsoleto en cuanto Capataz empezó a traer el kg real de cada etapa — la tabla se
+renombró a `compras_articulos_kg_equivalencia_old` en vez de borrarse (ver 13.6), por si hiciera falta
+consultarla, pero el módulo ya no la usa ni muestra la columna "kg/unidad" editable que tenía el
+detalle de cada OT.
 
 ### 13.3 Agrupación de OT "adicionales"
 
@@ -1770,14 +1771,13 @@ del usuario tras probar la primera versión, 2026-10-02):
 Mismo patrón de nav colapsable que el resto ("📐 Materiales OT ▾"):
 
 - **Dashboard** (`materot-dash`) — 4 KPIs (OTs con datos — ya agrupadas por madre —, ítems OK, ítems
-  DIF, artículos sin equivalencia KG) + 2 gráficos (donut OK vs. DIF, barras "Top 10 OT por KGS
-  comprados").
+  DIF, ítems sin OT) + 2 gráficos (donut OK vs. DIF, barras "Top 10 OT por KGS comprados").
 - **Por OT** (`materot-cards`) — grilla de tarjetas (mismo patrón visual `.ot-card` que el módulo OT,
   sección 10.3), una por OT madre (con un badge "+N adicionales" si tiene hijas agrupadas), mostrando
   KGS comprados/solicitados y la cantidad de ítems con diferencia (DIF) de un vistazo. Acá vive el botón
   **"📤 Cargar archivo (.xlsx)"**. Click en una tarjeta abre el detalle con sub-pestañas **Resumen**
-  (KPIs + donut OK/DIF) y **Detalle** (tabla artículo por artículo con las 7 cantidades convertidas a
-  kg cuando hay equivalencia, el badge de Estado y la columna "kg/unidad" editable — ver 13.2).
+  (KPIs + donut OK/DIF) y **Detalle** (tabla artículo por artículo con las 7 cantidades en kg, directo
+  del archivo — ver 13.2 —, y el badge de Estado).
 - **Agrupar OT** (`materot-grupos`) — administración de la relación OT adicional → OT madre (ver 13.3).
 
 ### 13.5 Archivado de OT viejas/cerradas
@@ -1802,21 +1802,25 @@ y con menor opacidad. Cada tarjeta tiene su botón "📦 Archivar"/"♻️ React
 (`toggleArchivoOT()` en `js/modules/materot.js`), y el mismo botón se repite arriba del título al abrir
 el detalle de una OT puntual, para poder archivarla/reactivarla sin tener que volver a la grilla.
 
-### 13.6 Modelo de datos — `sql/020_materiales_ot.sql` + `sql/021_materot_archivado.sql`
+### 13.6 Modelo de datos — `sql/020_materiales_ot.sql` + `sql/021_materot_archivado.sql` + `sql/022_materot_kg_por_etapa.sql`
 
-Cuatro tablas (ver `sql/schema.sql` para el estado final), sin RLS (mismo criterio que el resto de
-`compras_*`):
+Tres tablas vigentes (ver `sql/schema.sql` para el estado final), sin RLS (mismo criterio que el resto
+de `compras_*`):
 
 - `compras_materot_items` — foto completa del archivo, reemplazada entera en cada carga (igual criterio
   que `compras_stock_saldos`). Guarda todas las columnas del export tal cual (incluido `estado`, sin
-  recalcular — ver 13.1).
+  recalcular — ver 13.1), más las columnas `kg_cotiz/kg_plan/kg_solic/kg_asig/kg_recibido/kg_entregado`
+  sumadas en `sql/022_materot_kg_por_etapa.sql` cuando Capataz empezó a traer el kg de cada etapa (ver
+  13.2).
 - `compras_materot_ot_grupos` — la relación manual OT adicional → OT madre (ver 13.3). `n_ot_hija` como
   PK (una OT no puede ser adicional de más de una madre a la vez).
-- `compras_articulos_kg_equivalencia` — el factor kg-por-unidad por artículo (ver 13.2), con su
-  `ume` (a qué unidad aplica) y `fuente` (`manual` por ahora — se deja el campo para cuando se importen
-  en bloque desde el segundo Excel que el usuario va a compartir).
 - `compras_materot_ot_archivadas` — qué OT efectiva está archivada (ver 13.5). `n_ot` como PK; sobrevive
   a cada reemplazo completo de `compras_materot_items` porque es una tabla aparte.
+
+**Tabla obsoleta:** `compras_articulos_kg_equivalencia` (el factor kg-por-unidad de la primera versión,
+ver 13.2) se renombró a `compras_articulos_kg_equivalencia_old` en `sql/022_materot_kg_por_etapa.sql`
+en vez de borrarse — mismo criterio que `compras_seguros_old`/`compras_permisos_old` (sección 4.4): no
+se pierde nada, solo deja de usarse. El módulo ya no la lee ni la escribe.
 
 ### 13.7 Decisiones tomadas y alcance actual
 
@@ -1896,10 +1900,10 @@ Ya decidido al construir el módulo Materiales OT (2026-10-02):
 - [x] La agrupación de "OT adicionales" bajo su OT madre es 100% manual (el usuario la carga a mano en
   la sub-vista "Agrupar OT") — se confirmó que las 142 OT reales del archivo de ejemplo son
   correlativas simples, sin ningún patrón que permita inferirlo solo — ver sección 13.3.
-- [x] La conversión a KGS de Cotizado/Planificado/Solicitado/Asignado/Recibido/Entregado se hace con un
-  factor kg-por-unidad editable por artículo (`compras_articulos_kg_equivalencia`), cargado a mano
-  desde el detalle de cada OT — "Comprado" siempre usa el kg que ya calcula Capataz
-  (`KgsComprados`), nunca se recalcula — ver sección 13.2.
+- [x] La conversión a KGS de Cotizado/Planificado/Solicitado/Asignado/Recibido/Entregado usaba al
+  principio un factor kg-por-unidad editable por artículo — quedó obsoleto el mismo día: Capataz ahora
+  exporta el kg equivalente de cada etapa directo (`kg_cotiz`/`kg_plan`/`kg_solic`/`KgsComprados`/
+  `kg_asig`/`kg_recibido`/`kg_entregado`), nunca se recalcula nada — ver sección 13.2.
 - [x] El flag `Estado` (OK/DIF) se muestra tal cual lo trae Capataz, no se recalcula con una regla
   propia — ver sección 13.1.
 - [x] Nuevo grupo de nav + tabla propia en Supabase (mismo patrón que OC/Stock/Cotizaciones), no una
@@ -1909,9 +1913,6 @@ Ya decidido al construir el módulo Materiales OT (2026-10-02):
   otra. Se archiva por OT efectiva (madre + adicionales juntas), no hija por hija.
 
 Todavía sin decidir:
-- [ ] Materiales OT: falta que el usuario comparta el segundo Excel (Cotizado/Planificado/Solicitado en
-  metros Y en kg a la vez) para sembrar `compras_articulos_kg_equivalencia` con factores aprendidos de
-  datos reales en vez de cargarlos todos a mano desde el detalle de cada OT — ver sección 13.2.
 - [ ] Materiales OT: confirmar el nombre exacto de la variante del export de Capataz (el instructivo de
   carga en `js/main.js` asume el mismo menú que Cotizaciones, sin confirmar — ver sección 13.6).
 - [ ] ¿Se integra el combustible/YPF Ruta al módulo Flota o queda como módulo aparte?
@@ -1983,9 +1984,12 @@ Todavía sin decidir:
 20. Correr [`sql/021_materot_archivado.sql`](sql/021_materot_archivado.sql) — crea
     `compras_materot_ot_archivadas` para poder archivar OT viejas/cerradas (ver sección 13.5)
     (**todavía falta**).
-21. Probar el circuito completo: pedir vehículo (solicitud.html) → aprobar y asignar (index.html) →
+21. Correr [`sql/022_materot_kg_por_etapa.sql`](sql/022_materot_kg_por_etapa.sql) — agrega las columnas
+    `kg_cotiz/kg_plan/kg_solic/kg_asig/kg_recibido/kg_entregado` a `compras_materot_items` y renombra
+    `compras_articulos_kg_equivalencia` a `_old` (ver sección 13.2/13.6) (**todavía falta**).
+22. Probar el circuito completo: pedir vehículo (solicitud.html) → aprobar y asignar (index.html) →
    registrar salida/retorno (porteria.html) → ver el movimiento reflejado en el dashboard.
-22. Evaluar RLS (Row Level Security) en las tablas `compras_*` — hoy cualquiera con el link de
+23. Evaluar RLS (Row Level Security) en las tablas `compras_*` — hoy cualquiera con el link de
    `solicitud.html`/`porteria.html` puede leer/escribir todas las tablas, sin ningún login de por medio.
-23. Ir completando los módulos `[TBD]` de la sección 3 a medida que los necesites, usando el módulo
+24. Ir completando los módulos `[TBD]` de la sección 3 a medida que los necesites, usando el módulo
    Flota (carpeta `js/modules/`) como plantilla.

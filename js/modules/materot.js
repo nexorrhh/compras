@@ -11,30 +11,26 @@
 // trae, por OT y por artículo, todo el ciclo de vida de un pedido de
 // Ingeniería — Cotizado (Presupuestos) → Planificado (Ingeniería,
 // puede variar) → Solicitado (lo que Compras tiene pendiente de
-// comprar) → Comprado (con su kg equivalente ya calculado por Capataz,
-// KgsComprados) → Asignado de stock → Recibido → Entregado — más un
-// flag Estado (OK/DIF) que YA viene calculado por Capataz: se muestra
-// tal cual, no se recalcula (mismo criterio de "no inventar" que el
-// resto del tablero) — la regla de fondo que explicó el usuario es que
-// no se puede entregar más de lo que se compró+recibió / asignó de
-// stock, y Capataz ya hace esa cuenta por su cuenta.
+// comprar) → Comprado → Asignado de stock → Recibido → Entregado — más
+// un flag Estado (OK/DIF) que YA viene calculado por Capataz: se
+// muestra tal cual, no se recalcula (mismo criterio de "no inventar"
+// que el resto del tablero) — la regla de fondo que explicó el usuario
+// es que no se puede entregar más de lo que se compró+recibió / asignó
+// de stock, y Capataz ya hace esa cuenta por su cuenta.
 //
 // El archivo es una FOTO COMPLETA (no trae fecha por fila, no hay forma
 // de hacer un reemplazo parcial por rango como en Órdenes de Compra) —
 // cada carga reemplaza toda compras_materot_items, igual criterio que
 // Stock (ver stock.js).
 //
-// Conversión a KGS: el archivo solo trae el kg equivalente de
-// "Comprado" (columna KgsComprados) — para las demás cantidades (que
-// vienen en metros/m²/litros/unidades según el artículo) no hay un kg
-// equivalente en el archivo. Se deriva con un factor kg-por-unidad por
-// artículo (compras_articulos_kg_equivalencia, mismo criterio que
-// compras_articulos_largo_barra en Cotizaciones: no hay una tabla
-// universal confiable, se carga una vez por artículo —a mano, editable
-// inline en el detalle de cada ítem— y el sistema la recuerda de ahí en
-// más). Un artículo sin factor cargado queda sin su equivalente en kg
-// (no se inventa ninguno), salvo "Comprado", que siempre tiene el valor
-// que ya trae Capataz.
+// Conversión a KGS: la primera versión de este módulo tenía que derivar
+// un factor kg-por-unidad por artículo a mano, porque el archivo solo
+// traía el kg equivalente de "Comprado" (KgsComprados). El usuario
+// ajustó el reporte en Capataz (2026-10-02) y ahora el archivo trae el
+// kg equivalente de CADA etapa (kg_cotiz, kg_plan, kg_solic,
+// KgsComprados, kg_asig, kg_recibido, kg_entregado) — ya no hace falta
+// derivar ni cargar ningún factor a mano, se usa directo el valor que
+// ya calcula Capataz (mismo criterio de "no inventar" de siempre).
 //
 // Agrupación de "OT adicionales": el usuario confirmó que no hay ningún
 // patrón en el número de OT que permita inferirlo solo (son
@@ -48,7 +44,6 @@ import { toast, norm, txt, num, fetchAll, escAttr } from '../utils.js';
 
 let ITEMS = [];      // compras_materot_items, todas las filas
 let GRUPOS = [];      // compras_materot_ot_grupos — [{n_ot_hija, n_ot_madre}]
-let KGEQ = new Map(); // cod_articulo -> {ume, kg_por_unidad, fuente}
 let ARCHIVADAS = new Set(); // n_ot (OT efectiva) ya archivadas
 
 let OT_ACTUAL = null; // OT madre que se está viendo en el detalle; null = vista de tarjetas
@@ -84,9 +79,11 @@ function parseWorkbookMaterot(arrayBuffer, filename) {
     id: idx('ID'), idVproy: idx('ID_VPROY'), numero: idx('NUMERO'), version: idx('VERSION'),
     estadoProy: idx('ESTADO_PROY'), tOt: idx('T_OT'), nOt: idx('N_OT'), articulo: idx('COD_ARTICU'),
     agrupacion: idx('AGRUPACION'), desc: idx('DESCRIPCIO'), descAdic: idx('DESC_ADIC'), ume: idx('UME'),
-    cotiz: idx('CANT_COTIZ'), plan: idx('CANT_PLAN'), solic: idx('CANT_SOLIC'), comprado: idx('COMPRADO'),
-    kgsComprados: idx('KGSCOMPRADOS'), asig: idx('CANT_ASIG'), recibido: idx('RECIBIDO'),
-    entregado: idx('ENTREGADO'), estado: idx('ESTADO'),
+    cotiz: idx('CANT_COTIZ'), kgCotiz: idx('KG_COTIZ'), plan: idx('CANT_PLAN'), kgPlan: idx('KG_PLAN'),
+    solic: idx('CANT_SOLIC'), kgSolic: idx('KG_SOLIC'), comprado: idx('COMPRADO'),
+    kgsComprados: idx('KGSCOMPRADOS'), asig: idx('CANT_ASIG'), kgAsig: idx('KG_ASIG'),
+    recibido: idx('RECIBIDO'), kgRecibido: idx('KG_RECIBIDO'), entregado: idx('ENTREGADO'),
+    kgEntregado: idx('KG_ENTREGADO'), estado: idx('ESTADO'),
   };
   for (const req of ['nOt', 'articulo']) {
     if (col[req] === -1) throw new Error(`No se encontró la columna esperada en el archivo (falta "${req}").`);
@@ -112,13 +109,19 @@ function parseWorkbookMaterot(arrayBuffer, filename) {
       desc_adicional: col.descAdic >= 0 ? txt(r[col.descAdic]) : null,
       ume: col.ume >= 0 ? txt(r[col.ume]) : null,
       cant_cotiz: num(r[col.cotiz]),
+      kg_cotiz: col.kgCotiz >= 0 ? num(r[col.kgCotiz]) : null,
       cant_plan: num(r[col.plan]),
+      kg_plan: col.kgPlan >= 0 ? num(r[col.kgPlan]) : null,
       cant_solic: num(r[col.solic]),
+      kg_solic: col.kgSolic >= 0 ? num(r[col.kgSolic]) : null,
       comprado: num(r[col.comprado]),
       kgs_comprados: num(r[col.kgsComprados]),
       cant_asig: num(r[col.asig]),
+      kg_asig: col.kgAsig >= 0 ? num(r[col.kgAsig]) : null,
       recibido: num(r[col.recibido]),
+      kg_recibido: col.kgRecibido >= 0 ? num(r[col.kgRecibido]) : null,
       entregado: num(r[col.entregado]),
+      kg_entregado: col.kgEntregado >= 0 ? num(r[col.kgEntregado]) : null,
       estado: col.estado >= 0 ? txt(r[col.estado]) : null,
       archivo_origen: filename,
     });
@@ -162,17 +165,15 @@ async function cargarArchivo(file) {
 // Carga de datos
 // ------------------------------------------------------------
 async function cargarTodo() {
-  const [{ data: items, error: e1 }, { data: grupos, error: e2 }, { data: kgeq, error: e3 }, { data: arch, error: e4 }] = await Promise.all([
+  const [{ data: items, error: e1 }, { data: grupos, error: e2 }, { data: arch, error: e3 }] = await Promise.all([
     fetchAll(() => SB.from('compras_materot_items').select('*')),
     SB.from('compras_materot_ot_grupos').select('*').then(r => r),
-    fetchAll(() => SB.from('compras_articulos_kg_equivalencia').select('*')),
     SB.from('compras_materot_ot_archivadas').select('n_ot').then(r => r),
   ]);
-  const error = e1 || e2 || e3 || e4;
+  const error = e1 || e2 || e3;
   if (error) { toast(error.message, 'er'); return; }
   ITEMS = items || [];
   GRUPOS = grupos || [];
-  KGEQ = new Map((kgeq || []).map(k => [k.cod_articulo, k]));
   ARCHIVADAS = new Set((arch || []).map(a => a.n_ot));
 }
 
@@ -202,52 +203,35 @@ function agruparPorOTMadre() {
 }
 
 // ------------------------------------------------------------
-// Conversión a KGS — ver nota de cabecera. "Comprado" siempre tiene el
-// kg que ya trae Capataz (kgs_comprados); el resto se deriva con el
-// factor aprendido/cargado a mano en compras_articulos_kg_equivalencia.
-// null = sin equivalencia disponible (no se inventa ningún número).
+// Conversión a KGS — ver nota de cabecera. Capataz ya trae el kg
+// equivalente de cada etapa, no hace falta derivar ni cargar nada.
 // ------------------------------------------------------------
-function factorKg(item) {
-  if ((item.ume || '').toUpperCase() === 'KGS') return 1;
-  return KGEQ.get(item.cod_articulo)?.kg_por_unidad ?? null;
-}
-
-function aKg(item, valor) {
-  const f = factorKg(item);
-  return f == null ? null : Number(valor || 0) * f;
-}
-
 function kgsItem(item) {
   return {
-    cotiz: aKg(item, item.cant_cotiz),
-    plan: aKg(item, item.cant_plan),
-    solic: aKg(item, item.cant_solic),
-    comprado: Number(item.kgs_comprados || 0), // siempre el de Capataz, no se recalcula
-    asig: aKg(item, item.cant_asig),
-    recibido: aKg(item, item.recibido),
-    entregado: aKg(item, item.entregado),
+    cotiz: Number(item.kg_cotiz || 0),
+    plan: Number(item.kg_plan || 0),
+    solic: Number(item.kg_solic || 0),
+    comprado: Number(item.kgs_comprados || 0),
+    asig: Number(item.kg_asig || 0),
+    recibido: Number(item.kg_recibido || 0),
+    entregado: Number(item.kg_entregado || 0),
   };
 }
 
 function sumarKg(items) {
   const tot = { cotiz: 0, plan: 0, solic: 0, comprado: 0, asig: 0, recibido: 0, entregado: 0 };
-  let sinEquivalencia = 0;
   for (const it of items) {
     const k = kgsItem(it);
-    for (const campo of ['cotiz', 'plan', 'solic', 'asig', 'recibido', 'entregado']) {
-      if (k[campo] != null) tot[campo] += k[campo];
-    }
-    tot.comprado += k.comprado;
-    if (factorKg(it) == null) sinEquivalencia++;
+    for (const campo of Object.keys(tot)) tot[campo] += k[campo];
   }
-  return { tot, sinEquivalencia };
+  return { tot };
 }
 
 function estadisticasOT(items) {
-  const { tot, sinEquivalencia } = sumarKg(items);
+  const { tot } = sumarKg(items);
   const nOK = items.filter(it => (it.estado || '').toUpperCase() === 'OK').length;
   const nDIF = items.filter(it => (it.estado || '').toUpperCase() === 'DIF').length;
-  return { tot, sinEquivalencia, nOK, nDIF, nItems: items.length };
+  return { tot, nOK, nDIF, nItems: items.length };
 }
 
 // ------------------------------------------------------------
@@ -313,14 +297,12 @@ function renderDashboard() {
 
   const nOK = itemsActivos.filter(it => (it.estado || '').toUpperCase() === 'OK').length;
   const nDIF = itemsActivos.filter(it => (it.estado || '').toUpperCase() === 'DIF').length;
-  const articulosSinEquivalencia = new Set(
-    itemsActivos.filter(it => (it.ume || '').toUpperCase() !== 'KGS' && factorKg(it) == null).map(it => it.cod_articulo)
-  ).size;
+  const nSinOT = (gruposActivos.get('') || []).length;
 
   setTxt('mrd_k_ot', gruposActivos.size);
   setTxt('mrd_k_ok', nOK);
   setTxt('mrd_k_dif', nDIF);
-  setTxt('mrd_k_sinkg', articulosSinEquivalencia);
+  setTxt('mrd_k_sinot', nSinOT);
 
   renderDonutOKDIF('mrd_chart_okdif', nOK, nDIF);
   renderBarrasTopOT('mrd_chart_topot', gruposActivos);
@@ -360,8 +342,8 @@ function renderCards() {
         ${archivada ? '<span class="badge" style="margin-left:6px;font-weight:400">📦 Archivada</span>' : ''}
       </div>
       <div style="font-size:13px;margin-top:8px">🛒 Comprado: <strong>${numFmt(st.tot.comprado)} KGS</strong></div>
-      <div style="font-size:13px">📋 Solicitado: <strong>${st.tot.solic != null ? numFmt(st.tot.solic) + ' KGS' : '–'}</strong></div>
-      <div style="font-size:12px;color:var(--muted);margin-top:4px">${st.nItems} ítem${st.nItems === 1 ? '' : 's'}${st.sinEquivalencia ? ` · ${st.sinEquivalencia} sin equiv. kg` : ''}</div>
+      <div style="font-size:13px">📋 Solicitado: <strong>${numFmt(st.tot.solic)} KGS</strong></div>
+      <div style="font-size:12px;color:var(--muted);margin-top:4px">${st.nItems} ítem${st.nItems === 1 ? '' : 's'}</div>
       ${st.nDIF ? `<div style="font-size:12px;color:var(--red);margin-top:6px">⚠️ ${st.nDIF} con diferencia (DIF)</div>` : ''}
       <div style="margin-top:8px">
         <button type="button" class="bsm mro-toggle-archivo" data-ot="${escAttr(ot)}" data-archivada="${archivada ? '1' : '0'}">${archivada ? '♻️ Reactivar' : '📦 Archivar'}</button>
@@ -436,7 +418,6 @@ function renderDetalle() {
   setTxt('mrod_k_items', st.nItems);
   setTxt('mrod_k_ok', st.nOK);
   setTxt('mrod_k_dif', st.nDIF);
-  setTxt('mrod_k_sinkg', st.sinEquivalencia);
 
   renderDonutOKDIF('mrod_chart_okdif', st.nOK, st.nDIF);
 
@@ -447,54 +428,24 @@ function renderDetalle() {
       .sort((a, b) => (a.descripcion || '').localeCompare(b.descripcion || '', 'es'))
       .map(it => {
         const k = kgsItem(it);
-        const f = factorKg(it);
-        const esKgNativo = (it.ume || '').toUpperCase() === 'KGS';
-        const fVal = f != null ? f : '';
         return `<tr>
           <td>${escAttr(it.cod_articulo)}</td>
           <td>${escAttr(it.descripcion || '')}</td>
           <td>${escAttr(it.ume || '–')}</td>
-          <td style="text-align:right">${k.cotiz != null ? numFmt(k.cotiz) : '–'}</td>
-          <td style="text-align:right">${k.plan != null ? numFmt(k.plan) : '–'}</td>
-          <td style="text-align:right">${k.solic != null ? numFmt(k.solic) : '–'}</td>
+          <td style="text-align:right">${numFmt(k.cotiz)}</td>
+          <td style="text-align:right">${numFmt(k.plan)}</td>
+          <td style="text-align:right">${numFmt(k.solic)}</td>
           <td style="text-align:right">${numFmt(k.comprado)}</td>
-          <td style="text-align:right">${k.asig != null ? numFmt(k.asig) : '–'}</td>
-          <td style="text-align:right">${k.recibido != null ? numFmt(k.recibido) : '–'}</td>
-          <td style="text-align:right">${k.entregado != null ? numFmt(k.entregado) : '–'}</td>
+          <td style="text-align:right">${numFmt(k.asig)}</td>
+          <td style="text-align:right">${numFmt(k.recibido)}</td>
+          <td style="text-align:right">${numFmt(k.entregado)}</td>
           <td><span class="badge ${(it.estado || '').toUpperCase() === 'DIF' ? 'rechazado' : 'aprobado'}">${escAttr(it.estado || '–')}</span></td>
-          <td style="white-space:nowrap">
-            ${esKgNativo
-              ? '<span style="color:var(--muted)" title="Ya está en KGS, no hace falta factor">—</span>'
-              : `<input type="text" class="mro-kgfactor" data-cod="${escAttr(it.cod_articulo)}" data-ume="${escAttr(it.ume || '')}" value="${fVal}" placeholder="kg/u" style="width:70px" title="KG por unidad de ${escAttr(it.ume || '?')} para este artículo">`}
-          </td>
         </tr>`;
       }).join('');
-    tbody.innerHTML = filas || `<tr><td colspan="12" style="text-align:center;padding:18px;color:var(--muted)">Sin ítems</td></tr>`;
+    tbody.innerHTML = filas || `<tr><td colspan="11" style="text-align:center;padding:18px;color:var(--muted)">Sin ítems</td></tr>`;
   }
 
   mostrarTabOT(OT_TAB);
-}
-
-// Guarda/corrige a mano el factor kg-por-unidad de un artículo (ver nota
-// de cabecera) — se usa tanto si no había ninguno cargado como para
-// corregir uno ya aprendido.
-async function guardarFactorKg(cod, ume, valorTxt) {
-  const valor = Number(String(valorTxt).replace(',', '.'));
-  if (!valorTxt.trim()) {
-    // Vaciar el campo borra el factor cargado (vuelve a quedar "sin equivalencia").
-    const { error } = await SB.from('compras_articulos_kg_equivalencia').delete().eq('cod_articulo', cod);
-    if (error) { toast(error.message, 'er'); return; }
-    KGEQ.delete(cod);
-    toast('Factor eliminado — este artículo vuelve a quedar sin equivalencia en kg');
-  } else {
-    if (!isFinite(valor) || valor <= 0) { toast('Ingresá un número mayor a 0 (o dejalo vacío para borrar el factor)', 'er'); return; }
-    const row = { cod_articulo: cod, ume, kg_por_unidad: valor, fuente: 'manual', updated_at: new Date().toISOString() };
-    const { error } = await SB.from('compras_articulos_kg_equivalencia').upsert(row).select().single();
-    if (error) { toast(error.message, 'er'); return; }
-    KGEQ.set(cod, row);
-    toast('✓ Factor kg/unidad guardado');
-  }
-  renderDetalle();
 }
 
 // ------------------------------------------------------------
@@ -633,10 +584,6 @@ export function init() {
   document.getElementById('mro_det_tabs')?.addEventListener('click', e => {
     const btn = e.target.closest('.subtab');
     if (btn) mostrarTabOT(btn.dataset.tab);
-  });
-  document.getElementById('t-mro-detalle')?.addEventListener('change', e => {
-    const input = e.target.closest('.mro-kgfactor');
-    if (input) guardarFactorKg(input.dataset.cod, input.dataset.ume, input.value);
   });
 
   document.getElementById('mro_file')?.addEventListener('change', e => {

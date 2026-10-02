@@ -349,8 +349,11 @@ create table compras_articulos_largo_barra (
 
 -- Módulo Materiales OT — seguimiento por OT del export de Capataz
 -- "Gestión personalizada de Ventas y Compras" (ver sql/020_materiales_ot.sql
--- y CLAUDE.md sección 16). Foto completa del estado (reemplaza toda la
--- tabla en cada carga, igual criterio que compras_stock_saldos).
+-- y sql/022_materot_kg_por_etapa.sql, CLAUDE.md sección 13). Foto
+-- completa del estado (reemplaza toda la tabla en cada carga, igual
+-- criterio que compras_stock_saldos). Capataz trae el kg equivalente de
+-- CADA etapa (kg_cotiz/kg_plan/kg_solic/kgs_comprados/kg_asig/
+-- kg_recibido/kg_entregado) — no hace falta derivar ningún factor.
 create table compras_materot_items (
   id bigint generated always as identity primary key,
   capataz_id bigint,
@@ -366,13 +369,19 @@ create table compras_materot_items (
   desc_adicional text,
   ume text,
   cant_cotiz numeric,
+  kg_cotiz numeric,
   cant_plan numeric,
+  kg_plan numeric,
   cant_solic numeric,
+  kg_solic numeric,
   comprado numeric,
   kgs_comprados numeric,
   cant_asig numeric,
+  kg_asig numeric,
   recibido numeric,
+  kg_recibido numeric,
   entregado numeric,
+  kg_entregado numeric,
   estado text,
   archivo_origen text,
   created_at timestamptz not null default now()
@@ -384,19 +393,6 @@ create table compras_materot_ot_grupos (
   n_ot_hija text primary key,
   n_ot_madre text not null,
   created_at timestamptz not null default now()
-);
-
--- Factor kg-por-unidad por artículo, para mostrar en KGS lo que el
--- archivo trae en metros/m²/litros/unidades (el archivo solo trae el kg
--- equivalente de "comprado"). Mismo criterio que
--- compras_articulos_largo_barra: se carga una vez por artículo y el
--- sistema la recuerda de ahí en más.
-create table compras_articulos_kg_equivalencia (
-  cod_articulo text primary key,
-  ume text,
-  kg_por_unidad numeric not null,
-  fuente text not null default 'manual',
-  updated_at timestamptz not null default now()
 );
 
 -- Archivado de OT viejas/cerradas en Materiales OT (ver
