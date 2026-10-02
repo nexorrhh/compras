@@ -513,11 +513,16 @@ function renderGrupos() {
   const selMadre = document.getElementById('mrog_madre');
   if (selHija && selMadre) {
     // Una OT que ya es hija de otra no puede volver a elegirse como hija
-    // (evita cadenas hija→hija→madre, que complicarían la agrupación sin
-    // necesidad real).
-    const disponiblesHija = todas.filter(ot => !madres.has(ot));
-    selHija.innerHTML = disponiblesHija.map(ot => `<option value="${escAttr(ot)}">${escAttr(formatOT(ot))}</option>`).join('');
-    selMadre.innerHTML = todas.map(ot => `<option value="${escAttr(ot)}">${escAttr(formatOT(ot))}</option>`).join('');
+    // NI como madre (evita cadenas hija→hija→madre, que dejarían
+    // artículos "a mitad de camino" sin llegar nunca a la madre real) —
+    // mismas opciones disponibles en los dos selects. Arrancan sin nada
+    // elegido (placeholder) para no sugerir una agrupación por default
+    // con el primer valor de la lista (confundía: los dos selects
+    // mostraban la misma OT al abrir la pantalla).
+    const disponibles = todas.filter(ot => !madres.has(ot));
+    const opciones = disponibles.map(ot => `<option value="${escAttr(ot)}">${escAttr(formatOT(ot))}</option>`).join('');
+    selHija.innerHTML = `<option value="">— Elegí una OT —</option>${opciones}`;
+    selMadre.innerHTML = `<option value="">— Elegí una OT —</option>${opciones}`;
   }
 
   const tbody = document.getElementById('t-mro-grupos');
@@ -541,6 +546,11 @@ async function agruparOT() {
   toast(`✓ OT ${formatOT(hija)} agrupada bajo ${formatOT(madre)}`);
   await cargarTodo();
   renderGrupos();
+  // Si una misma OT madre tiene varias adicionales, conviene no tener
+  // que volver a elegirla cada vez — se mantiene seleccionada después de
+  // agrupar (la OT ya usada como hija desaparece sola de la lista).
+  const selMadre = document.getElementById('mrog_madre');
+  if (selMadre && [...selMadre.options].some(o => o.value === madre)) selMadre.value = madre;
 }
 
 async function quitarGrupo(nOtHija) {
