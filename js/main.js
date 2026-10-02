@@ -22,6 +22,7 @@ import * as proveedores from './modules/proveedores.js';
 import * as notasPedido from './modules/notas-pedido.js';
 import * as cotizaciones from './modules/cotizaciones.js';
 import * as ot from './modules/ot.js';
+import * as materot from './modules/materot.js';
 import * as parametrizacion from './modules/parametrizacion.js';
 
 const MODULES = {
@@ -33,6 +34,7 @@ const MODULES = {
   'cot-lista': cotizaciones,
   'cot-pendientes': cotizaciones,
   'ot-dash': ot, 'ot-cards': ot,
+  'materot-dash': materot, 'materot-cards': materot, 'materot-grupos': materot,
   'param-usuarios': parametrizacion,
 };
 
@@ -101,6 +103,15 @@ const INSTRUCTIVOS = {
       'Exportá el informe a Excel (.xlsx).',
     ],
     fileInputId: 'cot_file',
+  },
+  materot: {
+    titulo: '📤 Cómo bajar el archivo de Materiales OT',
+    pasos: [
+      'Abrí <strong>Capataz Software</strong>.',
+      'Menú <strong>Venta y Compras → Movimientos → Gestión personalizada de ventas y compras</strong> (la vista por OT, con columnas Cotizado/Planificado/Solicitado/Comprado).',
+      'Exportá el informe a Excel (.xlsx).',
+    ],
+    fileInputId: 'mro_file',
   },
 };
 

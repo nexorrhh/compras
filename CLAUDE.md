@@ -47,6 +47,7 @@ seguros, permisos). El resto de los módulos se va a ir sumando a medida que se 
 | **Cotizaciones** | `[DETALLADO]` (sección 9) | Solicitudes de cotización armadas desde el export de Capataz — marcar qué artículos no hace falta comprar (ya hay stock), invitar proveedores, cargar precios y comparar, con un resumen por proveedor en kg/lts/uni para repartir la compra respetando mínimos |
 | **OT** | `[DETALLADO]` (sección 10) | Seguimiento de compras por orden de trabajo — tarjetas por OT + gráficos, distinguiendo lo comprado de lo asignado de stock; lee los datos de Cotizaciones, sin tablas propias |
 | **Parametrización** | `[DETALLADO]` (sección 12) | Alta de perfiles con PIN self-service y restricción de qué módulos puede ver cada uno (a nivel interfaz, no seguridad real) |
+| **Materiales OT** | `[DETALLADO]` (sección 13) | Seguimiento por OT del export de Capataz "Gestión personalizada de Ventas y Compras" (variante por OT) — Cotizado/Planificado/Solicitado/Comprado/Asignado/Recibido/Entregado, visto en KGS, con agrupación manual de OT adicionales bajo su OT madre |
 | Presupuesto y gastos de compras | `[TBD]` | Presupuestado vs. real por categoría/área, alertas de desvío |
 | Contratos y vencimientos | `[TBD]` | Contratos de servicios, alquileres, licencias — no solo de vehículos |
 | Circuito de aprobaciones | `[TBD]` | Reglas de autorización de pagos/compras según monto |
@@ -1541,9 +1542,11 @@ tablero-compras/
 │       ├── notas-pedido.js  (Notas de Pedido — numeración + PDF + vínculo con OC, ver sección 8)
 │       ├── cotizaciones.js  (Cotizaciones — se alimenta de Capataz y de Proveedores, ver sección 9)
 │       ├── ot.js  (OT — lee y reagrupa los datos de Cotizaciones, sin tablas propias, ver sección 10)
+│       ├── materot.js  (Materiales OT — Cotizado/Planificado/Solicitado/Comprado en KGS, ver sección 13)
 │       └── parametrizacion.js  (Parametrización — alta de perfiles y módulos habilitados, ver sección 12)
 ├── Excels/                (archivos de ejemplo de OC, Stock y NP — en .gitignore, no se suben al repo)
 ├── Cotizar.xlsx           (archivo de ejemplo de Cotizaciones — también en .gitignore, datos reales)
+├── MatxPro.xlsx           (archivo de ejemplo de Materiales OT — también en .gitignore, datos reales)
 └── sql/
     ├── schema.sql
     ├── 002_seguros_archivo.sql
@@ -1563,7 +1566,8 @@ tablero-compras/
     ├── 016_cotizaciones_condicion_pago.sql
     ├── 017_cotizaciones_duplicado_aceptado.sql
     ├── 018_articulos_largo_barra.sql
-    └── 019_usuarios_modulos.sql
+    ├── 019_usuarios_modulos.sql
+    └── 020_materiales_ot.sql
 ```
 
 > `porteria.html` y `solicitud.html` son entry points separados (audiencias distintas: portero de
@@ -1590,7 +1594,7 @@ interfaz**: se ocultan del nav los grupos de módulos que el perfil no tiene hab
 que el PIN de siempre (para que la persona no navegue a algo que no le corresponde, no como defensa
 contra alguien con conocimientos técnicos). Implementarlo de verdad (que ni con la anon key se pueda
 leer/escribir un módulo sin permiso) requeriría sumar Supabase Auth + RLS por tabla en las ~30 tablas
-`compras_*` — un cambio grande, que queda afuera de esta versión (sigue como TBD en la sección 14).
+`compras_*` — un cambio grande, que queda afuera de esta versión (sigue como TBD en la sección 15).
 
 ### 12.2 Modelo de datos — `sql/019_usuarios_modulos.sql`
 
@@ -1655,7 +1659,139 @@ vez por carga de página — repetirla en cada login duplicaría los event liste
 header también muestra quién está logueado (`#usuario-actual`, "👤 Apellido") para que quede claro con
 qué perfil se está viendo el tablero antes de decidir cerrar sesión.
 
-## 13. Notas específicas de entorno
+## 13. Módulo: Materiales OT `[DETALLADO]`
+
+Pedido explícito del usuario (2026-10-02): un módulo nuevo, sin relación con Flota/OC/Stock/
+Proveedores/Notas de Pedido/Cotizaciones ni con el módulo **OT** (sección 10, que lee datos de
+Cotizaciones) — se alimenta de un export de Capataz **distinto**, con mucha más riqueza por OT:
+Cotizado (lo que dijo Presupuestos que iba a hacer falta) → Planificado (lo que dice Ingeniería que
+hace falta, puede variar) → Solicitado (lo que Ingeniería pidió por sistema — lo que Compras tiene
+pendiente de comprar) → Comprado (con OC) → Asignado de stock → Recibido → Entregado, más un flag
+`Estado` (OK/DIF) que ya calcula Capataz. El archivo de ejemplo real que pasó el usuario para diseñar
+el parseo (`MatxPro.xlsx`, 4141 filas × 21 columnas) tiene datos reales de compras — queda en la raíz
+del repo pero en `.gitignore`, mismo criterio que `Excels/`/`Cotizar.xlsx` (ver 5.5/6.5/9.4).
+
+### 13.1 De dónde viene el dato
+
+Capataz, menú **Venta y Compras → Movimientos → Gestión personalizada de ventas y compras** (mismo
+menú general que usa Cotizaciones, sección 9.1, pero una vista/export distinta — con más columnas y
+pensada para seguimiento por OT en vez de para armar una comparativa de precios). Columnas reales del
+archivo (nombres tal cual los pone Capataz, case original): `id, id_vproy, numero, version,
+estado_proy, t_ot, n_ot, cod_articu, agrupacion, descripcio, desc_adic, ume, cant_cotiz, cant_plan,
+cant_solic, comprado, KgsComprados, cant_asig, recibido, entregado, estado`. Es una **foto completa**
+del estado a la fecha del export (no trae fecha por fila, no hay forma de hacer un reemplazo parcial
+por rango como en Órdenes de Compra) — cada carga reemplaza toda `compras_materot_items`, mismo
+criterio que Stock (sección 6.2).
+
+Semántica de cada cantidad (explicada por el usuario, 2026-10-02):
+- **Cotizado** (`cant_cotiz`) — lo que Presupuestos dijo que se iba a necesitar en esa OT.
+- **Planificado** (`cant_plan`) — lo que Ingeniería dice que hace falta; puede variar, Ingeniería lo
+  actualiza.
+- **Solicitado** (`cant_solic`) — lo que Ingeniería pidió por sistema. "Es algo importante, ya que es
+  lo que después Compras... tengo pendiente de compra" (palabras del usuario) — es el número que
+  importa para saber qué falta comprar.
+- **Comprado** (`comprado`) — lo que se compró (se le hizo Orden de Compra).
+- **Asignado** (`cant_asig`) — lo que se cubrió asignando stock existente, sin comprar.
+- **Recibido** (`recibido`) / **Entregado** (`entregado`) — lo que efectivamente llegó / se entregó a
+  la obra.
+- **Estado** (`estado`, OK/DIF) — Capataz ya calcula esta bandera: la regla de fondo (explicada por el
+  usuario con un ejemplo real — Ingeniería solicita 10L de pintura, Compras asigna 10L de stock, pero
+  Despacho termina entregando 20L) es que **no se puede entregar material que no haya sido comprado +
+  recibido, o asignado de stock** — si Despacho/Pañol entregó de más, algo está mal y hay que corregirlo
+  pidiendo ese excedente formalmente para que Compras lo asigne/compre y "cierre todo correctamente".
+  Esta bandera se **muestra tal cual la trae el archivo, no se recalcula** — mismo criterio de "no
+  inventar" que el resto del tablero (ver IMPORTE/CANT_PEN en Órdenes de Compra, sección 5.1).
+- `cant_cotiz/cant_plan/cant_solic/comprado/cant_asig/recibido/entregado` vienen todas en la unidad que
+  indica `ume` **de esa fila** (no siempre metros — se confirmó con datos reales que `ume` varía:
+  `UNI`, `MTS`, `MT2`, `LTS`, `KGS` y algún caso raro `SINUNIDAD`). `KgsComprados` es la **única**
+  cantidad que el archivo ya trae convertida a kg — el equivalente en kg de `comprado` únicamente.
+
+### 13.2 Conversión a KGS
+
+El usuario quería ver todo esto "en realidad en KGS" — pero el archivo solo trae el kg equivalente de
+lo **comprado** (`KgsComprados`). Para las demás cantidades (que vienen en metros/m²/litros/unidades
+según el artículo) no hay ningún kg equivalente en el archivo. Se resolvió con un **factor kg-por-
+unidad por artículo**, guardado en `compras_articulos_kg_equivalencia` — mismo criterio que
+`compras_articulos_largo_barra` en Cotizaciones (sección 9.1, "Ajustar a barra entera"): no hay una
+tabla universal confiable para esto (el mismo artículo puede pesar distinto por metro según el
+proveedor/lote), así que se carga una vez por artículo y el sistema la recuerda de ahí en más.
+
+- El usuario ofreció pasar un **segundo Excel** (mismo origen, con Cotizado/Planificado/Solicitado
+  cargados en metros Y en kg a la vez, aunque sin la parte de compras) para que esos factores se
+  aprendan de datos reales en vez de cargarlos todos a mano desde cero — pendiente de que lo comparta
+  (ver sección 15, Decisiones abiertas). La idea confirmada con el usuario es que el **uso diario** del
+  módulo siga siendo subir solo `MatxPro.xlsx` — ese segundo archivo es solo insumo puntual para
+  sembrar la tabla de equivalencias, no algo que se vuelva a subir cada vez.
+- Mientras tanto, la columna **"kg/unidad"** en el detalle de cada OT (`js/modules/materot.js`,
+  `renderDetalle()`) es un input editable por artículo: se puede cargar o corregir el factor a mano ahí
+  mismo, sin necesitar una pantalla aparte (mismo espíritu que las celdas de precio editables en
+  Cotizaciones, sección 9.2 punto 6) — vaciar el campo borra el factor cargado.
+- Un artículo cuya unidad ya es `KGS` no necesita factor (ya está en kg, columna "kg/unidad" muestra
+  "—"). Un artículo sin factor cargado y sin unidad `KGS` queda con sus cantidades (salvo Comprado) en
+  "–" en vez de inventar un número — el Dashboard cuenta cuántos artículos están en esta situación
+  ("Artículos sin equivalencia KG") para saber cuánto falta completar.
+
+### 13.3 Agrupación de OT "adicionales"
+
+El usuario señaló que "vas a ver muchas OT pero algunas se agrupan — varios números corresponden a una
+sola OT pero son adicionales de esa OT inicial". Antes de construir nada se revisaron las 142 OT reales
+del archivo de ejemplo: son **correlativas simples** (`000000000170`, `000000000391`, ...), sin ningún
+sufijo/letra/patrón que distinga una OT adicional de su madre, y cada una tiene un único `numero`/
+`id_vproy` propio (no hay ninguna otra columna del archivo que las relacione). Confirmado con el
+usuario: **es una relación que solo él conoce** (misma obra, números de OT distintos) y la carga a
+mano — no se puede inferir del archivo.
+
+Por eso existe la sub-vista **Agrupar OT** (`materot-grupos`): dos `<select>` (OT adicional / es
+adicional de OT madre) + botón "Agrupar", guardado en `compras_materot_ot_grupos` (`n_ot_hija` como
+PK, para que cada OT sea adicional de una sola madre). El resto del módulo (`agruparPorOTMadre()` en
+`js/modules/materot.js`) suma los ítems de toda OT hija bajo su madre antes de mostrar tarjetas/
+Dashboard — una OT que ya es hija de otra no puede volverse a elegir como hija de una tercera (se
+filtra del `<select>`), para no armar cadenas hija→hija→madre que compliquen la agrupación sin
+necesidad real.
+
+### 13.4 Vistas
+
+Mismo patrón de nav colapsable que el resto ("📐 Materiales OT ▾"):
+
+- **Dashboard** (`materot-dash`) — 4 KPIs (OTs con datos — ya agrupadas por madre —, ítems OK, ítems
+  DIF, artículos sin equivalencia KG) + 2 gráficos (donut OK vs. DIF, barras "Top 10 OT por KGS
+  comprados").
+- **Por OT** (`materot-cards`) — grilla de tarjetas (mismo patrón visual `.ot-card` que el módulo OT,
+  sección 10.3), una por OT madre (con un badge "+N adicionales" si tiene hijas agrupadas), mostrando
+  KGS comprados/solicitados y la cantidad de ítems con diferencia (DIF) de un vistazo. Acá vive el botón
+  **"📤 Cargar archivo (.xlsx)"**. Click en una tarjeta abre el detalle con sub-pestañas **Resumen**
+  (KPIs + donut OK/DIF) y **Detalle** (tabla artículo por artículo con las 7 cantidades convertidas a
+  kg cuando hay equivalencia, el badge de Estado y la columna "kg/unidad" editable — ver 13.2).
+- **Agrupar OT** (`materot-grupos`) — administración de la relación OT adicional → OT madre (ver 13.3).
+
+### 13.5 Modelo de datos — `sql/020_materiales_ot.sql`
+
+Tres tablas (ver `sql/schema.sql` para el estado final), sin RLS (mismo criterio que el resto de
+`compras_*`):
+
+- `compras_materot_items` — foto completa del archivo, reemplazada entera en cada carga (igual criterio
+  que `compras_stock_saldos`). Guarda todas las columnas del export tal cual (incluido `estado`, sin
+  recalcular — ver 13.1).
+- `compras_materot_ot_grupos` — la relación manual OT adicional → OT madre (ver 13.3). `n_ot_hija` como
+  PK (una OT no puede ser adicional de más de una madre a la vez).
+- `compras_articulos_kg_equivalencia` — el factor kg-por-unidad por artículo (ver 13.2), con su
+  `ume` (a qué unidad aplica) y `fuente` (`manual` por ahora — se deja el campo para cuando se importen
+  en bloque desde el segundo Excel que el usuario va a compartir).
+
+### 13.6 Decisiones tomadas y alcance actual
+
+- **Instructivo de carga sin confirmar todavía**: el paso a paso que muestra el modal antes de elegir
+  el archivo (`js/main.js`, `INSTRUCTIVOS.materot`) asume el mismo menú de Capataz que usa Cotizaciones
+  (Venta y Compras → Movimientos → Gestión personalizada de ventas y compras) aclarando "la vista por
+  OT" — no se confirmó con el usuario el nombre exacto de esa variante dentro de Capataz, revisar el
+  texto cuando lo use de verdad por primera vez.
+- **Sin vínculo con Cotizaciones ni con el módulo OT todavía**: aunque ambos terminan hablando de
+  compras por OT, son dos fuentes de datos distintas (Cotizaciones/OT no traen Cotizado/Planificado/
+  Asignado/Recibido/Entregado; este archivo no pasa por el circuito de invitar proveedores/comparar
+  precios) — unificarlos podría evaluarse más adelante si hiciera falta, no se pidió para esta primera
+  versión.
+
+## 14. Notas específicas de entorno
 
 - Dijiste que vas a trabajar este proyecto en **Antigravity** (cuenta de la empresa). Ojo con un detalle
   que ya tenemos registrado de tu workflow: **Antigravity no carga `CLAUDE.md` automáticamente** — usa
@@ -1665,7 +1801,7 @@ qué perfil se está viendo el tablero antes de decidir cerrar sesión.
   `CLAUDE.md`. Lo más simple: mantener el contenido en `CLAUDE.md` y tener una copia (o symlink) como
   `AGENTS.md`.
 
-## 14. Decisiones abiertas (TBD)
+## 15. Decisiones abiertas (TBD)
 
 Ya decidido al construir el módulo Flota (2026-08-04):
 - [x] Esquema de datos: se migró al diseño de la sección 4.4 (`compras_vehiculos` separado de
@@ -1716,7 +1852,25 @@ Ya decidido al construir el módulo Parametrización (2026-09-28):
 - [x] El alta de un perfil nuevo sigue sin pedir contraseña — reusa el mismo circuito de "Crear PIN" en
   el primer ingreso que ya existía (sección 11), solo se le suma elegir los módulos habilitados.
 
+Ya decidido al construir el módulo Materiales OT (2026-10-02):
+- [x] La agrupación de "OT adicionales" bajo su OT madre es 100% manual (el usuario la carga a mano en
+  la sub-vista "Agrupar OT") — se confirmó que las 142 OT reales del archivo de ejemplo son
+  correlativas simples, sin ningún patrón que permita inferirlo solo — ver sección 13.3.
+- [x] La conversión a KGS de Cotizado/Planificado/Solicitado/Asignado/Recibido/Entregado se hace con un
+  factor kg-por-unidad editable por artículo (`compras_articulos_kg_equivalencia`), cargado a mano
+  desde el detalle de cada OT — "Comprado" siempre usa el kg que ya calcula Capataz
+  (`KgsComprados`), nunca se recalcula — ver sección 13.2.
+- [x] El flag `Estado` (OK/DIF) se muestra tal cual lo trae Capataz, no se recalcula con una regla
+  propia — ver sección 13.1.
+- [x] Nuevo grupo de nav + tabla propia en Supabase (mismo patrón que OC/Stock/Cotizaciones), no una
+  sub-vista de otro módulo ni una herramienta de solo lectura sin persistencia.
+
 Todavía sin decidir:
+- [ ] Materiales OT: falta que el usuario comparta el segundo Excel (Cotizado/Planificado/Solicitado en
+  metros Y en kg a la vez) para sembrar `compras_articulos_kg_equivalencia` con factores aprendidos de
+  datos reales en vez de cargarlos todos a mano desde el detalle de cada OT — ver sección 13.2.
+- [ ] Materiales OT: confirmar el nombre exacto de la variante del export de Capataz (el instructivo de
+  carga en `js/main.js` asume el mismo menú que Cotizaciones, sin confirmar — ver sección 13.6).
 - [ ] ¿Se integra el combustible/YPF Ruta al módulo Flota o queda como módulo aparte?
 - [ ] ¿Las alertas de vencimiento se envían por mail (reutilizando Resend, ya integrado en Nexo RRHH) o solo se muestran en el tablero?
 - [ ] ¿Este tablero va a alimentar de datos a la sección "Flota" del Tablero de Control Ejecutivo, o van a ser fuentes de datos separadas?
@@ -1736,7 +1890,7 @@ Todavía sin decidir:
 - [ ] Categorización de proveedores (ver 5.3): clasificarlos por tipo (materia prima, pintura, insumos,
   etc.) para poder adaptar/filtrar el Dashboard de OC según categoría — todavía no tiene tabla ni UI.
 
-## 15. Próximos pasos sugeridos
+## 16. Próximos pasos sugeridos
 
 1. Correr `sql/schema.sql` contra el proyecto Supabase real (ya hecho — tablas `compras_*` creadas).
 2. Correr [`sql/002_seguros_archivo.sql`](sql/002_seguros_archivo.sql) (ya hecho) y
@@ -1780,9 +1934,12 @@ Todavía sin decidir:
 18. Correr [`sql/019_usuarios_modulos.sql`](sql/019_usuarios_modulos.sql) — agrega
     `modulos_habilitados` a `compras_usuarios` para el módulo Parametrización (ver sección 12)
     (**todavía falta**).
-19. Probar el circuito completo: pedir vehículo (solicitud.html) → aprobar y asignar (index.html) →
+19. Correr [`sql/020_materiales_ot.sql`](sql/020_materiales_ot.sql) — crea
+    `compras_materot_items`, `compras_materot_ot_grupos` y `compras_articulos_kg_equivalencia` para el
+    módulo Materiales OT (ver sección 13) (**todavía falta**).
+20. Probar el circuito completo: pedir vehículo (solicitud.html) → aprobar y asignar (index.html) →
    registrar salida/retorno (porteria.html) → ver el movimiento reflejado en el dashboard.
-20. Evaluar RLS (Row Level Security) en las tablas `compras_*` — hoy cualquiera con el link de
+21. Evaluar RLS (Row Level Security) en las tablas `compras_*` — hoy cualquiera con el link de
    `solicitud.html`/`porteria.html` puede leer/escribir todas las tablas, sin ningún login de por medio.
-21. Ir completando los módulos `[TBD]` de la sección 3 a medida que los necesites, usando el módulo
+22. Ir completando los módulos `[TBD]` de la sección 3 a medida que los necesites, usando el módulo
    Flota (carpeta `js/modules/`) como plantilla.

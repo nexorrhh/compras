@@ -444,6 +444,15 @@
     </div>
   </div>
 
+  <div class="nav-group" id="nav-materot" data-default-sec="materot-dash">
+    <div class="nav-parent"><span>📐</span> Materiales OT <span class="nav-chevron">▾</span></div>
+    <div class="nav-children">
+      <div class="nav-item" data-sec="materot-dash"><span>📊</span> Dashboard</div>
+      <div class="nav-item" data-sec="materot-cards"><span>🗂️</span> Por OT</div>
+      <div class="nav-item" data-sec="materot-grupos"><span>⚙️</span> Agrupar OT</div>
+    </div>
+  </div>
+
   <div class="nav-group" id="nav-param" data-default-sec="param-usuarios">
     <div class="nav-parent"><span>⚙️</span> Parametrización <span class="nav-chevron">▾</span></div>
     <div class="nav-children">
@@ -1058,6 +1067,93 @@
       </table></div>
     </div>
   </div>
+</div>
+
+<!-- ============ MATERIALES OT — DASHBOARD ============ -->
+<div class="sec" id="s-materot-dash">
+  <div class="ptitle">Materiales OT — Dashboard</div>
+  <div class="psub">Seguimiento por OT del export de Capataz (Cotizado → Planificado → Solicitado → Comprado → Asignado → Recibido → Entregado), visto en KGS cuando hay equivalencia cargada</div>
+  <div class="kpi-grid">
+    <div class="kpi"><div class="kpi-val text-accent" id="mrd_k_ot">–</div><div class="kpi-lbl">OTs con datos</div></div>
+    <div class="kpi"><div class="kpi-val text-green" id="mrd_k_ok">–</div><div class="kpi-lbl">Ítems OK</div></div>
+    <div class="kpi"><div class="kpi-val text-red" id="mrd_k_dif">–</div><div class="kpi-lbl">Ítems con diferencia (DIF)</div></div>
+    <div class="kpi"><div class="kpi-val text-yellow" id="mrd_k_sinkg">–</div><div class="kpi-lbl">Artículos sin equivalencia KG</div></div>
+  </div>
+  <div class="charts-grid">
+    <div class="chart-card"><h3>Ítems OK vs. DIF</h3><div class="chart-wrap"><canvas id="mrd_chart_okdif"></canvas></div></div>
+    <div class="chart-card"><h3>Top 10 OT por KGS comprados</h3><div class="chart-wrap"><canvas id="mrd_chart_topot"></canvas></div></div>
+  </div>
+  <div class="sh"><h2>Accesos rápidos</h2></div>
+  <div style="display:flex;gap:10px;flex-wrap:wrap">
+    <button class="btn p" id="mrd-ir-cards">🗂️ Ver por OT</button>
+  </div>
+</div>
+
+<!-- ============ MATERIALES OT — POR OT (tarjetas + detalle) ============ -->
+<div class="sec" id="s-materot-cards">
+  <div id="mro-vista-cards">
+    <div class="ptitle">Materiales OT — Por OT</div>
+    <div class="psub">Una OT con "adicionales" agrupadas (ver "Agrupar OT") muestra el total conjunto</div>
+    <div class="sh">
+      <div class="filters">
+        <input placeholder="Buscar OT..." id="mro_f_q">
+      </div>
+      <button type="button" class="btn p" data-instructivo="materot">📤 Cargar archivo (.xlsx)</button>
+      <input type="file" id="mro_file" accept=".xlsx,.xls" style="display:none">
+    </div>
+    <div id="mro_cards_grid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:12px"></div>
+  </div>
+
+  <div id="mro-vista-detalle" style="display:none">
+    <button type="button" class="bsm" id="mro_det_volver">← Volver a Por OT</button>
+    <div class="ptitle" style="margin-top:10px" id="mro_det_titulo">OT</div>
+
+    <div class="subtabs" id="mro_det_tabs" style="margin:10px 0 16px">
+      <button type="button" class="subtab active" data-tab="resumen">📊 Resumen</button>
+      <button type="button" class="subtab" data-tab="detalle">📋 Detalle</button>
+    </div>
+
+    <div id="mro_det_panel_resumen">
+      <div class="kpi-grid">
+        <div class="kpi"><div class="kpi-val" id="mrod_k_items">–</div><div class="kpi-lbl">Ítems</div></div>
+        <div class="kpi"><div class="kpi-val text-green" id="mrod_k_ok">–</div><div class="kpi-lbl">OK</div></div>
+        <div class="kpi"><div class="kpi-val text-red" id="mrod_k_dif">–</div><div class="kpi-lbl">DIF</div></div>
+        <div class="kpi"><div class="kpi-val text-yellow" id="mrod_k_sinkg">–</div><div class="kpi-lbl">Sin equivalencia KG</div></div>
+      </div>
+      <div class="charts-grid"><div class="chart-card"><h3>Ítems OK vs. DIF</h3><div class="chart-wrap"><canvas id="mrod_chart_okdif"></canvas></div></div></div>
+    </div>
+
+    <div id="mro_det_panel_detalle" style="display:none">
+      <div class="psub" style="margin:0 0 8px">Las cantidades se muestran en KGS cuando el artículo ya está en esa unidad o tiene un factor kg/unidad cargado (columna derecha, editable) — "Comprado" siempre es el kg que ya calcula Capataz</div>
+      <div class="tw"><table>
+        <thead><tr><th>Código</th><th>Descripción</th><th>Unidad</th><th>Cotiz. (kg)</th><th>Plan. (kg)</th><th>Solic. (kg)</th><th>Comprado (kg)</th><th>Asig. (kg)</th><th>Recibido (kg)</th><th>Entregado (kg)</th><th>Estado</th><th>kg/unidad</th></tr></thead>
+        <tbody id="t-mro-detalle"></tbody>
+      </table></div>
+    </div>
+  </div>
+</div>
+
+<!-- ============ MATERIALES OT — AGRUPAR OT ============ -->
+<div class="sec" id="s-materot-grupos">
+  <div class="ptitle">Materiales OT — Agrupar OT</div>
+  <div class="psub">Algunas OT son "adicionales" de una OT madre (misma obra, números distintos) — no hay forma de detectarlo solo, así que se carga la relación acá a mano. Una vez agrupada, "Por OT" y el Dashboard suman todo bajo la OT madre.</div>
+  <div class="sh">
+    <div class="filters" style="align-items:flex-end">
+      <div>
+        <label style="display:block;font-size:12px;color:var(--muted);margin-bottom:4px">OT adicional (hija)</label>
+        <select id="mrog_hija"></select>
+      </div>
+      <div>
+        <label style="display:block;font-size:12px;color:var(--muted);margin-bottom:4px">Es adicional de (OT madre)</label>
+        <select id="mrog_madre"></select>
+      </div>
+    </div>
+    <button type="button" class="btn p" id="mrog_agrupar">Agrupar</button>
+  </div>
+  <div class="tw"><table>
+    <thead><tr><th>OT adicional</th><th>OT madre</th><th></th></tr></thead>
+    <tbody id="t-mro-grupos"></tbody>
+  </table></div>
 </div>
 
 <!-- ============ MODAL — CARGAR PRECIOS DE UN PROVEEDOR ============ -->

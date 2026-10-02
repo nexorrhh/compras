@@ -347,6 +347,58 @@ create table compras_articulos_largo_barra (
   updated_at timestamptz not null default now()
 );
 
+-- Módulo Materiales OT — seguimiento por OT del export de Capataz
+-- "Gestión personalizada de Ventas y Compras" (ver sql/020_materiales_ot.sql
+-- y CLAUDE.md sección 16). Foto completa del estado (reemplaza toda la
+-- tabla en cada carga, igual criterio que compras_stock_saldos).
+create table compras_materot_items (
+  id bigint generated always as identity primary key,
+  capataz_id bigint,
+  id_vproy bigint,
+  numero text,
+  version int,
+  estado_proy text,
+  t_ot text,
+  n_ot text,
+  cod_articulo text,
+  agrupacion text,
+  descripcion text,
+  desc_adicional text,
+  ume text,
+  cant_cotiz numeric,
+  cant_plan numeric,
+  cant_solic numeric,
+  comprado numeric,
+  kgs_comprados numeric,
+  cant_asig numeric,
+  recibido numeric,
+  entregado numeric,
+  estado text,
+  archivo_origen text,
+  created_at timestamptz not null default now()
+);
+
+-- Agrupación manual de "OT adicionales" bajo su OT madre — sin patrón
+-- numérico que lo infiera solo, lo carga el usuario a mano.
+create table compras_materot_ot_grupos (
+  n_ot_hija text primary key,
+  n_ot_madre text not null,
+  created_at timestamptz not null default now()
+);
+
+-- Factor kg-por-unidad por artículo, para mostrar en KGS lo que el
+-- archivo trae en metros/m²/litros/unidades (el archivo solo trae el kg
+-- equivalente de "comprado"). Mismo criterio que
+-- compras_articulos_largo_barra: se carga una vez por artículo y el
+-- sistema la recuerda de ahí en más.
+create table compras_articulos_kg_equivalencia (
+  cod_articulo text primary key,
+  ume text,
+  kg_por_unidad numeric not null,
+  fuente text not null default 'manual',
+  updated_at timestamptz not null default now()
+);
+
 -- ------------------------------------------------------------
 -- ÍNDICES
 -- ------------------------------------------------------------
@@ -362,6 +414,8 @@ create index idx_compras_oc_orden on compras_oc_lineas(orden_compra);
 create index idx_compras_oc_fecha on compras_oc_lineas(fecha);
 create index idx_compras_oc_proveedor on compras_oc_lineas(proveedor_cod);
 create index idx_compras_stock_articulo on compras_stock_saldos(cod_articulo);
+create index idx_materot_items_n_ot on compras_materot_items(n_ot);
+create index idx_materot_items_cod_articulo on compras_materot_items(cod_articulo);
 create index idx_compras_stock_deposito on compras_stock_saldos(cod_deposito);
 create index idx_compras_articulos_grupo_grupo on compras_articulos_grupo(grupo_id);
 create index idx_compras_proveedores_cod_tango on compras_proveedores(cod_tango);

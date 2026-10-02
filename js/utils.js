@@ -101,6 +101,7 @@ export const MODULOS_APP = [
   { key: 'np', label: '📝 Notas de Pedido' },
   { key: 'cot', label: '🧮 Cotizaciones' },
   { key: 'ot', label: '🏷️ OT' },
+  { key: 'materot', label: '📐 Materiales OT' },
   { key: 'param', label: '⚙️ Parametrización' },
 ];
 
