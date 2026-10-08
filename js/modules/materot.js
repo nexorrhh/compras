@@ -388,9 +388,10 @@ function hijasDe(otMadre) {
   return GRUPOS.filter(g => g.n_ot_madre === otMadre).map(g => g.n_ot_hija);
 }
 
-function renderCards() {
-  const grid = document.getElementById('mro_cards_grid');
-  if (!grid) return;
+// Mismo filtro (búsqueda + archivadas) que usan tanto la grilla de
+// tarjetas como "Exportar diferencias" — exportar siempre tiene que
+// coincidir con lo que se está viendo en pantalla en ese momento.
+function gruposVisiblesCards() {
   const q = (document.getElementById('mro_f_q')?.value || '').trim().toUpperCase();
   const grupos = agruparPorOTMadre();
 
@@ -409,6 +410,13 @@ function renderCards() {
     });
   }
   filas.sort((a, b) => !a[0] ? 1 : !b[0] ? -1 : a[0].localeCompare(b[0], 'es'));
+  return filas;
+}
+
+function renderCards() {
+  const grid = document.getElementById('mro_cards_grid');
+  if (!grid) return;
+  const filas = gruposVisiblesCards();
 
   if (!filas.length) { grid.innerHTML = '<div style="color:var(--muted);padding:12px">Sin datos todavía — cargá un archivo desde "Por OT".</div>'; return; }
 
@@ -434,6 +442,38 @@ function renderCards() {
       </div>
     </div>`;
   }).join('');
+}
+
+// Exporta a Excel el detalle artículo por artículo de los ítems con
+// Estado "DIF" (ver nota de cabecera — el flag ya lo calcula Capataz,
+// acá solo se filtra y se baja) entre TODAS las OT actualmente visibles
+// en la grilla (mismo alcance que `renderCards()`: respeta el buscador
+// y el checkbox "Mostrar archivadas") — pedido explícito del usuario
+// (2026-10-08) para poder revisar/repartir las diferencias sin tener
+// que abrir OT por OT.
+function exportarDiferencias() {
+  const filas = gruposVisiblesCards();
+  const encabezado = ['OT', 'Código', 'Descripción', 'Unidad', 'Cotiz. (kg)', 'Plan. (kg)', 'Solic. (kg)', 'Comprado (kg)', 'Asig. (kg)', 'Recibido (kg)', 'Entregado (kg)'];
+  const out = [];
+  for (const [, items] of filas) {
+    for (const it of items) {
+      if ((it.estado || '').toUpperCase() !== 'DIF') continue;
+      const k = kgsItem(it);
+      out.push([
+        formatOT((it.n_ot || '').trim()),
+        it.cod_articulo,
+        it.descripcion || '',
+        it.ume || '',
+        k.cotiz, k.plan, k.solic, k.comprado, k.asig, k.recibido, k.entregado,
+      ]);
+    }
+  }
+  if (!out.length) { toast('No hay ítems con diferencia (DIF) entre las OT visibles', 'er'); return; }
+
+  const ws = XLSX.utils.aoa_to_sheet([encabezado, ...out]);
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, 'Diferencias');
+  XLSX.writeFile(wb, `materiales-ot-diferencias_${new Date().toISOString().slice(0, 10)}.xlsx`);
 }
 
 function abrirDetalle(ot) {
@@ -685,6 +725,7 @@ export function init() {
     e.target.value = '';
   });
   document.getElementById('mro_btn_cargar_info')?.addEventListener('click', () => document.getElementById('mro_file_info')?.click());
+  document.getElementById('mro_btn_exportar_dif')?.addEventListener('click', exportarDiferencias);
   document.getElementById('mro_file_info')?.addEventListener('change', e => {
     const file = e.target.files[0];
     if (file) cargarArchivoInfo(file);
