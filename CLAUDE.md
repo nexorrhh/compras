@@ -1901,7 +1901,11 @@ Mismo patrón de nav colapsable que el resto ("📐 Materiales OT ▾"):
   (mismo alcance que la grilla — respeta el buscador y el checkbox "Mostrar archivadas",
   `gruposVisiblesCards()` reusado por las dos) — para poder revisar o repartir las diferencias
   detectadas sin tener que entrar OT por OT. Si no hay ninguna visible, avisa en vez de bajar un Excel
-  vacío.
+  vacío. Suma una columna **"Diferencia (kg)"** (pedido explícito del usuario el mismo día) =
+  `Entregado − (Recibido + Asignado)`, la misma cuenta de la regla de fondo del módulo (ver 13.1: no se
+  puede entregar más de lo recibido + asignado de stock) — un positivo marca cuánto se entregó sin
+  cobertura, que suele ser justo lo que dispara el DIF. Es un dato de referencia calculado solo para
+  este Excel, no reemplaza ni recalcula el Estado que ya trae Capataz.
   Click en una tarjeta abre el detalle con sub-pestañas **Resumen** (KPIs + donut OK/DIF) y **Detalle**
   (tabla artículo por artículo con las 7 cantidades en kg, directo del archivo — ver 13.2 —, el badge de
   Estado y una columna **OT** al principio: cuando la tarjeta agrupa adicionales, mezcla ítems de más de

@@ -453,18 +453,25 @@ function renderCards() {
 // que abrir OT por OT.
 function exportarDiferencias() {
   const filas = gruposVisiblesCards();
-  const encabezado = ['OT', 'Código', 'Descripción', 'Unidad', 'Cotiz. (kg)', 'Plan. (kg)', 'Solic. (kg)', 'Comprado (kg)', 'Asig. (kg)', 'Recibido (kg)', 'Entregado (kg)'];
+  const encabezado = ['OT', 'Código', 'Descripción', 'Unidad', 'Cotiz. (kg)', 'Plan. (kg)', 'Solic. (kg)', 'Comprado (kg)', 'Asig. (kg)', 'Recibido (kg)', 'Entregado (kg)', 'Diferencia (kg)'];
   const out = [];
   for (const [, items] of filas) {
     for (const it of items) {
       if ((it.estado || '').toUpperCase() !== 'DIF') continue;
       const k = kgsItem(it);
+      // La regla de fondo (ver 13.1): no se puede entregar más de lo
+      // recibido + asignado de stock. La diferencia muestra ese exceso
+      // (positivo = se entregó sin cobertura, lo que suele disparar el
+      // DIF) — es un cálculo de referencia para ubicar el desvío más
+      // rápido, no reemplaza ni recalcula el Estado que ya trae Capataz.
+      const diferencia = k.entregado - (k.recibido + k.asig);
       out.push([
         formatOT((it.n_ot || '').trim()),
         it.cod_articulo,
         it.descripcion || '',
         it.ume || '',
         k.cotiz, k.plan, k.solic, k.comprado, k.asig, k.recibido, k.entregado,
+        diferencia,
       ]);
     }
   }
