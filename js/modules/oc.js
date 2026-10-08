@@ -27,6 +27,55 @@ let LINEAS = [];
 // (nunca se cargó ahí, o el mínimo/saldo quedó en 0 sin partida) — en ese
 // caso queda sin unidad, no se inventa ninguna.
 let UNIDADES = new Map();
+// Factor kg/unidad aprendido de los equivalentes que Capataz ya trae en
+// Materiales OT. No se usan formulas por descripcion: si un articulo no
+// tiene datos reales para obtener el factor, se deja sin equivalente.
+let KG_POR_UNIDAD = new Map();
+
+function construirFactoresKg(items) {
+  const acumulados = new Map();
+  const pares = [
+    ['cant_cotiz', 'kg_cotiz'], ['cant_plan', 'kg_plan'],
+    ['cant_solic', 'kg_solic'], ['comprado', 'kgs_comprados'],
+    ['cant_asig', 'kg_asig'], ['recibido', 'kg_recibido'],
+    ['entregado', 'kg_entregado'],
+  ];
+  for (const item of items || []) {
+    const codigo = item.cod_articulo;
+    if (!codigo) continue;
+    if (!acumulados.has(codigo)) acumulados.set(codigo, { cantidad: 0, kg: 0 });
+    const total = acumulados.get(codigo);
+    for (const [campoCantidad, campoKg] of pares) {
+      const cantidad = Number(item[campoCantidad] || 0);
+      const kg = Number(item[campoKg] || 0);
+      if (cantidad > 0 && kg > 0) {
+        total.cantidad += cantidad;
+        total.kg += kg;
+      }
+    }
+  }
+  return new Map([...acumulados.entries()]
+    .filter(([, v]) => v.cantidad > 0 && v.kg > 0)
+    .map(([codigo, v]) => [codigo, v.kg / v.cantidad]));
+}
+
+function cantidadConKg(cantidad, unidad, codigoArticulo) {
+  const valor = Number(cantidad || 0);
+  const texto = `${formatearCantidad(valor)} ${unidad}`;
+  if ((unidad || '').trim().toUpperCase() === 'KGS') return texto;
+  const factor = KG_POR_UNIDAD.get(codigoArticulo);
+  if (!(factor > 0)) return texto;
+  const kg = valor * factor;
+  return `${texto} <span style="color:var(--muted);font-weight:600;white-space:nowrap">· ≈ ${formatearCantidad(kg)} KGS</span>`;
+}
+
+function formatearCantidad(valor) {
+  const n = Number(valor || 0);
+  const opciones = Math.abs(n) > 0 && Math.abs(n) < 0.01
+    ? { minimumFractionDigits: 4, maximumFractionDigits: 6 }
+    : { maximumFractionDigits: 4 };
+  return n.toLocaleString('es-AR', opciones);
+}
 
 // Montos: en las tarjetas de KPI se abrevia (K/M) para que entre cómodo y se
 // lea de un vistazo; en la tabla se muestra completo pero sin decimales (no
@@ -176,6 +225,7 @@ async function cargarArchivo(file) {
 // orden no depende de cuánto vale, depende de si llegó o no):
 //   - PENDIENTE:  ninguna línea tiene nada recibido todavía.
 //   - COMPLETADA: ninguna línea tiene nada pendiente (llegó todo).
+//   - REVISAR_CIERRE: solo quedan diferencias decimales de hasta 0,01.
 //   - PARCIAL:    cualquier otra combinación (llegó parte).
 // ------------------------------------------------------------
 // Una línea con pendiente=0 no siempre significa que llegó — Tango a
@@ -185,8 +235,19 @@ async function cargarArchivo(file) {
 // Caso real del usuario (2026-09-16): una línea con Pedida 2 / Recibida 0
 // / Pendiente 0 se mostraba como "Recibido" (verde), como si hubiera
 // llegado, cuando en realidad nunca llegó nada por esta orden.
+const TOLERANCIA_CIERRE = 0.01;
+
+function esSaldoResidual(l) {
+  const pedida = Number(l.cant_pedida || 0);
+  const recibida = Number(l.cant_recibida || 0);
+  const pendiente = Number(l.cant_pendiente || 0);
+  return pendiente > 0 && pendiente <= TOLERANCIA_CIERRE
+    && Math.abs(pedida - recibida) <= TOLERANCIA_CIERRE;
+}
+
 function estadoLinea(l) {
-  if ((l.cant_pendiente || 0) > 0.01) return 'PENDIENTE';
+  if (esSaldoResidual(l)) return 'REVISAR_CIERRE';
+  if ((l.cant_pendiente || 0) > 0) return 'PENDIENTE';
   if ((l.cant_pedida || 0) > 0.01 && (l.cant_recibida || 0) < (l.cant_pedida || 0) - 0.01) return 'CERRADA_SIN_RECIBIR';
   return 'RECIBIDO';
 }
@@ -197,15 +258,20 @@ function agruparPorOrden(lineas) {
     if (!map.has(l.orden_compra)) {
       map.set(l.orden_compra, {
         orden_compra: l.orden_compra, fecha: l.fecha, proveedor_nombre: l.proveedor_nombre, comprador_nombre: l.comprador_nombre,
-        importe: 0, recibido: 0, pendiente: 0, algunaRecibida: false, algunaPendiente: false, lineas: [],
+        importe: 0, recibido: 0, pendiente: 0, algunaRecibida: false, algunaPendiente: false,
+        algunaPendienteReal: false, algunSaldoResidual: false, lineas: [],
       });
     }
     const g = map.get(l.orden_compra);
     g.importe += l.importe || 0;
     g.recibido += (l.cant_recibida || 0) * (l.precio_unitario || 0);
     g.pendiente += (l.cant_pendiente || 0) * (l.precio_unitario || 0);
-    if ((l.cant_recibida || 0) > 0.01) g.algunaRecibida = true;
-    if ((l.cant_pendiente || 0) > 0.01) g.algunaPendiente = true;
+    if ((l.cant_recibida || 0) > 0) g.algunaRecibida = true;
+    if ((l.cant_pendiente || 0) > 0) {
+      g.algunaPendiente = true;
+      if (esSaldoResidual(l)) g.algunSaldoResidual = true;
+      else g.algunaPendienteReal = true;
+    }
     g.lineas.push(l);
     if (l.fecha && (!g.fecha || l.fecha < g.fecha)) g.fecha = l.fecha;
   }
@@ -213,12 +279,16 @@ function agruparPorOrden(lineas) {
 }
 
 function estadoOC(g) {
-  if (!g.algunaRecibida) return 'PENDIENTE';
+  // El cierre manda sobre la recepcion: Tango puede cerrar una OC (o todas
+  // sus lineas) sin recibir material. Si CANT_PEN ya es cero no debe seguir
+  // apareciendo en Abiertas, aunque CANT_REC tambien sea cero.
   if (!g.algunaPendiente) return 'COMPLETADA';
+  if (g.algunSaldoResidual && !g.algunaPendienteReal) return 'REVISAR_CIERRE';
+  if (!g.algunaRecibida) return 'PENDIENTE';
   return 'PARCIAL';
 }
-const ESTADO_LABEL = { PENDIENTE: 'Pendiente', PARCIAL: 'Parcial', COMPLETADA: 'Completada' };
-const ESTADO_CLASE = { PENDIENTE: 'vencido', PARCIAL: 'porvencer', COMPLETADA: 'vigente' };
+const ESTADO_LABEL = { PENDIENTE: 'Pendiente', PARCIAL: 'Parcial', REVISAR_CIERRE: 'Revisar cierre', COMPLETADA: 'Completada' };
+const ESTADO_CLASE = { PENDIENTE: 'vencido', PARCIAL: 'porvencer', REVISAR_CIERRE: 'revisar-cierre', COMPLETADA: 'vigente' };
 
 // Filtros de proveedor/comprador/mes se repiten en varias sub-vistas
 // (Todas, Pendientes, Parciales, Completadas) — mismo comportamiento,
@@ -268,7 +338,7 @@ function renderKPIs(prefix, grupos, lineas) {
   const totalRecibido = lineas.reduce((s, l) => s + (l.cant_recibida || 0) * (l.precio_unitario || 0), 0);
   const totalPendiente = lineas.reduce((s, l) => s + (l.cant_pendiente || 0) * (l.precio_unitario || 0), 0);
   const pct = totalComprado > 0 ? Math.round((totalRecibido / totalComprado) * 100) : 0;
-  const porEstado = { PENDIENTE: 0, PARCIAL: 0, COMPLETADA: 0 };
+  const porEstado = { PENDIENTE: 0, PARCIAL: 0, REVISAR_CIERRE: 0, COMPLETADA: 0 };
   grupos.forEach(g => porEstado[estadoOC(g)]++);
   const set = (id, val, full) => { const el = document.getElementById(id); if (!el) return; el.textContent = val; if (full !== undefined) el.title = full; };
   set(`${prefix}_k_comprado`, fmtCompacto(totalComprado), fmtPesos(totalComprado));
@@ -277,6 +347,7 @@ function renderKPIs(prefix, grupos, lineas) {
   set(`${prefix}_k_pct`, pct + '%');
   set(`${prefix}_k_pendientes`, porEstado.PENDIENTE);
   set(`${prefix}_k_parciales`, porEstado.PARCIAL);
+  set(`${prefix}_k_revisar`, porEstado.REVISAR_CIERRE);
   set(`${prefix}_k_completadas`, porEstado.COMPLETADA);
 }
 
@@ -303,16 +374,19 @@ function renderTabla(tbodyId, grupos) {
       // OC. No es lo mismo que "Pendiente" (sigue abierta, se espera) ni
       // que "Recibido" (llegó lo pedido).
       const badge = estL === 'PENDIENTE' ? { cls: 'porvencer', txt: 'Pendiente' }
+        : estL === 'REVISAR_CIERRE' ? { cls: 'revisar-cierre', txt: `Revisar cierre · saldo ${formatearCantidad(l.cant_pendiente)} ${unidad}` }
         : estL === 'CERRADA_SIN_RECIBIR' ? { cls: 'vencido', txt: '⚠️ Cerrada sin recibir' }
         : { cls: 'vigente', txt: 'Recibido' };
-      const tituloBadge = estL === 'CERRADA_SIN_RECIBIR'
+      const tituloBadge = estL === 'REVISAR_CIERRE'
+        ? ' title="Pedido y recibido coinciden dentro de 0,01, pero Tango conserva un saldo mínimo. Revisá y cerrá la OC en Tango."'
+        : estL === 'CERRADA_SIN_RECIBIR'
         ? ' title="Tango cerró esta línea sin recibir lo pedido (o recibió solo una parte) — probablemente se compró a otro proveedor por fuera de esta OC"'
         : '';
       return `<div class="oc-linea">
         <div class="oc-linea-desc">${l.articulo_desc || l.articulo_cod}</div>
-        <div>Pedida: <strong>${l.cant_pedida?.toLocaleString('es-AR') ?? '–'} ${unidad}</strong></div>
-        <div>Recibida: <strong>${l.cant_recibida?.toLocaleString('es-AR') ?? '–'} ${unidad}</strong></div>
-        <div>Pendiente: <strong>${l.cant_pendiente?.toLocaleString('es-AR') ?? '–'} ${unidad}</strong></div>
+        <div>Pedida: <strong>${cantidadConKg(l.cant_pedida, unidad, l.articulo_cod)}</strong></div>
+        <div>Recibida: <strong>${cantidadConKg(l.cant_recibida, unidad, l.articulo_cod)}</strong></div>
+        <div>Pendiente: <strong>${cantidadConKg(l.cant_pendiente, unidad, l.articulo_cod)}</strong></div>
         <div>Precio unit.: <strong>${fmtPesos(l.precio_unitario)}</strong></div>
         <div>Importe: <strong>${fmtPesos(l.importe)}</strong></div>
         <div><span class="badge ${badge.cls}"${tituloBadge}>${badge.txt}</span></div>
@@ -466,13 +540,13 @@ function renderGraficosDashboard(grupos, lineas) {
     },
   });
 
-  const porEstado = { PENDIENTE: 0, PARCIAL: 0, COMPLETADA: 0 };
+  const porEstado = { PENDIENTE: 0, PARCIAL: 0, REVISAR_CIERRE: 0, COMPLETADA: 0 };
   grupos.forEach(g => porEstado[estadoOC(g)]++);
   renderChart('estado', 'ocd_chart_estado', {
     type: 'doughnut',
     data: {
-      labels: ['Pendientes', 'Parciales', 'Completadas'],
-      datasets: [{ data: [porEstado.PENDIENTE, porEstado.PARCIAL, porEstado.COMPLETADA], backgroundColor: ['#ef4444', '#f97316', '#22c55e'], borderColor: colorBg2, borderWidth: 2 }],
+      labels: ['Pendientes', 'Parciales', 'Revisar cierre', 'Completadas'],
+      datasets: [{ data: [porEstado.PENDIENTE, porEstado.PARCIAL, porEstado.REVISAR_CIERRE, porEstado.COMPLETADA], backgroundColor: ['#ef4444', '#f97316', '#a855f7', '#22c55e'], borderColor: colorBg2, borderWidth: 2 }],
     },
     options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'bottom' } } },
   });
@@ -510,17 +584,17 @@ function renderDashboard() {
 
   const grupos = agruparPorOrden(lineas);
   renderKPIs('ocd', grupos, lineas);
-  const porEstado = { PENDIENTE: 0, PARCIAL: 0, COMPLETADA: 0 };
+  const porEstado = { PENDIENTE: 0, PARCIAL: 0, REVISAR_CIERRE: 0, COMPLETADA: 0 };
   grupos.forEach(g => porEstado[estadoOC(g)]++);
   const setTxt = (id, val) => { const el = document.getElementById(id); if (el) el.textContent = val; };
-  setTxt('ocd-ir-abiertas', `🕐 Ver abiertas (${porEstado.PENDIENTE + porEstado.PARCIAL})`);
+  setTxt('ocd-ir-abiertas', `🕐 Ver abiertas (${porEstado.PENDIENTE + porEstado.PARCIAL + porEstado.REVISAR_CIERRE})`);
   setTxt('ocd-ir-comp', `✅ Ver completadas (${porEstado.COMPLETADA})`);
   renderGraficosDashboard(grupos, lineas);
 }
 
-// Abiertas: pendientes + parciales juntas (una orden con algo por
-// recibir es "abierta", sin importar si ya llegó una parte o nada) —
-// separarlas en dos pantallas distintas no aportaba, según feedback.
+// Abiertas: pendientes + parciales + revisar cierre juntas (una orden
+// con algo por recibir sigue abierta; los residuos mínimos se destacan
+// para que no se confundan con una recepción verdaderamente incompleta).
 function renderAbiertas() {
   poblarFiltrosPrefijo('oca');
   const prov = document.getElementById('oca_f_prov')?.value || '';
@@ -533,12 +607,13 @@ function renderAbiertas() {
   if (mes) lineas = lineas.filter(l => l.fecha?.slice(0, 7) === mes);
 
   const grupos = agruparPorOrden(lineas).filter(g => estadoOC(g) !== 'COMPLETADA');
-  const porEstado = { PENDIENTE: 0, PARCIAL: 0 };
+  const porEstado = { PENDIENTE: 0, PARCIAL: 0, REVISAR_CIERRE: 0 };
   grupos.forEach(g => porEstado[estadoOC(g)]++);
   const importeTotal = grupos.reduce((s, g) => s + g.importe, 0);
   const setTxt = (id, val) => { const el = document.getElementById(id); if (el) el.textContent = val; };
   setTxt('oca_k_pendientes', porEstado.PENDIENTE);
   setTxt('oca_k_parciales', porEstado.PARCIAL);
+  setTxt('oca_k_revisar', porEstado.REVISAR_CIERRE);
   const impEl = document.getElementById('oca_k_importe');
   if (impEl) { impEl.textContent = fmtCompacto(importeTotal); impEl.title = fmtPesos(importeTotal); }
 
@@ -578,9 +653,10 @@ export async function render(secId) {
   const tbodyId = TBODY_POR_SECCION[secId];
   if (tbodyId) { const tb = document.getElementById(tbodyId); if (tb) tb.innerHTML = '<tr><td colspan="7" class="loading">Cargando...</td></tr>'; }
 
-  const [{ data, error }, { data: saldos, error: eSaldos }] = await Promise.all([
+  const [{ data, error }, { data: saldos, error: eSaldos }, { data: materialesKg, error: eKg }] = await Promise.all([
     fetchAll(() => SB.from('compras_oc_lineas').select('*')),
     fetchAll(() => SB.from('compras_stock_saldos').select('cod_articulo,unidad_medida')),
+    fetchAll(() => SB.from('compras_materot_items').select('cod_articulo,cant_cotiz,kg_cotiz,cant_plan,kg_plan,cant_solic,kg_solic,comprado,kgs_comprados,cant_asig,kg_asig,recibido,kg_recibido,entregado,kg_entregado')),
   ]);
   if (error) {
     if (tbodyId) { const tb = document.getElementById(tbodyId); if (tb) tb.innerHTML = `<tr><td colspan="7" style="color:var(--red);padding:12px">${error.message}</td></tr>`; }
@@ -588,6 +664,7 @@ export async function render(secId) {
   }
   LINEAS = data || [];
   if (!eSaldos) UNIDADES = new Map((saldos || []).filter(s => s.unidad_medida).map(s => [s.cod_articulo, s.unidad_medida]));
+  KG_POR_UNIDAD = eKg ? new Map() : construirFactoresKg(materialesKg || []);
 
   if (secId === 'oc-abiertas') { renderAbiertas(); return; }
   const seccion = SECCIONES_ESTADO.find(s => s.tbodyId === tbodyId);

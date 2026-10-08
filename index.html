@@ -204,6 +204,45 @@
   </form>
 </div></div>
 
+<!-- ============ MODAL — CREAR GRUPO DE PROVEEDORES ============ -->
+<div class="modal-ov" id="mNUEVOGRUPO">
+<div class="modal" style="max-width:480px">
+  <span class="mcls" onclick="cm('mNUEVOGRUPO')">×</span>
+  <div class="prov-grupo-modal-head">
+    <div class="prov-grupo-modal-icon">🗂️</div>
+    <div><div class="mtitle" style="margin:0 0 4px">Crear grupo de proveedores</div><div class="psub" style="margin:0">Organizá a quién consultar cuando necesites cotizar un rubro.</div></div>
+  </div>
+  <form id="fNUEVOGRUPO">
+    <div class="fg"><label>Nombre del grupo *</label><input id="pvg_nuevo_nombre" required maxlength="80" autocomplete="off" placeholder="Ej. Aceros"></div>
+    <div class="prov-grupo-ejemplos"><span>Ejemplos:</span><button type="button" data-nombre="Aceros">Aceros</button><button type="button" data-nombre="Bulonería">Bulonería</button><button type="button" data-nombre="Pintura">Pintura</button><button type="button" data-nombre="Materia Prima">Materia Prima</button></div>
+    <div class="prov-grupo-siguiente"><strong>Siguiente paso</strong><br>Después de crearlo vas a poder seleccionar los proveedores de Tango que pertenecen al grupo.</div>
+    <div class="brow"><button type="button" class="btn" onclick="cm('mNUEVOGRUPO')">Cancelar</button><button type="submit" class="btn p">Crear y asignar proveedores</button></div>
+  </form>
+</div></div>
+
+<!-- ============ MODAL — ASIGNAR PROVEEDORES A UN GRUPO ============ -->
+<div class="modal-ov" id="mPROVGRUPO">
+<div class="modal" style="max-width:620px">
+  <span class="mcls" onclick="cm('mPROVGRUPO')">×</span>
+  <div class="mtitle" id="mPROVGRUPO_t">Asignar proveedores</div>
+  <div class="psub">Seleccioná proveedores registrados o detectados en las Órdenes de Compra de Tango. No se escriben nombres manualmente.</div>
+  <input id="pvg_sel_buscar" placeholder="Buscar por nombre o código Tango..." style="margin-bottom:10px">
+  <label style="display:flex;align-items:center;gap:7px;margin-bottom:8px"><input type="checkbox" id="pvg_sel_todos" style="width:auto"> Seleccionar todos los visibles</label>
+<div id="pvg_sel_lista" class="prov-selector-lista"></div>
+  <div class="brow"><button type="button" class="btn" onclick="cm('mPROVGRUPO')">Cancelar</button><button type="button" class="btn p" id="pvg_sel_guardar">Asignar seleccionados</button></div>
+</div></div>
+
+<!-- ============ MODAL — SUMAR PROVEEDORES DEL GRUPO A COTIZACIÓN ============ -->
+<div class="modal-ov" id="mCOTGRUPO">
+<div class="modal" style="max-width:620px">
+  <span class="mcls" onclick="cm('mCOTGRUPO')">×</span>
+  <div class="mtitle" id="mCOTGRUPO_t">Sumar proveedores</div>
+  <div class="psub">Los preferidos se invitan primero. Si necesitás ampliar la consulta, seleccioná otros proveedores disponibles del grupo.</div>
+  <input id="cotg_buscar" placeholder="Buscar proveedor..." style="margin-bottom:10px">
+  <div id="cotg_lista" class="prov-selector-lista"></div>
+  <div class="brow"><button type="button" class="btn" onclick="cm('mCOTGRUPO')">Cancelar</button><button type="button" class="btn p" id="cotg_confirmar">Sumar seleccionados</button></div>
+</div></div>
+
 <!-- ============ MODAL — PROVEEDOR (alta/edición) ============ -->
 <div class="modal-ov" id="mPROVEEDOR">
 <div class="modal">
@@ -217,7 +256,8 @@
       <input id="pv_codtango" list="pv_dl_oc" placeholder="Para cruzar con Órdenes de Compra">
       <datalist id="pv_dl_oc"></datalist>
     </div>
-    <div class="fg"><label>Grupo manual (solo si todavía no tiene OC)</label><select id="pv_grupo_manual"></select></div>
+    <div class="fg"><label>Grupos / rubros que puede proveer</label><div id="pv_grupos" class="prov-check-grupos"></div></div>
+    <div class="fg"><label>Estado general</label><select id="pv_estado"><option value="ACTIVO">Activo</option><option value="SUSPENDIDO">Suspendido</option></select></div>
     <div class="fg"><label>Notas</label><input id="pv_notas" placeholder="Opcional"></div>
     <hr class="divider">
     <div class="psub" style="margin:0 0 10px">Agregar un contacto/vendedor (opcional)</div>
@@ -410,14 +450,12 @@
     </div>
   </div>
 
-  <div class="nav-group" id="nav-proveedores" data-default-sec="prov-dash">
+  <div class="nav-group" id="nav-proveedores" data-default-sec="prov-grupos">
     <div class="nav-parent"><span>🏭</span> Proveedores <span class="nav-chevron">▾</span></div>
     <div class="nav-children">
-      <div class="nav-item" data-sec="prov-dash"><span>📊</span> Dashboard</div>
-      <div class="nav-item" data-sec="prov-agenda"><span>📇</span> Agenda</div>
-      <div class="nav-item" data-sec="prov-ranking"><span>🏆</span> Ranking</div>
-      <div class="nav-item" data-sec="prov-clasificar"><span>🏷️</span> Clasificar artículos</div>
-      <div class="nav-item" data-sec="prov-catalogo"><span>📋</span> Catálogo</div>
+      <div class="nav-item" data-sec="prov-grupos"><span>🗂️</span> Grupos</div>
+      <div class="nav-item" data-sec="prov-directorio"><span>📇</span> Directorio</div>
+      <div class="nav-item" data-sec="prov-pendientes"><span>⚠️</span> Pendientes</div>
     </div>
   </div>
 
@@ -586,6 +624,7 @@
     <div class="kpi"><div class="kpi-val" id="ocd_k_pct">–</div><div class="kpi-lbl">% completado</div></div>
     <div class="kpi"><div class="kpi-val text-red" id="ocd_k_pendientes">–</div><div class="kpi-lbl">OC pendientes</div></div>
     <div class="kpi"><div class="kpi-val text-orange" id="ocd_k_parciales">–</div><div class="kpi-lbl">OC parciales</div></div>
+    <div class="kpi"><div class="kpi-val" style="color:var(--purple)" id="ocd_k_revisar">–</div><div class="kpi-lbl">Revisar cierre</div></div>
     <div class="kpi"><div class="kpi-val text-green" id="ocd_k_completadas">–</div><div class="kpi-lbl">OC completadas</div></div>
   </div>
   <div class="charts-grid">
@@ -614,18 +653,19 @@
   </div>
 </div>
 
-<!-- ============ ÓRDENES DE COMPRA — ABIERTAS (Pendientes + Parciales) ============ -->
+<!-- ============ ÓRDENES DE COMPRA — ABIERTAS (Pendientes + Parciales + Revisar cierre) ============ -->
 <div class="sec" id="s-oc-abiertas">
   <div class="ptitle">Órdenes de Compra — Abiertas</div>
-  <div class="psub">Órdenes con algo todavía por recibir — pendientes y parciales juntas</div>
+  <div class="psub">Órdenes con algo todavía por recibir — pendientes, parciales y saldos mínimos para revisar</div>
   <div class="filters">
     <select id="oca_f_prov"><option value="">Todos los proveedores</option></select>
     <select id="oca_f_comp"><option value="">Todos los compradores</option></select>
     <select id="oca_f_mes"><option value="">Todos los meses</option></select>
   </div>
-  <div class="kpi-grid" style="grid-template-columns:repeat(3,minmax(140px,1fr));max-width:620px">
+  <div class="kpi-grid" style="grid-template-columns:repeat(4,minmax(140px,1fr));max-width:820px">
     <div class="kpi"><div class="kpi-val text-red" id="oca_k_pendientes">–</div><div class="kpi-lbl">Pendientes</div></div>
     <div class="kpi"><div class="kpi-val text-orange" id="oca_k_parciales">–</div><div class="kpi-lbl">Parciales</div></div>
+    <div class="kpi"><div class="kpi-val" style="color:var(--purple)" id="oca_k_revisar">–</div><div class="kpi-lbl">Revisar cierre</div></div>
     <div class="kpi"><div class="kpi-val text-accent" id="oca_k_importe">–</div><div class="kpi-lbl">Importe total</div></div>
   </div>
   <div class="tw"><table>
@@ -662,7 +702,7 @@
       <select id="oc_f_prov"><option value="">Todos los proveedores</option></select>
       <select id="oc_f_comp"><option value="">Todos los compradores</option></select>
       <select id="oc_f_mes"><option value="">Todos los meses</option></select>
-      <select id="oc_f_est"><option value="">Todos los estados</option><option value="PENDIENTE">Pendientes</option><option value="PARCIAL">Parciales</option><option value="COMPLETADA">Completadas</option></select>
+      <select id="oc_f_est"><option value="">Todos los estados</option><option value="PENDIENTE">Pendientes</option><option value="PARCIAL">Parciales</option><option value="REVISAR_CIERRE">Revisar cierre</option><option value="COMPLETADA">Completadas</option></select>
       <label style="display:flex;align-items:center;gap:7px;font-size:13px;color:var(--muted);cursor:pointer;padding:0 4px">
         <input type="checkbox" id="oc_f_ocultar_completadas" checked style="width:auto">
         Ocultar completadas
@@ -678,6 +718,7 @@
     <div class="kpi"><div class="kpi-val" id="oc_k_pct">–</div><div class="kpi-lbl">% completado</div></div>
     <div class="kpi"><div class="kpi-val text-red" id="oc_k_pendientes">–</div><div class="kpi-lbl">OC pendientes</div></div>
     <div class="kpi"><div class="kpi-val text-orange" id="oc_k_parciales">–</div><div class="kpi-lbl">OC parciales</div></div>
+    <div class="kpi"><div class="kpi-val" style="color:var(--purple)" id="oc_k_revisar">–</div><div class="kpi-lbl">Revisar cierre</div></div>
     <div class="kpi"><div class="kpi-val text-green" id="oc_k_completadas">–</div><div class="kpi-lbl">OC completadas</div></div>
   </div>
   <div class="tw"><table>
@@ -755,97 +796,59 @@
   </table></div>
 </div>
 
-<!-- ============ PROVEEDORES — DASHBOARD ============ -->
-<div class="sec" id="s-prov-dash">
-  <div class="ptitle">Proveedores — Dashboard</div>
-  <div class="psub">Agenda de compras por rubro — el proveedor se agrupa solo según lo que le compraste por OC</div>
-  <div class="kpi-grid">
-    <div class="kpi"><div class="kpi-val text-accent" id="pvd_k_proveedores">–</div><div class="kpi-lbl">Proveedores (con OC o agendados)</div></div>
-    <div class="kpi"><div class="kpi-val" id="pvd_k_grupos">–</div><div class="kpi-lbl">Grupos creados</div></div>
-    <div class="kpi"><div class="kpi-val text-yellow" id="pvd_k_articulos">–</div><div class="kpi-lbl">Artículos clasificados</div></div>
-    <div class="kpi"><div class="kpi-val text-green" id="pvd_k_top" style="font-size:16px">–</div><div class="kpi-lbl">Top proveedor por compras</div></div>
-  </div>
-  <div class="sh"><h2>Accesos rápidos</h2></div>
-  <div style="display:flex;gap:10px;flex-wrap:wrap">
-    <button class="btn" id="pvd-ir-agenda">📇 Ver agenda</button>
-    <button class="btn" id="pvd-ir-ranking">🏆 Ver ranking</button>
-    <button class="btn" id="pvd-ir-clasificar">🏷️ Clasificar artículos</button>
-    <button class="btn p" id="pvd-ir-catalogo">📋 Ver catálogo</button>
+<!-- ============ PROVEEDORES — GRUPOS ============ -->
+<div class="sec" id="s-prov-grupos">
+  <div class="ptitle">Proveedores — Grupos</div>
+  <div class="psub">Elegí un rubro y encontrá rápidamente a quién invitar a cotizar</div>
+  <div class="prov-layout">
+    <aside class="prov-grupos-panel">
+      <div class="sh"><h2>Rubros</h2><button class="bsm" id="pvg_nuevo_grupo">+ Crear</button></div>
+      <input id="pvg_buscar_grupo" placeholder="Buscar grupo..." style="margin-bottom:10px">
+      <div id="pvg_lista_grupos" class="prov-grupos-lista"></div>
+    </aside>
+    <section class="prov-grupo-contenido">
+      <div class="sh">
+        <div><h2 id="pvg_titulo">Elegí un grupo</h2><div class="psub" id="pvg_resumen" style="margin:3px 0 0"></div></div>
+        <div style="display:flex;gap:8px"><button class="btn" id="pvg_agregar" disabled>+ Agregar proveedor</button><button class="bsm d" id="pvg_eliminar" disabled>Eliminar grupo</button></div>
+      </div>
+      <div class="tw"><table>
+        <thead><tr><th>Proveedor</th><th>Estado</th><th>Contacto principal</th><th>Última compra</th><th>Total comprado</th><th>Acciones</th></tr></thead>
+        <tbody id="t-prov-grupos"></tbody>
+      </table></div>
+    </section>
   </div>
 </div>
 
-<!-- ============ PROVEEDORES — AGENDA ============ -->
-<div class="sec" id="s-prov-agenda">
-  <div class="ptitle">Proveedores — Agenda</div>
-  <div class="psub">Elegí un rubro para ver qué proveedores lo cubren y a quién contactar para cotizar</div>
-  <div class="sh">
-    <div class="filters">
-      <select id="pva_f_grupo"></select>
-    </div>
-    <button class="btn" id="pva_nuevo_grupo">+ Nuevo grupo</button>
-  </div>
-  <div class="tw"><table>
-    <thead><tr><th>Proveedor</th><th>Cód. Tango</th><th>Total comprado</th><th>Última compra</th><th>Contactos</th><th>Acciones</th></tr></thead>
-    <tbody id="t-prov-agenda"></tbody>
-  </table></div>
-</div>
-
-<!-- ============ PROVEEDORES — RANKING ============ -->
-<div class="sec" id="s-prov-ranking">
-  <div class="ptitle">Proveedores — Ranking</div>
-  <div class="psub">Cuánto se le compró a cada proveedor, según las OC cargadas</div>
-  <div class="filters">
-    <input placeholder="Buscar proveedor..." id="pvr_f_q">
-  </div>
-  <div class="psub" id="pvr_resumen" style="margin-top:-8px"></div>
-  <div class="tw"><table>
-    <thead><tr><th>Proveedor</th><th>Total comprado</th><th>Cant. OC</th><th>Última compra</th></tr></thead>
-    <tbody id="t-prov-ranking"></tbody>
-  </table></div>
-</div>
-
-<!-- ============ PROVEEDORES — CLASIFICAR ARTÍCULOS ============ -->
-<div class="sec" id="s-prov-clasificar">
-  <div class="ptitle">Proveedores — Clasificar artículos</div>
-  <div class="psub">Asignale un grupo a un artículo y los proveedores que te lo vendieron quedan agrupados solos</div>
-  <div class="filters">
-    <input placeholder="Buscar artículo por código o descripción..." id="pvc_f_q">
-    <label style="display:flex;align-items:center;gap:7px;font-size:13px;color:var(--muted);cursor:pointer;padding:0 4px">
-      <input type="checkbox" id="pvc_f_sinclasificar" style="width:auto">
-      Solo sin clasificar
-    </label>
-  </div>
-  <div class="sh" style="margin-top:-8px">
-    <div class="psub" id="pvc_resumen" style="margin:0"></div>
-    <div style="display:flex;gap:8px;align-items:center">
-      <span style="font-size:13px;color:var(--muted)" id="pvc_bulk_count">0 seleccionados</span>
-      <select id="pvc_bulk_grupo"><option value="">Elegí un grupo...</option></select>
-      <button class="btn p" id="pvc_bulk_aplicar" disabled>Aplicar a los seleccionados</button>
-    </div>
-  </div>
-  <div class="tw"><table>
-    <thead><tr><th><input type="checkbox" id="pvc_check_all" style="width:auto"></th><th>Código</th><th>Descripción</th><th>Grupo</th></tr></thead>
-    <tbody id="t-prov-clasificar"></tbody>
-  </table></div>
-</div>
-
-<!-- ============ PROVEEDORES — CATÁLOGO ============ -->
-<div class="sec" id="s-prov-catalogo">
-  <div class="ptitle">Proveedores — Catálogo</div>
-  <div class="psub">Todos los proveedores — los que ya tienen OC aparecen solos; completales los datos o agregá uno nuevo a mano</div>
+<!-- ============ PROVEEDORES — DIRECTORIO ============ -->
+<div class="sec" id="s-prov-directorio">
+  <div class="ptitle">Proveedores — Directorio</div>
+  <div class="psub">Ficha única de proveedores, contactos, grupos e historial de compras</div>
   <div class="sh">
     <div class="filters">
       <input placeholder="Buscar proveedor / cód. Tango..." id="pvp_f_q">
       <select id="pvp_f_grupo"></select>
-      <label style="display:flex;align-items:center;gap:6px;font-size:13px"><input type="checkbox" id="pvp_f_ocultar_con_contacto"> Ocultar los que ya tienen contacto</label>
     </div>
-    <button class="btn p" id="pvp_nuevo">+ Nuevo proveedor</button>
+    <div><input type="file" id="pvp_import_file" accept=".xlsx,.xls" style="display:none"><button class="btn p" id="pvp_importar">📤 Importar proveedores de Tango</button></div>
   </div>
   <div class="psub" id="pvp_resumen" style="margin-top:-8px"></div>
   <div class="tw"><table>
     <thead><tr><th>Proveedor</th><th>Cód. Tango</th><th>Grupo(s)</th><th>Total comprado</th><th>Contactos</th><th>Acciones</th></tr></thead>
-    <tbody id="t-prov-catalogo"></tbody>
+    <tbody id="t-prov-directorio"></tbody>
   </table></div>
+</div>
+
+<!-- ============ PROVEEDORES — PENDIENTES ============ -->
+<div class="sec" id="s-prov-pendientes">
+  <div class="ptitle">Proveedores — Pendientes</div>
+  <div class="psub">Datos que conviene completar para que la agenda quede lista para cotizar</div>
+  <div class="kpi-grid">
+    <div class="kpi"><div class="kpi-val text-yellow" id="pve_k_detectados">–</div><div class="kpi-lbl">Detectados sin ficha</div></div>
+    <div class="kpi"><div class="kpi-val text-yellow" id="pve_k_sincontacto">–</div><div class="kpi-lbl">Sin contacto</div></div>
+    <div class="kpi"><div class="kpi-val text-yellow" id="pve_k_singrupo">–</div><div class="kpi-lbl">Sin grupo</div></div>
+    <div class="kpi"><div class="kpi-val" id="pve_k_gruposvacios">–</div><div class="kpi-lbl">Grupos vacíos</div></div>
+  </div>
+  <div class="filters"><select id="pve_f_tipo"><option value="DETECTADO">Detectados sin ficha</option><option value="SIN_CONTACTO">Sin contacto</option><option value="SIN_GRUPO">Sin grupo</option></select><input id="pve_f_q" placeholder="Buscar proveedor..."></div>
+  <div class="tw"><table><thead><tr><th>Proveedor</th><th>Cód. Tango</th><th>Situación</th><th>Acción</th></tr></thead><tbody id="t-prov-pendientes"></tbody></table></div>
 </div>
 
 <!-- ============ NOTAS DE PEDIDO ============ -->
@@ -929,6 +932,11 @@
       <div class="fg" style="position:relative;max-width:340px">
         <input id="cot_prov_buscar" autocomplete="off" placeholder="Buscar proveedor para invitar...">
         <div class="ac-box" id="cot_prov_sug" style="display:none"></div>
+      </div>
+      <div style="display:flex;gap:8px;align-items:center;max-width:520px;margin-top:8px">
+        <select id="cot_grupo_invitar"><option value="">Elegir grupo de proveedores...</option></select>
+        <button type="button" class="btn p" id="cot_invitar_preferidos">Invitar preferidos</button>
+        <button type="button" class="btn" id="cot_sumar_grupo">Sumar proveedores...</button>
       </div>
       <div id="cot_invitados_chips" style="display:flex;flex-wrap:wrap;gap:8px;margin:10px 0 18px"></div>
 

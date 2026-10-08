@@ -74,22 +74,39 @@ async function cargarTodo() {
 // que agruparPorOrden()/estadoOC() en js/modules/oc.js (duplicado a
 // propósito, mismo patrón que initExpandCollapse en el resto de módulos).
 function agruparOCPorOrden() {
+  const esSaldoResidual = l => {
+    const pedida = Number(l.cant_pedida) || 0;
+    const recibida = Number(l.cant_recibida) || 0;
+    const pendiente = Number(l.cant_pendiente) || 0;
+    return pendiente > 0 && pendiente <= 0.01 && Math.abs(pedida - recibida) <= 0.01;
+  };
   const map = new Map();
   for (const l of OC_LINEAS_MIN) {
     if (!l.orden_compra) continue;
     if (!map.has(l.orden_compra)) {
-      map.set(l.orden_compra, { orden_compra: l.orden_compra, proveedor_nombre: l.proveedor_nombre, fecha: l.fecha, importe: 0, algunaRecibida: false, algunaPendiente: false, lineas: [] });
+      map.set(l.orden_compra, { orden_compra: l.orden_compra, proveedor_nombre: l.proveedor_nombre, fecha: l.fecha, importe: 0, algunaRecibida: false, algunaPendiente: false, algunaPendienteReal: false, algunSaldoResidual: false, lineas: [] });
     }
     const g = map.get(l.orden_compra);
     g.importe += l.importe || 0;
-    if ((l.cant_recibida || 0) > 0.01) g.algunaRecibida = true;
-    if ((l.cant_pendiente || 0) > 0.01) g.algunaPendiente = true;
+    // Mismo criterio que Capataz y que Ordenes de Compra: cualquier saldo
+    // positivo mantiene la OC abierta, aunque sea menor a 0,01.
+    if ((l.cant_recibida || 0) > 0) g.algunaRecibida = true;
+    if ((l.cant_pendiente || 0) > 0) {
+      g.algunaPendiente = true;
+      if (esSaldoResidual(l)) g.algunSaldoResidual = true;
+      else g.algunaPendienteReal = true;
+    }
     if (l.fecha && (!g.fecha || l.fecha < g.fecha)) g.fecha = l.fecha;
     g.lineas.push({ descripcion: l.articulo_desc, cantidad: l.cant_pedida, importe: l.importe });
   }
   return [...map.values()].map(g => ({
     ...g,
-    estado: !g.algunaRecibida ? 'PENDIENTE' : (!g.algunaPendiente ? 'COMPLETADA' : 'PARCIAL'),
+    // Una OC sin saldo pendiente esta cerrada aunque no haya recepciones.
+    estado: !g.algunaPendiente
+      ? 'COMPLETADA'
+      : (g.algunSaldoResidual && !g.algunaPendienteReal)
+        ? 'REVISAR_CIERRE'
+        : (!g.algunaRecibida ? 'PENDIENTE' : 'PARCIAL'),
   }));
 }
 
@@ -394,8 +411,8 @@ async function guardarNota(e) {
 // ------------------------------------------------------------
 let NP_A_VINCULAR = null;
 
-const ESTADO_OC_LABEL = { PENDIENTE: 'Pendiente', PARCIAL: 'Parcial', COMPLETADA: 'Completada' };
-const ESTADO_OC_CLASE = { PENDIENTE: 'vencido', PARCIAL: 'porvencer', COMPLETADA: 'vigente' };
+const ESTADO_OC_LABEL = { PENDIENTE: 'Pendiente', PARCIAL: 'Parcial', REVISAR_CIERRE: 'Revisar cierre', COMPLETADA: 'Completada' };
+const ESTADO_OC_CLASE = { PENDIENTE: 'vencido', PARCIAL: 'porvencer', REVISAR_CIERRE: 'revisar-cierre', COMPLETADA: 'vigente' };
 
 function renderListaVincularOC() {
   const q = (document.getElementById('voc_f_q')?.value || '').trim().toUpperCase();

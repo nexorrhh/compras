@@ -29,7 +29,7 @@ const MODULES = {
   dash: dashboard, vcs: vehiculos, sols: solicitudes, movs: movimientos, gantt, mant: mantenimiento, vtv, doc: documentos,
   'oc-dash': oc, 'oc-abiertas': oc, 'oc-comp': oc, 'oc-todas': oc,
   'stock-dash': stock, 'stock-comprar': stock, 'stock-segui': stock, 'stock-todo': stock,
-  'prov-dash': proveedores, 'prov-agenda': proveedores, 'prov-ranking': proveedores, 'prov-clasificar': proveedores, 'prov-catalogo': proveedores,
+  'prov-grupos': proveedores, 'prov-directorio': proveedores, 'prov-pendientes': proveedores,
   'np-lista': notasPedido,
   'cot-lista': cotizaciones,
   'cot-pendientes': cotizaciones,

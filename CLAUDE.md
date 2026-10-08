@@ -318,11 +318,11 @@ Dashboard inicial (con gráficos) y sub-vistas de solo lectura, en vez de una so
   **año vigente** si hay datos de ese año, no "Todos los años" — `poblarFiltroAnio()` en `js/modules/oc.js`
   usa `new Date().getFullYear()` la primera vez que se puebla el select; si el usuario elige otro año a
   mano, `sel.dataset.tocado` marca esa elección para que no se pise sola al navegar a otra sección y
-  volver — solo se resetea al año vigente con una recarga completa de la página): los 7 KPIs de siempre
+  volver — solo se resetea al año vigente con una recarga completa de la página): los 8 KPIs de siempre
   (total comprado, recibido, pendiente, % completado, cantidad de OC
   pendientes/parciales/completadas) + 4 gráficos (Chart.js, cargado por CDN en `index.html` junto a
   SheetJS) + 2 accesos rápidos ("Ver abiertas (N)", "Ver completadas (N)", con el conteo del año elegido)
-  más un acceso a "Ver todas / cargar archivo". Al elegir un año, los 7 KPIs y los 4 gráficos se
+  más un acceso a "Ver todas / cargar archivo". Al elegir un año, los 8 KPIs y los 4 gráficos se
   recalculan sobre las líneas de ese año únicamente — `renderDashboard()` filtra `LINEAS` por
   `fecha.slice(0,4)` antes de agrupar y se lo pasa tanto a `renderKPIs` como a `renderGraficosDashboard`.
   Los gráficos:
@@ -339,21 +339,37 @@ Dashboard inicial (con gráficos) y sub-vistas de solo lectura, en vez de una so
 - **Abiertas** (`oc-abiertas`) — Pendientes y Parciales **juntas** en una sola vista (se probó
   separarlas en dos sub-vistas y no convenció al usuario: "no me convence... eso debe estar junto" —
   una orden con algo por recibir es "abierta", no importa si ya llegó una parte o nada). Filtros de
-  proveedor/comprador/mes + resumen chico (cantidad de pendientes, cantidad de parciales, importe
-  total) + la tabla agrupada de siempre. La distinción entre pendiente y parcial se sigue viendo en el
-  badge de estado de cada fila.
+  proveedor/comprador/mes + resumen chico (cantidad de pendientes, parciales, saldos a revisar e importe
+  total) + la tabla agrupada de siempre. La distinción entre los estados se sigue viendo en el badge de
+  cada fila.
 - **Completadas** (`oc-comp`) — misma tabla agrupada, pre-filtrada a estado COMPLETADA (no hay
   selector de estado acá, es implícito por la sección); filtros propios de proveedor/comprador/mes y
   un resumen chico (cantidad de OC + importe total).
 - **Todas** (`oc-todas`) — la vista completa sin recortar por estado: los 4 filtros (proveedor,
-  comprador, mes, estado) + el checkbox "Ocultar completadas" + los 7 KPIs + la tabla. Acá vive el
+  comprador, mes, estado) + el checkbox "Ocultar completadas" + los 8 KPIs + la tabla. Acá vive el
   botón **"Cargar archivo (.xlsx)"** — es el único lugar de todo el módulo donde se sube el Excel de
   Tango, justamente porque es la vista de "administrar todo", no una de las sub-vistas de solo lectura.
 - La tabla es la misma en las 3 sub-vistas con tabla (Dashboard no tiene tabla): agrupada por **orden
   de compra** (no por línea), con la fila resumen desplegable mostrando el detalle de artículos
   (cantidad pedida/recibida/pendiente, precio unitario e importe por línea).
-- Estado de una OC — **PENDIENTE** (nada recibido todavía), **PARCIAL** (llegó parte), **COMPLETADA**
-  (llegó todo) — se calcula por cantidades, no por dinero (ver `estadoOC()` en `js/modules/oc.js`).
+- Estado de una OC — **PENDIENTE** (nada recibido todavía), **PARCIAL** (llegó parte),
+  **REVISAR_CIERRE** (solo queda un residuo mínimo) o **COMPLETADA** (no queda saldo pendiente) — se
+  calcula por cantidades, no por dinero (ver `estadoOC()` en `js/modules/oc.js`).
+- **Prioridad del cierre** (2026-10-07): `cant_pendiente = 0` en todas las líneas clasifica la OC como
+  COMPLETADA/CERRADA aunque `cant_recibida` también sea cero. Tango permite cerrar líneas y órdenes sin
+  recibirlas; antes el chequeo de "nada recibido" se evaluaba primero y esas OC quedaban falsamente en
+  Abiertas. En el detalle sus líneas conservan el aviso rojo "Cerrada sin recibir" para distinguirlas
+  de una recepción completa. Notas de Pedido replica el mismo orden de evaluación.
+- **Saldo pendiente sin tolerancia** (2026-10-07): para coincidir con Capataz, cualquier
+  `cant_pendiente > 0` mantiene la línea y la OC abiertas, incluso remanentes de `0,0001`. Antes se
+  ignoraban saldos de hasta `0,01`, lo que ocultaba como completadas OC que Capataz todavía permitía
+  recibir. El mismo criterio se replica en la selección de OC de Notas de Pedido.
+- **Revisar cierre** (2026-10-07): una línea se considera saldo residual cuando
+  `0 < cant_pendiente <= 0,01` y además `abs(cant_pedida - cant_recibida) <= 0,01`. Si una OC solo tiene
+  pendientes de ese tipo, permanece en Abiertas pero aparece en violeta como **REVISAR_CIERRE**, para
+  advertir que Tango conserva una diferencia decimal mínima y que conviene cerrarla manualmente. Los
+  valores menores a `0,01` se muestran con 4 a 6 decimales para que el saldo no se redondee visualmente
+  a cero. Si existe cualquier saldo mayor o una diferencia real, la OC continúa como PARCIAL/PENDIENTE.
 - **Estado de una línea, dentro del detalle desplegable** (`estadoLinea()`): no es un simple
   Pendiente/Recibido según `cant_pendiente`. Caso real del usuario (2026-09-16): a veces Tango cierra
   una línea sola con `cant_pendiente = 0` **sin que haya llegado nada** (o solo una parte) — típicamente
@@ -363,7 +379,7 @@ Dashboard inicial (con gráficos) y sub-vistas de solo lectura, en vez de una so
   **"⚠️ Cerrada sin recibir"** (rojo, `.badge.vencido` — distinto del amarillo "Pendiente" porque ya no
   está abierta, y distinto del verde "Recibido" porque no llegó lo pedido), con un tooltip explicando el
   motivo probable. Es solo de presentación en el detalle de línea — no cambia el estado
-  Pendiente/Parcial/Completada de la OC completa (`estadoOC()`), que sigue siendo por cantidades a nivel
+  Pendiente/Parcial/Revisar cierre/Completada de la OC completa (`estadoOC()`), que sigue siendo por cantidades a nivel
   de toda la orden.
 - `js/modules/oc.js` es un único módulo que expone `render(secId)`: internamente decide qué sub-vista
   pintar según el `secId` recibido (todas comparten las mismas funciones internas de parseo, agrupado
@@ -389,6 +405,13 @@ para completar la unidad en pantalla — mismo criterio de "cruzar por código d
 que ya usa Proveedores (sección 7.1) para derivar grupos desde OC. Es solo para mostrar, no se guarda en
 `compras_oc_lineas`; un artículo que nunca se cargó en Stock (o no tiene ninguna fila con
 `unidad_medida`) queda sin unidad, no se inventa ninguna.
+
+**Equivalente en KGS en el detalle** (2026-10-07): Pedida/Recibida/Pendiente conservan la unidad nativa
+de la OC y muestran al lado `≈ X KGS` cuando el código de artículo tiene conversión comprobable. El
+factor kg/unidad se obtiene agrupando los pares cantidad/kg que Capataz ya exporta en
+`compras_materot_items` para todas sus etapas (`cant_cotiz/kg_cotiz`, `cant_plan/kg_plan`, etc.); no se
+deduce desde el texto de la descripción ni se inventa para artículos sin cobertura. Si la unidad ya es
+KGS, no se repite el equivalente.
 
 > Pendiente de decidir con el usuario: si conviene sumar la columna `deposito` (pañol/despacho) como
 > filtro real en la UI, y si en algún momento se quiere que el % de "recibido" pese por importe en vez
@@ -492,6 +515,58 @@ este tablero es **público** en GitHub — por eso, igual que los de Órdenes de
 ---
 
 ## 7. Módulo: Proveedores `[DETALLADO]`
+
+> **Reestructuración 2026-10-07 (vigente):** el módulo dejó de usar la compra histórica como autoridad
+> para decidir la agenda. La necesidad real es responder "necesito cotizar Aceros, ¿a quién puedo
+> invitar?". La pertenencia proveedor→grupo ahora se guarda explícitamente y admite varios grupos por
+> proveedor en `compras_proveedores_grupos` (migración
+> [`sql/024_proveedores_agenda_por_grupos.sql`](sql/024_proveedores_agenda_por_grupos.sql)). Las OC se
+> conservan como contexto —total, cantidad y última compra— pero no agregan proveedores silenciosamente
+> a grupos nuevos. `compras_articulos_grupo` también se conserva porque Cotizaciones lo usa para filtrar
+> ítems por rubro; ya no gobierna la agenda. Los párrafos históricos de esta sección explican la versión
+> anterior y deben leerse con esta decisión por encima.
+
+### 7.0 Flujo vigente
+
+- **Grupos** (`prov-grupos`, entrada predeterminada): lista lateral de rubros con cantidad de proveedores.
+  Al elegir uno muestra sus proveedores, contacto principal, estado dentro del grupo (Preferido, Activo,
+  Alternativo o Suspendido), última compra y monto histórico. Se puede crear/eliminar un grupo, agregar
+  un proveedor, quitarlo del grupo o editar su ficha. Eliminar un grupo no elimina proveedores. Al crear
+  un grupo se usa un modal propio (no `prompt()`), con ejemplos rápidos, validación de duplicados y una
+  explicación del paso siguiente. Al confirmar se abre inmediatamente el selector de proveedores; el
+  mismo cuadro se abre con "+ Agregar
+  proveedor". La lista mezcla fichas existentes y proveedores detectados en OC. Elegir uno detectado
+  crea su ficha automáticamente con el código/nombre exactos de Tango y lo asigna al grupo: no se pide
+  escribir o inventar el nombre.
+- **Directorio** (`prov-directorio`): ficha única de todos los proveedores, con búsqueda, filtro por grupo,
+  contactos, notas, múltiples grupos e historial resumido de OC. Los detectados en OC sin ficha propia
+  siguen apareciendo y se pueden incorporar desde Tango. También admite importar el padrón de proveedores
+  por Excel (`COD_PROV` + `NOM_PROV`, con equivalentes comunes de encabezado) para incorporar proveedores
+  que todavía nunca aparecieron en una OC; se omiten códigos ya existentes y duplicados del archivo.
+- **Tango API como maestro de proveedores** (2026-10-07): no se llama desde el navegador (la prueba real
+  confirmó que `vmtango` no devuelve CORS). Tiene un ejecutable WPF independiente en
+  `nuevo formato/api proveedores/`: el usuario abre `Iniciar Proveedores.vbs`, que ejecuta solamente la
+  sincronización del proceso Tango `3142` (Company 3) hacia `compras_proveedores`. Empleados continúa por
+  separado con `nuevo formato/Iniciar Sincronizacion.vbs`. El importador pagina los 2.510 proveedores,
+  cruza por `cod_tango`, actualiza únicamente nombres modificados y crea los códigos faltantes en lotes;
+  no pisa estado, notas, contactos, grupos ni relaciones de fichas existentes. Es reiniciable y evita dos
+  ejecuciones simultáneas. Como la base productiva todavía tiene el esquema básico de proveedores, hoy
+  persiste `COD_CPA01`→`cod_tango`, `NOM_PROVEE`→`nombre` y estado inicial. Los campos ampliados de Tango
+  quedan disponibles al aplicar las migraciones `025`/`026` y adaptar deliberadamente el importador.
+  El selector de grupos busca sobre el maestro ya persistido en Supabase y marca visualmente las fichas
+  actualizadas desde Tango. Teléfono/email de Tango funcionan como contacto de respaldo; un contacto
+  cargado manualmente tiene prioridad.
+- **Pendientes** (`prov-pendientes`): cola de mantenimiento separada del uso diario: detectados sin ficha,
+  proveedores sin contacto, proveedores sin grupo y contador de grupos vacíos.
+- **Cotizaciones:** en cada bloque se elige un grupo y `Invitar preferidos` agrega primero solamente sus
+  proveedores Preferidos. Si no responden o hace falta ampliar competencia, `Sumar proveedores...` abre
+  los restantes Activos/Alternativos (y cualquier Preferido todavía no invitado) para seleccionarlos.
+  Los ya invitados no se duplican y los Suspendidos nunca se ofrecen. Después se puede quitar cualquier
+  invitado individualmente con el circuito existente.
+
+La clasificación de artículos y el ranking dejaron de ser submódulos principales. Sus datos no se
+borraron: la clasificación sigue alimentando el filtro de rubro de Cotizaciones y el ranking quedó
+integrado como contexto dentro de Grupos/Directorio.
 
 Sin relación con Flota como tabla, pero **se alimenta de Órdenes de Compra**: nació de la idea de armar
 una agenda de compras por rubro (Pintura, Granalla, Ferretería, etc.) sin tener que clasificar cada
@@ -617,6 +692,11 @@ Cuatro tablas (ver [`sql/006_proveedores.sql`](sql/006_proveedores.sql) para la 
 - `compras_proveedores_contactos` — vendedores/contactos por proveedor, `on delete cascade` desde
   `compras_proveedores` (si se borra el proveedor, se borran sus contactos, tiene sentido acá porque no
   son una entidad útil sin el proveedor).
+- `compras_proveedores_grupos` — relación muchos-a-muchos vigente de la agenda, PK compuesta
+  `(proveedor_id, grupo_id)`, con estado contextual `PREFERIDO / ACTIVO / ALTERNATIVO / SUSPENDIDO`,
+  notas y origen `MANUAL / MIGRADO`. La migración 024 copia tanto el viejo `grupo_manual_id` como las
+  pertenencias que hasta entonces se derivaban de OC, para no perder la agenda existente. A partir de
+  ahí las nuevas asignaciones son explícitas. `grupo_manual_id` queda como columna legada, sin borrarse.
 
 ### 7.4 Ideas pendientes, no implementadas todavía
 
@@ -661,7 +741,7 @@ propio (`mVINCULAROC`, `vincularOC()`/`renderListaVincularOC()`/`confirmarVincul
 `js/modules/notas-pedido.js`) — **no un `prompt()`** (versión anterior, cambiada a pedido explícito del
 usuario): buscador con las OC agrupadas por N° (`agruparOCPorOrden()`, mismo criterio que
 `agruparPorOrden()`/`estadoOC()` en `js/modules/oc.js`, duplicado a propósito) mostrando proveedor,
-fecha, importe y el mismo badge Pendiente/Parcial/Completada que el módulo de OC — precargado con el
+fecha, importe y el mismo badge Pendiente/Parcial/Revisar cierre/Completada que el módulo de OC — precargado con el
 nombre del proveedor de la NP para que por defecto ya aparezcan sus OC, pero se puede buscar cualquier
 otra. Cada fila es expandible (mismo patrón `.oc-row`/`.oc-detail` que OC/Stock/Proveedores) y muestra qué
 artículos componen esa OC — para poder confirmar de un vistazo que es la orden correcta antes de
@@ -1235,12 +1315,12 @@ Cinco tablas (ver `sql/schema.sql` para el estado final), sin RLS (mismo criteri
   misma solicitud. Retaguear un ítem a otro bloque le resetea el ganador
   (`ganador_proveedor_id`/`ganador_manual`), porque el proveedor ganador del bloque viejo puede no estar
   invitado al bloque nuevo.
-- **Invitar proveedores es manual, no por rubro**: se evaluó sugerir proveedores automáticamente según
-  el grupo/rubro de los artículos de la solicitud (reusando la clasificación de Proveedores, sección 7)
-  pero el usuario prefirió elegir a mano — es lo más parecido a cómo ya arma la lista hoy, y evita una
-  UI más compleja donde cada ítem podría tener candidatos distintos. El filtro de **rubro** (`cot_f_grupo`,
-  ver 9.2 punto 4) sigue existiendo aparte de bloque — es un segundo filtro, más fino, dentro del bloque
-  que se esté mirando (ej. dentro de "Despacho" ver solo "Bulonería").
+- **Invitación individual o escalonada por grupo** (actualizado 2026-10-07): se conserva el autocomplete
+  para invitar de a uno. Por grupo, `Invitar preferidos` agrega al bloque actual solo los Preferidos;
+  `Sumar proveedores...` permite ampliar después con Activos/Alternativos. Siempre excluye Suspendidos
+  y evita duplicar los ya invitados. El filtro de
+  rubro de artículos (`cot_f_grupo`) sigue siendo independiente: filtra filas, mientras la agenda arma
+  la lista de participantes.
 - **Sin envío de mail todavía**: el módulo no manda nada a los proveedores — invitar es solo un registro
   interno. El email del contacto (Proveedores, sección 7.2) sigue disponible por si más adelante se arma
   un envío real.
@@ -1814,7 +1894,14 @@ Mismo patrón de nav colapsable que el resto ("📐 Materiales OT ▾"):
   sección 10.3), una por OT madre (con un badge "+N adicionales" si tiene hijas agrupadas), mostrando
   KGS comprado/solicitado/**asignado de stock** y la cantidad de ítems con diferencia (DIF) de un
   vistazo (pedido explícito del usuario, 2026-10-02, que ya tenía comprado y solicitado pero quería ver
-  también lo cubierto con stock sin entrar al detalle). Acá vive el botón **"📤 Cargar archivo (.xlsx)"**.
+  también lo cubierto con stock sin entrar al detalle). Acá vive el botón **"📤 Cargar archivo (.xlsx)"**
+  y, al lado, **"📥 Exportar diferencias (.xlsx)"** (`exportarDiferencias()`, pedido explícito del
+  usuario, 2026-10-08): baja a un Excel el código, descripción, unidad y las 7 cantidades en kg de
+  **todos** los ítems con Estado "DIF" entre las OT que se estén viendo en ese momento en la grilla
+  (mismo alcance que la grilla — respeta el buscador y el checkbox "Mostrar archivadas",
+  `gruposVisiblesCards()` reusado por las dos) — para poder revisar o repartir las diferencias
+  detectadas sin tener que entrar OT por OT. Si no hay ninguna visible, avisa en vez de bajar un Excel
+  vacío.
   Click en una tarjeta abre el detalle con sub-pestañas **Resumen** (KPIs + donut OK/DIF) y **Detalle**
   (tabla artículo por artículo con las 7 cantidades en kg, directo del archivo — ver 13.2 —, el badge de
   Estado y una columna **OT** al principio: cuando la tarjeta agrupa adicionales, mezcla ítems de más de
@@ -2037,9 +2124,17 @@ Todavía sin decidir:
     `compras_articulos_kg_equivalencia` a `_old` (ver sección 13.2/13.7) (ya hecho).
 22. Correr [`sql/023_materot_ot_info.sql`](sql/023_materot_ot_info.sql) — crea `compras_materot_ot_info`
     para mostrar nombre de proyecto/cliente por OT (ver sección 13.4) (**todavía falta**).
-23. Probar el circuito completo: pedir vehículo (solicitud.html) → aprobar y asignar (index.html) →
+23. Correr [`sql/024_proveedores_agenda_por_grupos.sql`](sql/024_proveedores_agenda_por_grupos.sql) —
+    crea la relación muchos-a-muchos de la nueva agenda y migra las asignaciones anteriores
+    (**todavía falta correr en la base real**).
+24. Correr [`sql/025_proveedores_tango_api.sql`](sql/025_proveedores_tango_api.sql) — agrega a la ficha
+    los campos maestros que se toman de Tango API (**todavía falta correr en la base real**).
+25. Correr [`sql/026_proveedores_sync_tango.sql`](sql/026_proveedores_sync_tango.sql) — asegura los
+    campos de teléfono/email y el índice único requerido por el upsert del actualizador unificado
+    (**todavía falta correr en la base real**).
+26. Probar el circuito completo: pedir vehículo (solicitud.html) → aprobar y asignar (index.html) →
    registrar salida/retorno (porteria.html) → ver el movimiento reflejado en el dashboard.
-24. Evaluar RLS (Row Level Security) en las tablas `compras_*` — hoy cualquiera con el link de
+27. Evaluar RLS (Row Level Security) en las tablas `compras_*` — hoy cualquiera con el link de
    `solicitud.html`/`porteria.html` puede leer/escribir todas las tablas, sin ningún login de por medio.
-25. Ir completando los módulos `[TBD]` de la sección 3 a medida que los necesites, usando el módulo
+28. Ir completando los módulos `[TBD]` de la sección 3 a medida que los necesites, usando el módulo
    Flota (carpeta `js/modules/`) como plantilla.

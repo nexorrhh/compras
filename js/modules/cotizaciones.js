@@ -19,6 +19,7 @@ let INVITADOS_RESUMEN = []; // {cotizacion_id} de TODAS las solicitudes — íde
 let PROVEEDORES = [];       // catálogo con ficha propia (compras_proveedores) {id, nombre, cod_tango}
 let OC_LINEAS_MIN = [];     // {proveedor_cod, proveedor_nombre} de compras_oc_lineas — para sugerir también proveedores "detectados" sin ficha todavía (ver 9.4/7.2)
 let GRUPOS = [];            // compras_grupos completo {id, nombre}
+let PROVEEDORES_GRUPOS = []; // agenda manual proveedor↔grupo (para invitar un rubro completo)
 let ARTICULOS_GRUPO_MAP = new Map(); // cod_articulo -> grupo_id (compras_articulos_grupo, misma clasificación que Proveedores)
 let ARTICULOS_LARGO_BARRA = new Map(); // cod_articulo -> largo_barra (compras_articulos_largo_barra, ver ajustarABarraEntera())
 
@@ -108,23 +109,38 @@ async function cargarListado() {
 }
 
 async function cargarProveedores() {
-  const [{ data: props, error: e1 }, { data: ocLineas, error: e2 }, { data: grupos, error: e3 }, { data: artGrupo, error: e4 }, { data: largoBarra, error: e5 }] = await Promise.all([
-    fetchAll(() => SB.from('compras_proveedores').select('id,nombre,cod_tango').order('nombre')),
+  const [{ data: props, error: e1 }, { data: ocLineas, error: e2 }, { data: grupos, error: e3 }, { data: artGrupo, error: e4 }, { data: largoBarra, error: e5 }, { data: provGrupos, error: e6 }] = await Promise.all([
+    fetchAll(() => SB.from('compras_proveedores').select('id,nombre,cod_tango,estado').order('nombre')),
     fetchAll(() => SB.from('compras_oc_lineas').select('proveedor_cod,proveedor_nombre')),
     SB.from('compras_grupos').select('*').order('nombre'),
     fetchAll(() => SB.from('compras_articulos_grupo').select('cod_articulo,grupo_id')),
     fetchAll(() => SB.from('compras_articulos_largo_barra').select('cod_articulo,largo_barra')),
+    fetchAll(() => SB.from('compras_proveedores_grupos').select('proveedor_id,grupo_id,estado')),
   ]);
   if (e1) { toast(e1.message, 'er'); return; }
   if (e2) { toast(e2.message, 'er'); return; }
   if (e3) { toast(e3.message, 'er'); return; }
   if (e4) { toast(e4.message, 'er'); return; }
   if (e5) { toast(e5.message, 'er'); return; }
+  if (e6) { toast(e6.message, 'er'); return; }
   PROVEEDORES = props || [];
   OC_LINEAS_MIN = ocLineas || [];
   GRUPOS = grupos || [];
   ARTICULOS_GRUPO_MAP = new Map((artGrupo || []).map(a => [a.cod_articulo, a.grupo_id]));
   ARTICULOS_LARGO_BARRA = new Map((largoBarra || []).map(a => [a.cod_articulo, a.largo_barra]));
+  PROVEEDORES_GRUPOS = provGrupos || [];
+  poblarGruposParaInvitar();
+}
+
+function poblarGruposParaInvitar() {
+  const sel = document.getElementById('cot_grupo_invitar');
+  if (!sel) return;
+  const actual = sel.value;
+  sel.innerHTML = '<option value="">Elegir grupo de proveedores...</option>' + GRUPOS.map(g => {
+    const cant = PROVEEDORES_GRUPOS.filter(r => r.grupo_id === g.id && r.estado !== 'SUSPENDIDO').length;
+    return `<option value="${g.id}">${escAttr(g.nombre)} (${cant})</option>`;
+  }).join('');
+  if ([...sel.options].some(o => o.value === actual)) sel.value = actual;
 }
 
 // Rubro/grupo de un ítem — reusa la misma clasificación por artículo que
@@ -981,6 +997,70 @@ async function agregarInvitado(proveedorId) {
   renderInvitados();
   renderTablaComparativa();
   renderResumenProveedores();
+}
+
+function proveedoresDisponiblesDelGrupo(grupoId) {
+  const ya = new Set(invitadosVisibles().map(i => i.proveedor_id));
+  const orden = { PREFERIDO: 0, ACTIVO: 1, ALTERNATIVO: 2 };
+  return PROVEEDORES_GRUPOS
+    .filter(r => r.grupo_id === grupoId && r.estado !== 'SUSPENDIDO' && !ya.has(r.proveedor_id))
+    .map(r => ({ relacion: r, proveedor: PROVEEDORES.find(p => p.id === r.proveedor_id && p.estado !== 'SUSPENDIDO') }))
+    .filter(x => x.proveedor)
+    .sort((a, b) => (orden[a.relacion.estado] - orden[b.relacion.estado]) || a.proveedor.nombre.localeCompare(b.proveedor.nombre, 'es'));
+}
+
+async function invitarProveedoresDelGrupo(ids, grupoId) {
+  if (!COT_ACTUAL || !ids.length) return false;
+  const bloque = bloqueActual();
+  const rows = ids.map(proveedor_id => ({ cotizacion_id: COT_ACTUAL.id, proveedor_id, bloque }));
+  const { data, error } = await SB.from('compras_cotizaciones_proveedores')
+    .upsert(rows, { onConflict: 'cotizacion_id,proveedor_id,bloque', ignoreDuplicates: true }).select();
+  if (error) { toast(error.message, 'er'); return false; }
+  for (const inv of (data || [])) {
+    const p = PROVEEDORES.find(x => x.id === inv.proveedor_id);
+    INVITADOS.push({ ...inv, condicion_pago: inv.condicion_pago || '', nombre: p?.nombre || '(?)' });
+    COL_MONEDA[inv.proveedor_id] = COL_MONEDA[inv.proveedor_id] || 'ARS';
+    INVITADOS_RESUMEN.push({ cotizacion_id: COT_ACTUAL.id });
+  }
+  const grupo = GRUPOS.find(g => g.id === grupoId);
+  toast(`✓ ${ids.length} proveedor${ids.length === 1 ? '' : 'es'} de ${grupo?.nombre || 'grupo'} invitado${ids.length === 1 ? '' : 's'}`);
+  renderInvitados(); renderTablaComparativa(); renderResumenProveedores();
+  return true;
+}
+
+async function invitarPreferidosActual() {
+  const grupoId = document.getElementById('cot_grupo_invitar')?.value;
+  if (!grupoId) { toast('Elegí un grupo de proveedores', 'er'); return; }
+  const ids = proveedoresDisponiblesDelGrupo(grupoId).filter(x => x.relacion.estado === 'PREFERIDO').map(x => x.proveedor.id);
+  if (!ids.length) { toast('No quedan proveedores preferidos por invitar en este grupo', 'er'); return; }
+  await invitarProveedoresDelGrupo(ids, grupoId);
+}
+
+function renderSelectorGrupoCotizacion() {
+  const grupoId = document.getElementById('cot_grupo_invitar')?.value;
+  const cont = document.getElementById('cotg_lista');
+  if (!grupoId || !cont) return;
+  const q = (document.getElementById('cotg_buscar')?.value || '').trim().toUpperCase();
+  const disponibles = proveedoresDisponiblesDelGrupo(grupoId).filter(x => !q || x.proveedor.nombre.toUpperCase().includes(q) || (x.proveedor.cod_tango || '').toUpperCase().includes(q));
+  const label = { PREFERIDO: 'Preferido', ACTIVO: 'Activo', ALTERNATIVO: 'Alternativo' };
+  cont.innerHTML = disponibles.map(({ relacion, proveedor }) => `<label class="prov-selector-item"><input type="checkbox" class="cotg-check" value="${proveedor.id}"><span><strong>${escAttr(proveedor.nombre)}</strong><br><span class="text-muted">${escAttr(proveedor.cod_tango || 'Sin código Tango')}</span></span><span class="badge ${relacion.estado === 'PREFERIDO' ? 'prov-preferido' : relacion.estado === 'ALTERNATIVO' ? 'prov-alternativo' : 'vigente'}">${label[relacion.estado]}</span></label>`).join('') || '<div class="empty">No quedan proveedores disponibles en este grupo</div>';
+}
+
+function abrirSelectorGrupoCotizacion() {
+  const grupoId = document.getElementById('cot_grupo_invitar')?.value;
+  if (!grupoId) { toast('Elegí un grupo de proveedores', 'er'); return; }
+  const grupo = GRUPOS.find(g => g.id === grupoId);
+  document.getElementById('mCOTGRUPO_t').textContent = `Sumar proveedores de ${grupo?.nombre || 'grupo'}`;
+  document.getElementById('cotg_buscar').value = '';
+  renderSelectorGrupoCotizacion();
+  om('mCOTGRUPO');
+}
+
+async function confirmarSelectorGrupoCotizacion() {
+  const grupoId = document.getElementById('cot_grupo_invitar')?.value;
+  const ids = [...document.querySelectorAll('.cotg-check:checked')].map(c => c.value);
+  if (!ids.length) { toast('Seleccioná al menos un proveedor', 'er'); return; }
+  if (await invitarProveedoresDelGrupo(ids, grupoId)) cm('mCOTGRUPO');
 }
 
 // Pedido del director financiero (2026-09-10): el informe de reparto no
@@ -2425,6 +2505,7 @@ function initDelegacionPendientes() {
 // ------------------------------------------------------------
 export async function render(secId) {
   if (!COTIZACIONES.length) await Promise.all([cargarListado(), cargarProveedores()]);
+  else await cargarProveedores(); // refresca grupos/estados editados en Proveedores sin recargar la página
   if (secId === 'cot-pendientes') {
     await cargarPendientesGlobal();
     renderInvitadosPendientes();
@@ -2438,6 +2519,10 @@ export async function render(secId) {
 }
 
 export function init() {
+  document.getElementById('cot_invitar_preferidos')?.addEventListener('click', invitarPreferidosActual);
+  document.getElementById('cot_sumar_grupo')?.addEventListener('click', abrirSelectorGrupoCotizacion);
+  document.getElementById('cotg_buscar')?.addEventListener('input', renderSelectorGrupoCotizacion);
+  document.getElementById('cotg_confirmar')?.addEventListener('click', confirmarSelectorGrupoCotizacion);
   document.getElementById('cot_file')?.addEventListener('change', e => {
     const file = e.target.files[0];
     e.target.value = '';

@@ -191,11 +191,10 @@ create table compras_stock_minimos (
 );
 
 -- ------------------------------------------------------------
--- PROVEEDORES — agenda de compras por rubro (grupo). La pertenencia
--- proveedor→grupo se deriva en el cliente cruzando compras_oc_lineas
--- con compras_articulos_grupo (ver sql/006_proveedores.sql) — no se
--- guarda en una tabla. grupo_manual_id es el respaldo para
--- proveedores sin OC todavía.
+-- PROVEEDORES — agenda manual por rubro. La pertenencia proveedor→grupo
+-- se guarda en compras_proveedores_grupos (muchos-a-muchos). Las OC
+-- aportan historial; compras_articulos_grupo queda para el filtro de
+-- artículos de Cotizaciones. grupo_manual_id es una columna legada.
 -- ------------------------------------------------------------
 create table compras_grupos (
   id uuid primary key default gen_random_uuid(),
@@ -215,9 +214,32 @@ create table compras_proveedores (
   nombre text not null,
   cod_tango text,
   grupo_manual_id uuid references compras_grupos(id) on delete set null,
+  estado text not null default 'ACTIVO' check (estado in ('ACTIVO', 'SUSPENDIDO')),
+  tango_id bigint,
+  cuit text,
+  nombre_fantasia text,
+  domicilio text,
+  localidad text,
+  codigo_postal text,
+  telefono_tango text,
+  email_tango text,
+  condicion_pago_tango text,
+  tango_habilitado boolean,
+  sincronizado_tango_en timestamptz,
   notas text,
   created_at timestamptz not null default now(),
   actualizado_en timestamptz not null default now()
+);
+
+create table compras_proveedores_grupos (
+  proveedor_id uuid not null references compras_proveedores(id) on delete cascade,
+  grupo_id uuid not null references compras_grupos(id) on delete cascade,
+  estado text not null default 'ACTIVO' check (estado in ('PREFERIDO', 'ACTIVO', 'ALTERNATIVO', 'SUSPENDIDO')),
+  notas text,
+  origen text not null default 'MANUAL' check (origen in ('MANUAL', 'MIGRADO')),
+  created_at timestamptz not null default now(),
+  actualizado_en timestamptz not null default now(),
+  primary key (proveedor_id, grupo_id)
 );
 
 create table compras_proveedores_contactos (
@@ -433,6 +455,8 @@ create index idx_materot_items_cod_articulo on compras_materot_items(cod_articul
 create index idx_compras_stock_deposito on compras_stock_saldos(cod_deposito);
 create index idx_compras_articulos_grupo_grupo on compras_articulos_grupo(grupo_id);
 create index idx_compras_proveedores_cod_tango on compras_proveedores(cod_tango);
+create unique index idx_compras_proveedores_tango_id on compras_proveedores(tango_id);
+create index idx_compras_proveedores_grupos_grupo on compras_proveedores_grupos(grupo_id);
 create index idx_compras_proveedores_contactos_proveedor on compras_proveedores_contactos(proveedor_id);
 create index idx_compras_np_estado on compras_notas_pedido(estado);
 create index idx_compras_np_proveedor on compras_notas_pedido(proveedor_id);

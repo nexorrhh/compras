@@ -172,6 +172,7 @@ select option{background:var(--bg3)}
 .badge.comp{background:rgba(20,184,166,.15);color:var(--teal)}
 .badge.vencido{background:rgba(239,68,68,.15);color:var(--red)}
 .badge.porvencer{background:rgba(245,158,11,.15);color:var(--yellow)}
+.badge.revisar-cierre{background:rgba(168,85,247,.15);color:var(--purple)}
 .badge.vigente{background:rgba(34,197,94,.15);color:var(--green)}
 .badge.cat-seguro{background:rgba(59,130,246,.15);color:var(--accent)}
 .badge.cat-permiso{background:rgba(168,85,247,.15);color:var(--purple)}
@@ -186,6 +187,34 @@ select option{background:var(--bg3)}
 .cot-precio-min input{font-weight:700}
 .cot-precio-input{width:62px;font-size:12px;padding:5px 4px;text-align:right}
 .cot-resumen-card{background:var(--bg2);border:1px solid var(--border);border-radius:var(--r);padding:12px 14px}
+
+/* ---------- PROVEEDORES ---------- */
+.prov-layout{display:grid;grid-template-columns:minmax(220px,280px) 1fr;gap:14px;align-items:start}
+.prov-grupos-panel,.prov-grupo-contenido{background:var(--bg2);border:1px solid var(--border);border-radius:var(--r);padding:14px}
+.prov-grupos-lista{display:flex;flex-direction:column;gap:5px;max-height:66vh;overflow-y:auto}
+.prov-grupo-item{width:100%;display:flex;justify-content:space-between;gap:8px;align-items:center;text-align:left;background:transparent;border:1px solid transparent;border-radius:8px;color:var(--text);padding:9px 10px;cursor:pointer}
+.prov-grupo-item:hover{background:var(--row-hover);border-color:var(--border)}
+.prov-grupo-item.active{background:rgba(59,130,246,.14);border-color:var(--accent)}
+.prov-grupo-count{font-size:11px;color:var(--muted);background:var(--bg3);border-radius:999px;padding:2px 7px}
+.prov-check-grupos{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:7px;max-height:210px;overflow-y:auto;border:1px solid var(--border);border-radius:8px;padding:10px;background:var(--bg3)}
+.prov-check-grupos label{display:flex;align-items:center;gap:7px;margin:0;color:var(--text);cursor:pointer}
+.prov-check-grupos input{width:auto}
+.prov-selector-lista{border:1px solid var(--border);border-radius:8px;background:var(--bg3);max-height:390px;overflow-y:auto}
+.prov-selector-item{display:grid;grid-template-columns:auto 1fr auto;gap:10px;align-items:center;padding:10px 12px;border-bottom:1px solid var(--border);cursor:pointer;margin:0;color:var(--text)}
+.prov-selector-item:last-child{border-bottom:none}
+.prov-selector-item:hover{background:var(--row-hover)}
+.prov-selector-item input{width:auto}
+.prov-selector-cod{font-size:11px;color:var(--muted)}
+.prov-grupo-modal-head{display:flex;align-items:center;gap:12px;margin-bottom:20px;padding-right:24px}
+.prov-grupo-modal-icon{width:46px;height:46px;display:flex;align-items:center;justify-content:center;border-radius:12px;background:linear-gradient(135deg,rgba(59,130,246,.2),rgba(168,85,247,.18));border:1px solid rgba(59,130,246,.28);font-size:22px;flex-shrink:0}
+.prov-grupo-ejemplos{display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin:-3px 0 16px;font-size:12px;color:var(--muted)}
+.prov-grupo-ejemplos button{border:1px solid var(--border);background:var(--bg3);color:var(--text);border-radius:999px;padding:4px 9px;font-size:11px;cursor:pointer}
+.prov-grupo-ejemplos button:hover{border-color:var(--accent);color:var(--accent)}
+.prov-grupo-siguiente{padding:11px 13px;border-radius:8px;background:rgba(59,130,246,.08);border:1px solid rgba(59,130,246,.22);font-size:12px;line-height:1.5;color:var(--muted)}
+.prov-grupo-siguiente strong{color:var(--text)}
+.badge.prov-preferido{background:rgba(34,197,94,.15);color:var(--green)}
+.badge.prov-alternativo{background:rgba(245,158,11,.15);color:var(--yellow)}
+.badge.prov-suspendido{background:rgba(239,68,68,.15);color:var(--red)}
 .ot-card{background:var(--bg2);border:1px solid var(--border);border-radius:var(--r);padding:14px;cursor:pointer;transition:border-color .15s}
 .ot-card:hover{border-color:var(--accent)}
 .cot-bloque-tabs{display:flex;gap:6px;flex-wrap:wrap}
@@ -250,4 +279,4 @@ select option{background:var(--bg3)}
 .g-cel.ocu{background:rgba(239,68,68,.22)}
 .g-cel.hoy{outline:2px solid var(--accent);outline-offset:-1px}
 
-@media(max-width:700px){nav{display:none}main{padding:12px}.fr{grid-template-columns:1fr}}
+@media(max-width:700px){nav{display:none}main{padding:12px}.fr{grid-template-columns:1fr}.prov-layout{grid-template-columns:1fr}.prov-check-grupos{grid-template-columns:1fr}}
