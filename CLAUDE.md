@@ -407,17 +407,21 @@ que ya usa Proveedores (sección 7.1) para derivar grupos desde OC. Es solo para
 `unidad_medida`) queda sin unidad, no se inventa ninguna.
 
 **Descripción cortada a mitad de palabra** (2026-10-13): Tango corta `DESC_ART` a un largo fijo — caso
-real del usuario: "PINT POLIURETANO RAL 5017 (AZU" sin la "L)" final. El resto de la descripción queda
-en una **segunda columna del mismo export**, que `parseWorkbookOC()` en `js/modules/oc.js` ahora
-concatena directo sobre `articulo_desc` (sin separador — Tango corta a mitad de palabra, un espacio
-dejaría "AZU L)" en vez de "AZUL)", mismo criterio sin separador que ya usan Stock/Materiales OT con
-`desc_adic`). El nombre exacto de esa columna **no está confirmado** con el usuario (no pasó un archivo
-de ejemplo nuevo) — el parseo prueba varios candidatos plausibles en el mismo estilo de Tango
-(`DESC_ADIC`, `DESC_ART2`, `DESC_ART_2`, `DESC_ADICIONAL`, `DESC_COMPL`, `DESC_COMPLEMENTARIA`) y usa el
-primero que aparezca en el archivo; si ninguno coincide, queda exactamente igual que antes (sin cortar
-nada adicional, no rompe lo que ya funcionaba). Solo toma efecto en OC que se **vuelvan a cargar** desde
-un archivo nuevo — por el reemplazo por rango de fechas (ver 5.2), una OC ya importada no se corrige
-sola hasta que su fecha vuelva a estar dentro del rango de un archivo re-subido.
+real del usuario: "PINT POLIURETANO RAL 5017 (AZU" sin "L YPF)" al final. Primer intento (revertido):
+suponer que el resto vivía en una segunda columna del mismo export de OC — **descartado al revisar el
+archivo real** (`OC.xlsx`, inspeccionado con Python): esa columna no existe, el texto cortado es
+sencillamente todo lo que Tango exporta para ese artículo en este informe. El texto completo sí vive en
+Capataz: `compras_stock_saldos.desc_adicional` y `compras_materot_items.desc_adicional` (mismo artículo,
+mismo `DESC_ART`/`descripcion` cortado a los mismos 30 caracteres, pero con el resto en una columna
+propia — ver secciones 6.1 y 13.1) — **confirmado con datos reales**, `PINALIPO5017` trae
+`desc_adicional = "L YPF)"` en ambas tablas. Mismo criterio de "cruzar por código de artículo entre
+módulos" que ya usa la unidad de medida (párrafo anterior) y Proveedores (sección 7.1): `render()` arma
+`DESC_ADIC` (Map `cod_articulo → desc_adicional`, Materiales OT primero y Stock encima sin un criterio
+real para preferir uno — las dos fuentes son de Capataz y deberían traer el mismo texto) y
+`descripcionCompleta()` la concatena sobre `articulo_desc` **sin separador** al armar el detalle de cada
+línea (Tango corta a mitad de palabra: un espacio dejaría "AZU L YPF)" en vez de "AZUL YPF)"). Es solo
+para mostrar — no se guarda en `compras_oc_lineas`, y un artículo que no aparece en ninguna de las dos
+tablas de Capataz queda con la descripción cortada tal cual, no se inventa nada.
 
 **Equivalente en KGS en el detalle** (2026-10-07): Pedida/Recibida/Pendiente conservan la unidad nativa
 de la OC y muestran al lado `≈ X KGS` cuando el código de artículo tiene conversión comprobable. El

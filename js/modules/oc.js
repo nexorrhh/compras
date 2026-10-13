@@ -31,6 +31,17 @@ let UNIDADES = new Map();
 // Materiales OT. No se usan formulas por descripcion: si un articulo no
 // tiene datos reales para obtener el factor, se deja sin equivalente.
 let KG_POR_UNIDAD = new Map();
+// Tango corta DESC_ART a un largo fijo (caso real, 2026-10-13: "PINT
+// POLIURETANO RAL 5017 (AZU" sin la "L YPF)" final) — se confirmó con el
+// archivo real que el export de OC NO trae ninguna columna con el resto
+// del texto. Capataz sí lo tiene completo en desc_adicional (mismo código
+// de artículo truncado igual a los 30 caracteres, pero con el resto del
+// texto en una columna aparte — ver Stock sección 6.1 y Materiales OT
+// sección 13.1), así que se completa cruzando por articulo_cod contra
+// compras_stock_saldos primero y compras_materot_items como respaldo. Es
+// solo para mostrar (igual criterio que UNIDADES) — no se guarda en
+// compras_oc_lineas ni se inventa nada para un artículo sin esa fila.
+let DESC_ADIC = new Map();
 
 function construirFactoresKg(items) {
   const acumulados = new Map();
@@ -69,6 +80,14 @@ function cantidadConKg(cantidad, unidad, codigoArticulo) {
   return `${texto} <span style="color:var(--muted);font-weight:600;white-space:nowrap">· ≈ ${formatearCantidad(kg)} KGS</span>`;
 }
 
+// Completa la descripción cortada de Tango con el resto del texto que
+// Capataz sí trae completo (ver DESC_ADIC más arriba) — sin separador,
+// porque el corte cae a mitad de palabra (ej. "...(AZU" + "L YPF)").
+function descripcionCompleta(desc, codigoArticulo) {
+  const resto = DESC_ADIC.get(codigoArticulo);
+  return resto ? `${desc || ''}${resto}` : desc;
+}
+
 function formatearCantidad(valor) {
   const n = Number(valor || 0);
   const opciones = Math.abs(n) > 0 && Math.abs(n) < 0.01
@@ -104,20 +123,9 @@ function parseWorkbook(arrayBuffer, filename) {
 
   const header = rows[0].map(norm);
   const idx = name => header.indexOf(name);
-  // Tango corta DESC_ART a un largo fijo (caso real: "PINT POLIURETANO RAL
-  // 5017 (AZU" sin la "L)" final) — el resto de la descripción queda en una
-  // segunda columna del mismo export. No hay un único nombre confirmado
-  // para esa columna todavía (pedido del usuario, 2026-10-13, sin pasar un
-  // archivo de ejemplo nuevo) — se prueban los nombres más probables, en el
-  // mismo estilo MAYÚSCULAS_CON_GUION_BAJO que ya usa Tango para el resto
-  // de las columnas de este export, y se usa el primero que aparezca.
-  const idxDescAdic = ['DESC_ADIC', 'DESC_ART2', 'DESC_ART_2', 'DESC_ADICIONAL', 'DESC_COMPL', 'DESC_COMPLEMENTARIA']
-    .map(idx)
-    .find(i => i >= 0) ?? -1;
   const col = {
     fecha: idx('FECHA'), orden: idx('N_ORDEN_C'), compCod: idx('COMPRADOR'), compNom: idx('N_COMPRAD'),
     provCod: idx('COD_PROV'), provNom: idx('NOM_PROV'), artCod: idx('COD_ARTICU'), artDesc: idx('DESC_ART'),
-    artDescAdic: idxDescAdic,
     deposito: idx('DEPOSITO'), pedida: idx('CANT_PED'), recibida: idx('CANT_REC'), pendiente: idx('CANT_PEN'),
     precio: idx('PRECIO_UNI'), importe: idx('IMPORTE'),
   };
@@ -140,13 +148,7 @@ function parseWorkbook(arrayBuffer, filename) {
       proveedor_cod: col.provCod >= 0 ? txt(r[col.provCod]) : null,
       proveedor_nombre: col.provNom >= 0 ? txt(r[col.provNom]) : null,
       articulo_cod: articulo,
-      // Se concatena SIN separador (igual criterio que desc_adic en Stock/
-      // Materiales OT) — Tango corta la descripción a mitad de palabra, así
-      // que agregar un espacio partiría "AZU" + "L)" en "AZU L)" en vez de
-      // "AZUL)".
-      articulo_desc: col.artDesc >= 0
-        ? txt(`${r[col.artDesc] ?? ''}${col.artDescAdic >= 0 ? (r[col.artDescAdic] ?? '') : ''}`)
-        : null,
+      articulo_desc: col.artDesc >= 0 ? txt(r[col.artDesc]) : null,
       deposito: col.deposito >= 0 ? txt(r[col.deposito]) : null,
       cant_pedida: col.pedida >= 0 ? num(r[col.pedida]) : 0,
       cant_recibida: col.recibida >= 0 ? num(r[col.recibida]) : 0,
@@ -384,6 +386,7 @@ function renderTabla(tbodyId, grupos) {
     const detalle = lineasOrdenadas.map(l => {
       const estL = estadoLinea(l);
       const unidad = UNIDADES.get(l.articulo_cod) || '';
+      const descripcion = descripcionCompleta(l.articulo_desc, l.articulo_cod) || l.articulo_cod;
       // "Cerrada sin recibir" en rojo (no amarillo/verde) porque es el
       // caso que hay que revisar: Tango la cerró sin que llegara nada
       // (o solo una parte) por esta orden — normalmente porque ese
@@ -400,7 +403,7 @@ function renderTabla(tbodyId, grupos) {
         ? ' title="Tango cerró esta línea sin recibir lo pedido (o recibió solo una parte) — probablemente se compró a otro proveedor por fuera de esta OC"'
         : '';
       return `<div class="oc-linea">
-        <div class="oc-linea-desc">${l.articulo_desc || l.articulo_cod}</div>
+        <div class="oc-linea-desc">${descripcion}</div>
         <div>Pedida: <strong>${cantidadConKg(l.cant_pedida, unidad, l.articulo_cod)}</strong></div>
         <div>Recibida: <strong>${cantidadConKg(l.cant_recibida, unidad, l.articulo_cod)}</strong></div>
         <div>Pendiente: <strong>${cantidadConKg(l.cant_pendiente, unidad, l.articulo_cod)}</strong></div>
@@ -672,8 +675,8 @@ export async function render(secId) {
 
   const [{ data, error }, { data: saldos, error: eSaldos }, { data: materialesKg, error: eKg }] = await Promise.all([
     fetchAll(() => SB.from('compras_oc_lineas').select('*')),
-    fetchAll(() => SB.from('compras_stock_saldos').select('cod_articulo,unidad_medida')),
-    fetchAll(() => SB.from('compras_materot_items').select('cod_articulo,cant_cotiz,kg_cotiz,cant_plan,kg_plan,cant_solic,kg_solic,comprado,kgs_comprados,cant_asig,kg_asig,recibido,kg_recibido,entregado,kg_entregado')),
+    fetchAll(() => SB.from('compras_stock_saldos').select('cod_articulo,unidad_medida,desc_adicional')),
+    fetchAll(() => SB.from('compras_materot_items').select('cod_articulo,desc_adicional,cant_cotiz,kg_cotiz,cant_plan,kg_plan,cant_solic,kg_solic,comprado,kgs_comprados,cant_asig,kg_asig,recibido,kg_recibido,entregado,kg_entregado')),
   ]);
   if (error) {
     if (tbodyId) { const tb = document.getElementById(tbodyId); if (tb) tb.innerHTML = `<tr><td colspan="7" style="color:var(--red);padding:12px">${error.message}</td></tr>`; }
@@ -682,6 +685,13 @@ export async function render(secId) {
   LINEAS = data || [];
   if (!eSaldos) UNIDADES = new Map((saldos || []).filter(s => s.unidad_medida).map(s => [s.cod_articulo, s.unidad_medida]));
   KG_POR_UNIDAD = eKg ? new Map() : construirFactoresKg(materialesKg || []);
+  // Materiales OT primero, Stock pisa después — no hay un criterio real
+  // para preferir una fuente sobre la otra (las dos vienen de Capataz y
+  // deberían traer el mismo texto), el orden es arbitrario.
+  DESC_ADIC = new Map([
+    ...(eKg ? [] : (materialesKg || []).filter(m => m.desc_adicional).map(m => [m.cod_articulo, m.desc_adicional])),
+    ...(eSaldos ? [] : (saldos || []).filter(s => s.desc_adicional).map(s => [s.cod_articulo, s.desc_adicional])),
+  ]);
 
   if (secId === 'oc-abiertas') { renderAbiertas(); return; }
   const seccion = SECCIONES_ESTADO.find(s => s.tbodyId === tbodyId);
