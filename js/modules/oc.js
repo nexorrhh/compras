@@ -104,9 +104,20 @@ function parseWorkbook(arrayBuffer, filename) {
 
   const header = rows[0].map(norm);
   const idx = name => header.indexOf(name);
+  // Tango corta DESC_ART a un largo fijo (caso real: "PINT POLIURETANO RAL
+  // 5017 (AZU" sin la "L)" final) — el resto de la descripción queda en una
+  // segunda columna del mismo export. No hay un único nombre confirmado
+  // para esa columna todavía (pedido del usuario, 2026-10-13, sin pasar un
+  // archivo de ejemplo nuevo) — se prueban los nombres más probables, en el
+  // mismo estilo MAYÚSCULAS_CON_GUION_BAJO que ya usa Tango para el resto
+  // de las columnas de este export, y se usa el primero que aparezca.
+  const idxDescAdic = ['DESC_ADIC', 'DESC_ART2', 'DESC_ART_2', 'DESC_ADICIONAL', 'DESC_COMPL', 'DESC_COMPLEMENTARIA']
+    .map(idx)
+    .find(i => i >= 0) ?? -1;
   const col = {
     fecha: idx('FECHA'), orden: idx('N_ORDEN_C'), compCod: idx('COMPRADOR'), compNom: idx('N_COMPRAD'),
     provCod: idx('COD_PROV'), provNom: idx('NOM_PROV'), artCod: idx('COD_ARTICU'), artDesc: idx('DESC_ART'),
+    artDescAdic: idxDescAdic,
     deposito: idx('DEPOSITO'), pedida: idx('CANT_PED'), recibida: idx('CANT_REC'), pendiente: idx('CANT_PEN'),
     precio: idx('PRECIO_UNI'), importe: idx('IMPORTE'),
   };
@@ -129,7 +140,13 @@ function parseWorkbook(arrayBuffer, filename) {
       proveedor_cod: col.provCod >= 0 ? txt(r[col.provCod]) : null,
       proveedor_nombre: col.provNom >= 0 ? txt(r[col.provNom]) : null,
       articulo_cod: articulo,
-      articulo_desc: col.artDesc >= 0 ? txt(r[col.artDesc]) : null,
+      // Se concatena SIN separador (igual criterio que desc_adic en Stock/
+      // Materiales OT) — Tango corta la descripción a mitad de palabra, así
+      // que agregar un espacio partiría "AZU" + "L)" en "AZU L)" en vez de
+      // "AZUL)".
+      articulo_desc: col.artDesc >= 0
+        ? txt(`${r[col.artDesc] ?? ''}${col.artDescAdic >= 0 ? (r[col.artDescAdic] ?? '') : ''}`)
+        : null,
       deposito: col.deposito >= 0 ? txt(r[col.deposito]) : null,
       cant_pedida: col.pedida >= 0 ? num(r[col.pedida]) : 0,
       cant_recibida: col.recibida >= 0 ? num(r[col.recibida]) : 0,

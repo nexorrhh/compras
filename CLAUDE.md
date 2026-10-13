@@ -406,6 +406,19 @@ que ya usa Proveedores (sección 7.1) para derivar grupos desde OC. Es solo para
 `compras_oc_lineas`; un artículo que nunca se cargó en Stock (o no tiene ninguna fila con
 `unidad_medida`) queda sin unidad, no se inventa ninguna.
 
+**Descripción cortada a mitad de palabra** (2026-10-13): Tango corta `DESC_ART` a un largo fijo — caso
+real del usuario: "PINT POLIURETANO RAL 5017 (AZU" sin la "L)" final. El resto de la descripción queda
+en una **segunda columna del mismo export**, que `parseWorkbookOC()` en `js/modules/oc.js` ahora
+concatena directo sobre `articulo_desc` (sin separador — Tango corta a mitad de palabra, un espacio
+dejaría "AZU L)" en vez de "AZUL)", mismo criterio sin separador que ya usan Stock/Materiales OT con
+`desc_adic`). El nombre exacto de esa columna **no está confirmado** con el usuario (no pasó un archivo
+de ejemplo nuevo) — el parseo prueba varios candidatos plausibles en el mismo estilo de Tango
+(`DESC_ADIC`, `DESC_ART2`, `DESC_ART_2`, `DESC_ADICIONAL`, `DESC_COMPL`, `DESC_COMPLEMENTARIA`) y usa el
+primero que aparezca en el archivo; si ninguno coincide, queda exactamente igual que antes (sin cortar
+nada adicional, no rompe lo que ya funcionaba). Solo toma efecto en OC que se **vuelvan a cargar** desde
+un archivo nuevo — por el reemplazo por rango de fechas (ver 5.2), una OC ya importada no se corrige
+sola hasta que su fecha vuelva a estar dentro del rango de un archivo re-subido.
+
 **Equivalente en KGS en el detalle** (2026-10-07): Pedida/Recibida/Pendiente conservan la unidad nativa
 de la OC y muestran al lado `≈ X KGS` cuando el código de artículo tiene conversión comprobable. El
 factor kg/unidad se obtiene agrupando los pares cantidad/kg que Capataz ya exporta en
