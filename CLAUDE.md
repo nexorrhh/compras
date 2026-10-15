@@ -1278,6 +1278,26 @@ además le pone `a_comprar = false` directo en la base al ítem equivalente (mis
 abrirlas. Si el mismo `nro_solicitud` estaba repartido en más de una solicitud vieja a la vez (ver la
 columna "COT, URG" en la captura del usuario), se descarta en todas de una.
 
+**"+ Agregar ítem para cotizar"** (pedido explícito del usuario, 2026-10-15): caso real — material
+estructural urgente que Ingeniería necesita pero que no pasó por el pedido formal en Capataz, así que
+nunca va a aparecer en ningún Excel importado. El botón, debajo de la tabla comparativa, abre un modal
+(`mCOTITEM`/`abrirModalAgregarItem()`/`guardarItemManual()` en `js/modules/cotizaciones.js`) con Código,
+Descripción, Detalle (opcional), Cantidad + Unidad (`<select>` fijo KGS/MTS/MT2/LTS/UNI) y OT (opcional)
+— un `insert` directo en `compras_cotizaciones_items` con `nro_solicitud = null` (no viene de Capataz) y
+`bloque = bloqueActual()`, para que quede en el mismo bloque que se esté viendo (General/Pañol/
+Despacho), igual criterio que invitar un proveedor o tildar "Marcar como Pañol/Despacho". De ahí en más
+se comporta como cualquier ítem normal (cotizar, elegir ganador, confirmar compra, exportar) — las dos
+diferencias son consecuencia directa de no tener `nro_solicitud`, no casos especiales en el código:
+- **Sin equivalencia mts/kg editable** (ver 9.1): esa funcionalidad depende de que el archivo de Capataz
+  traiga `cant_ums`/`ums` además de `cant_umc`/`umc`; un ítem manual solo carga una cantidad en la
+  unidad de compra, como cualquier otro ítem sin esa equivalencia (ej. bulonería).
+- **Nunca se marca como duplicado entre solicitudes** (ver más arriba): `claveDuplicado()` es
+  `it.nro_solicitud`, y `buscarDuplicadosEntreSolicitudes()` ya descarta los ítems sin ese dato — no se
+  necesitó ningún cambio para que esto funcione bien solo.
+
+El botón se oculta mientras se está viendo el tab "⚠️ Duplicado" (`BLOQUE_DUPLICADOS`, un modo de vista
+que nunca se guarda como bloque real — ver 9.4) — agregar ahí no tendría a qué bloque real asignarse.
+
 ### 9.3 Modelo de datos — `sql/013_cotizaciones.sql` + `sql/014_cotizaciones_bloques.sql` + `sql/015_cotizaciones_confirmado.sql` + `sql/016_cotizaciones_condicion_pago.sql` + `sql/017_cotizaciones_duplicado_aceptado.sql` + `sql/018_articulos_largo_barra.sql`
 
 Cinco tablas (ver `sql/schema.sql` para el estado final), sin RLS (mismo criterio que el resto de

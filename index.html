@@ -965,6 +965,9 @@
       </div>
     </div>
     <div class="tw" id="cot-tabla-wrap"></div>
+    <div style="margin:10px 0 18px">
+      <button type="button" class="bsm" id="cot_agregar_item">+ Agregar ítem para cotizar</button>
+    </div>
 
     <div id="cot_seccion_resumen">
       <div class="psub" style="margin:18px 0 8px">Resumen por proveedor</div>
@@ -1176,6 +1179,33 @@
     <tbody id="t-mro-grupos"></tbody>
   </table></div>
 </div>
+
+<!-- ============ MODAL — AGREGAR ÍTEM MANUAL A LA SOLICITUD ============ -->
+<div class="modal-ov" id="mCOTITEM">
+<div class="modal" style="max-width:480px">
+  <span class="mcls" onclick="cm('mCOTITEM')">×</span>
+  <div class="mtitle">+ Agregar ítem para cotizar</div>
+  <div class="psub" style="margin:0 0 14px">Para material urgente que no pasó por Ingeniería/Capataz — se agrega al bloque que estás viendo ahora.</div>
+  <form id="fCOTITEM">
+    <div class="fg"><label>Código *</label><input id="coti_cod" required autocomplete="off"></div>
+    <div class="fg"><label>Descripción *</label><input id="coti_desc" required autocomplete="off"></div>
+    <div class="fg"><label>Detalle (opcional)</label><input id="coti_desc_adic" autocomplete="off"></div>
+    <div style="display:flex;gap:10px">
+      <div class="fg" style="flex:1"><label>Cantidad *</label><input id="coti_cant" required inputmode="decimal" autocomplete="off"></div>
+      <div class="fg" style="flex:1"><label>Unidad *</label>
+        <select id="coti_unidad" required>
+          <option value="KGS">KGS</option>
+          <option value="MTS">MTS</option>
+          <option value="MT2">MT2</option>
+          <option value="LTS">LTS</option>
+          <option value="UNI">UNI</option>
+        </select>
+      </div>
+    </div>
+    <div class="fg"><label>OT (opcional)</label><input id="coti_ot" autocomplete="off"></div>
+    <div class="brow"><button type="button" class="btn" onclick="cm('mCOTITEM')">Cancelar</button><button type="submit" class="btn p">Agregar</button></div>
+  </form>
+</div></div>
 
 <!-- ============ MODAL — CARGAR PRECIOS DE UN PROVEEDOR ============ -->
 <div class="modal-ov" id="mCOTPROV">

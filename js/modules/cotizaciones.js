@@ -1400,8 +1400,10 @@ function renderTablaComparativa() {
   const enDuplicados = bloqueActual() === BLOQUE_DUPLICADOS;
   const seccionInvitados = document.getElementById('cot_seccion_invitados_bulk');
   const seccionResumen = document.getElementById('cot_seccion_resumen');
+  const btnAgregarItem = document.getElementById('cot_agregar_item');
   if (seccionInvitados) seccionInvitados.style.display = enDuplicados ? 'none' : '';
   if (seccionResumen) seccionResumen.style.display = enDuplicados ? 'none' : '';
+  if (btnAgregarItem) btnAgregarItem.style.display = enDuplicados ? 'none' : '';
   if (enDuplicados) { renderTablaDuplicados(wrap); return; }
 
   // Reconstruir la tabla entera en cada render pisa el input en el que
@@ -2518,6 +2520,58 @@ export async function render(secId) {
   renderLista();
 }
 
+// Agregar un ítem a mano a la solicitud abierta (pedido explícito del
+// usuario, 2026-10-15): material urgente que Ingeniería no pidió por
+// Capataz, así que no tiene `nro_solicitud` — queda sin cruzar contra el
+// chequeo de duplicados entre solicitudes (ver claveDuplicado(), que
+// ignora los ítems sin nro_solicitud) y sin equivalencia mts/kg editable
+// (eso depende de que el archivo de Capataz traiga cant_ums/ums, que acá
+// no existen) — se carga una sola cantidad en la unidad de compra, igual
+// que cualquier ítem sin esa equivalencia. Se agrega al bloque que se
+// esté viendo en ese momento (`bloqueActual()`), igual criterio que
+// invitar un proveedor o tildar "Marcar como Pañol/Despacho".
+function abrirModalAgregarItem() {
+  if (!COT_ACTUAL) return;
+  // El tab "⚠️ Duplicado" es un modo de vista, no un bloque real (ver
+  // BLOQUE_DUPLICADOS) — no tiene sentido agregar un ítem nuevo ahí.
+  if (bloqueActual() === BLOQUE_DUPLICADOS) { toast('Elegí el tab General, Pañol o Despacho antes de agregar un ítem', 'er'); return; }
+  const form = document.getElementById('fCOTITEM');
+  form?.reset();
+  om('mCOTITEM');
+  document.getElementById('coti_cod')?.focus();
+}
+
+async function guardarItemManual(e) {
+  e.preventDefault();
+  if (!COT_ACTUAL) return;
+  const cod_articulo = (document.getElementById('coti_cod')?.value || '').trim();
+  const descripcion = (document.getElementById('coti_desc')?.value || '').trim();
+  const desc_adicional = (document.getElementById('coti_desc_adic')?.value || '').trim() || null;
+  const cantTxt = (document.getElementById('coti_cant')?.value || '').trim().replace(',', '.');
+  const cant_umc = Number(cantTxt);
+  const umc = document.getElementById('coti_unidad')?.value || null;
+  const n_ot = (document.getElementById('coti_ot')?.value || '').trim() || null;
+  if (!cod_articulo || !descripcion) { toast('Completá código y descripción', 'er'); return; }
+  if (!isFinite(cant_umc) || cant_umc <= 0) { toast('Ingresá una cantidad mayor a 0', 'er'); return; }
+
+  const row = {
+    cotizacion_id: COT_ACTUAL.id, bloque: bloqueActual(), nro_solicitud: null,
+    cod_articulo, descripcion, desc_adicional, cant_ums: null, ums: null, cant_umc, umc, t_comp: null, n_ot,
+  };
+  const { data, error } = await SB.from('compras_cotizaciones_items').insert(row).select().single();
+  if (error) { toast(error.message, 'er'); return; }
+
+  ITEMS.push(data);
+  ITEMS_RESUMEN.push({ cotizacion_id: COT_ACTUAL.id, a_comprar: true });
+  cm('mCOTITEM');
+  toast(`✓ "${cod_articulo}" agregado a ${bloqueActual() || 'General'}`);
+  poblarFiltroGrupo();
+  poblarFiltroNroSolic();
+  poblarTabsBloque();
+  renderTablaComparativa();
+  renderResumenProveedores();
+}
+
 export function init() {
   document.getElementById('cot_invitar_preferidos')?.addEventListener('click', invitarPreferidosActual);
   document.getElementById('cot_sumar_grupo')?.addEventListener('click', abrirSelectorGrupoCotizacion);
@@ -2549,6 +2603,8 @@ export function init() {
   document.getElementById('cot_bulk_bloque_panol')?.addEventListener('click', () => aplicarBloqueSeleccionados('Pañol'));
   document.getElementById('cot_bulk_bloque_despacho')?.addEventListener('click', () => aplicarBloqueSeleccionados('Despacho'));
   document.getElementById('cot_bulk_bloque_gral')?.addEventListener('click', () => aplicarBloqueSeleccionados(''));
+  document.getElementById('cot_agregar_item')?.addEventListener('click', abrirModalAgregarItem);
+  document.getElementById('fCOTITEM')?.addEventListener('submit', guardarItemManual);
 
   initAutocompleteInvitar();
   initDelegacionDetalle();
