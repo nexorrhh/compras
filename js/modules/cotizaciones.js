@@ -24,6 +24,7 @@ let ARTICULOS_GRUPO_MAP = new Map(); // cod_articulo -> grupo_id (compras_articu
 let ARTICULOS_LARGO_BARRA = new Map(); // cod_articulo -> largo_barra (compras_articulos_largo_barra, ver ajustarABarraEntera())
 let CATALOGO_ARTICULOS = null; // cod_articulo -> {cod_articulo, descripcion, unidad} — lazy, ver cargarCatalogoArticulos()
 let ITEM_EDITANDO_ID = null; // id del ítem manual que se está editando en mCOTITEM — null = modal en modo "agregar"
+let ALT_PENDIENTE = null; // {itemId, proveedorId} del precio que se está por marcar alternativo en mALTERNATIVO
 
 let COT_ACTUAL = null;      // la solicitud abierta en la vista detalle
 let ITEMS = [];             // items de COT_ACTUAL
@@ -1231,15 +1232,23 @@ async function guardarPrecio(itemId, proveedorId, valorStr) {
 async function toggleAlternativoPrecio(itemId, proveedorId) {
   const p = PRECIOS.find(pr => pr.item_id === itemId && pr.proveedor_id === proveedorId);
   if (!p || p.precio_unitario == null) { toast('Cargá un precio primero', 'er'); return; }
-  const activar = !p.alternativo;
-  let nota = null;
-  if (activar) {
-    const ingresada = prompt('¿Qué es distinto en esta cotización? (opcional)', p.nota_alternativo || '');
-    if (ingresada === null) return; // canceló, no cambia nada
-    nota = ingresada.trim() || null;
+  if (p.alternativo) {
+    // Desmarcar es una acción directa (igual criterio que "🔄 Volver a
+    // automático" en el ganador) — la nota solo se pide al ACTIVAR la
+    // marca, no hace falta un modal para sacarla.
+    await guardarAlternativo(itemId, proveedorId, false, null);
+    return;
   }
+  ALT_PENDIENTE = { itemId, proveedorId };
+  const input = document.getElementById('alt_nota');
+  if (input) input.value = p.nota_alternativo || '';
+  om('mALTERNATIVO');
+  input?.focus();
+}
+
+async function guardarAlternativo(itemId, proveedorId, alternativo, nota) {
   const { data, error } = await SB.from('compras_cotizaciones_precios')
-    .update({ alternativo: activar, nota_alternativo: nota })
+    .update({ alternativo, nota_alternativo: nota })
     .eq('item_id', itemId).eq('proveedor_id', proveedorId)
     .select().single();
   if (error) { toast(error.message, 'er'); return; }
@@ -1247,6 +1256,16 @@ async function toggleAlternativoPrecio(itemId, proveedorId) {
   renderTablaComparativa();
   renderModalProveedorItems();
   renderResumenProveedores();
+}
+
+async function confirmarAlternativo(e) {
+  e.preventDefault();
+  if (!ALT_PENDIENTE) return;
+  const { itemId, proveedorId } = ALT_PENDIENTE;
+  const nota = (document.getElementById('alt_nota')?.value || '').trim() || null;
+  ALT_PENDIENTE = null;
+  cm('mALTERNATIVO');
+  await guardarAlternativo(itemId, proveedorId, true, nota);
 }
 
 // La cantidad (cant_umc) que trae el archivo de Capataz es un cálculo
@@ -2867,6 +2886,7 @@ export function init() {
   document.getElementById('cot_bulk_bloque_gral')?.addEventListener('click', () => aplicarBloqueSeleccionados(''));
   document.getElementById('cot_agregar_item')?.addEventListener('click', abrirModalAgregarItem);
   document.getElementById('fCOTITEM')?.addEventListener('submit', guardarItemManual);
+  document.getElementById('fALTERNATIVO')?.addEventListener('submit', confirmarAlternativo);
   document.getElementById('coti_unidad')?.addEventListener('change', actualizarVisibilidadKgManual);
   initAutocompleteCatalogo();
 

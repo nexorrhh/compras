@@ -1215,6 +1215,20 @@
   </form>
 </div></div>
 
+<!-- ============ MODAL — MARCAR PRECIO COMO ALTERNATIVO ============ -->
+<div class="modal-ov" id="mALTERNATIVO">
+<div class="modal" style="max-width:420px">
+  <span class="mcls" onclick="cm('mALTERNATIVO')">×</span>
+  <div class="mtitle">🔀 Marcar como cotización alternativa</div>
+  <div class="psub" style="margin:0 0 14px">El proveedor cotizó una medida o especificación distinta a la pedida — igual se va a seguir comparando contra el resto, el ganador y el informe.</div>
+  <form id="fALTERNATIVO">
+    <div class="fg"><label>¿Qué es distinto? (opcional)</label>
+      <input id="alt_nota" autocomplete="off" placeholder='Ej. "cotizó 3/16 en vez de 1/4"'>
+    </div>
+    <div class="brow"><button type="button" class="btn" onclick="cm('mALTERNATIVO')">Cancelar</button><button type="submit" class="btn p">🔀 Marcar</button></div>
+  </form>
+</div></div>
+
 <!-- ============ MODAL — CARGAR PRECIOS DE UN PROVEEDOR ============ -->
 <div class="modal-ov" id="mCOTPROV">
 <div class="modal" style="width:640px;max-width:95vw">

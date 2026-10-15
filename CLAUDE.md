@@ -1354,14 +1354,19 @@ carga enfocada por proveedor — ver punto 6): caso real — un proveedor cotiz�
 la pedida (ej. otro espesor de chapa), pero el usuario igual quiere comparar ese precio contra el resto:
 "quiero comparar los precios contra otros proveedores". El botón 🔀 al lado de cada precio ya cargado
 (`toggleAlternativoPrecio()` en `js/modules/cotizaciones.js`, disponible tanto en la comparativa como en
-el modal `mCOTPROV`) marca `alternativo = true` en `compras_cotizaciones_precios` y pide, con `prompt()`
-(mismo criterio que `crearGrupo()` en Proveedores — es un solo campo de texto opcional, no justifica un
-modal propio), una nota corta de qué es distinto (ej. "cotizó 3/16 en vez de 1/4"). Marcarlo es **solo un
-aviso visual** — borde/fondo amarillo en la celda y la nota debajo si se cargó — y **no saca nada del
-cálculo**: sigue participando en `cheapestForItem()` (resaltado de más barato), en el "Resumen por
-proveedor" y en el informe de reparto exactamente igual que cualquier otro precio, a propósito, porque el
-usuario pidió poder seguir comparándolo, no excluirlo. Solo se puede marcar un precio ya cargado (una
-celda vacía no tiene nada que marcar); volver a tocar el botón lo desmarca y borra la nota.
+el modal `mCOTPROV`) marca `alternativo = true` en `compras_cotizaciones_precios` y pide una nota corta
+de qué es distinto (ej. "cotizó 3/16 en vez de 1/4"). **Primera versión con `prompt()` nativo** (mismo
+criterio que `crearGrupo()` en Proveedores — un solo campo opcional, no parecía justificar un modal
+propio), **cambiada el mismo día** a pedido explícito del usuario ("podés hacer una ventana más
+atractiva") por el modal `mALTERNATIVO` (`abrirModalAlternativo` inline en `toggleAlternativoPrecio()`/
+`confirmarAlternativo()`), que sigue el mismo diseño que el resto de los modales del tablero en vez del
+cuadro gris del navegador. Marcarlo es **solo un aviso visual** — borde/fondo amarillo en la celda y la
+nota debajo si se cargó — y **no saca nada del cálculo**: sigue participando en `cheapestForItem()`
+(resaltado de más barato), en el "Resumen por proveedor" y en el informe de reparto exactamente igual que
+cualquier otro precio, a propósito, porque el usuario pidió poder seguir comparándolo, no excluirlo. Solo
+se puede marcar un precio ya cargado (una celda vacía no tiene nada que marcar); **desmarcarlo es directo,
+sin modal** (mismo criterio que "🔄 Volver a automático" en el ganador — la nota solo hace falta al
+activar la marca).
 `compras_cotizaciones_precios.alternativo`/`nota_alternativo` (ver
 [`sql/027_cotizaciones_precio_alternativo.sql`](sql/027_cotizaciones_precio_alternativo.sql)) no se
 tocan en el `upsert` de `guardarPrecio()` (solo manda `item_id`/`proveedor_id`/`precio_unitario`/
