@@ -627,10 +627,13 @@ function invitadosVisibles() {
 }
 
 // Tipo de cambio de referencia — puramente client-side, no se guarda en
-// ningún lado (se pierde al recargar la página). Sirve solo para mostrar
-// a cuánto equivalen en pesos los precios cargados en dólares, no para
-// comparar/sugerir ganador automáticamente entre monedas (eso se sigue
-// evitando a propósito, ver cheapestForItem).
+// ningún lado (se pierde al recargar la página). Sirve para mostrar a
+// cuánto equivalen en pesos los precios cargados en dólares y, desde
+// 2026-10-15 (pedido explícito del usuario), también para poder comparar/
+// sugerir ganador automáticamente en una fila con monedas mezcladas —
+// convirtiendo a pesos con este valor (ver cheapestForItem()). Sin cargar
+// un tipo de cambio, esa fila se sigue sin comparar (no se inventa una
+// cotización de cambio).
 function tipoCambioActual() {
   const v = (document.getElementById('cot_tipo_cambio')?.value || '').trim().replace(',', '.');
   const n = Number(v);
@@ -1148,14 +1151,28 @@ function renderInvitados() {
 // El más barato solo se resalta/sugiere cuando todos los precios
 // cargados en la fila comparten la misma moneda — comparar ARS
 // contra USD a ojo, no se inventa una cotización de cambio.
-function cheapestForItem(itemId) {
+// Sin `tc` (tipo de cambio), una fila con precios en monedas distintas no
+// se compara — no se inventa una cotización de cambio para decidir (ver
+// tipoCambioActual()). Si el usuario cargó un `tc`, pasa a usarse SOLO
+// para esta comparación (convertir USD a ARS y ver cuál es más barato en
+// pesos) — pedido explícito del usuario, 2026-10-15: "que si pongo el
+// precio del dólar automáticamente calcule cuál es el más óptimo en
+// pesos". El precio/moneda que se devuelve siguen siendo los realmente
+// cargados (nunca se guarda ni se muestra un precio "convertido" como si
+// fuera el real) — `convertido` solo avisa que la comparación usó el tc.
+function cheapestForItem(itemId, tc = null) {
   const preciosItem = PRECIOS.filter(p => p.item_id === itemId && p.precio_unitario != null);
   if (!preciosItem.length) return null;
   const monedas = new Set(preciosItem.map(p => p.moneda));
-  if (monedas.size > 1) return null;
+  if (monedas.size > 1 && !tc) return null;
+  // Con una sola moneda no hace falta convertir nada — comparar el precio
+  // tal cual, sea cual sea esa moneda (ARS o USD), da exactamente lo
+  // mismo que antes de este cambio.
+  const convertir = monedas.size > 1;
+  const valor = p => convertir ? Number(p.precio_unitario) * (p.moneda === 'USD' ? tc : 1) : Number(p.precio_unitario);
   let mejor = preciosItem[0];
-  for (const p of preciosItem) if (Number(p.precio_unitario) < Number(mejor.precio_unitario)) mejor = p;
-  return { proveedorId: mejor.proveedor_id, precio: Number(mejor.precio_unitario), moneda: mejor.moneda };
+  for (const p of preciosItem) if (valor(p) < valor(mejor)) mejor = p;
+  return { proveedorId: mejor.proveedor_id, precio: Number(mejor.precio_unitario), moneda: mejor.moneda, convertido: convertir };
 }
 
 // Mientras ganador_manual esté en false, el ganador sugerido sigue
@@ -1166,7 +1183,7 @@ function cheapestForItem(itemId) {
 async function aplicarGanadorAutomatico(itemId) {
   const item = ITEMS.find(i => i.id === itemId);
   if (!item || item.ganador_manual) return;
-  const mejor = cheapestForItem(itemId);
+  const mejor = cheapestForItem(itemId, tipoCambioActual());
   const nuevoGanador = mejor ? mejor.proveedorId : null;
   if (item.ganador_proveedor_id === nuevoGanador) return;
   const { error } = await SB.from('compras_cotizaciones_items').update({ ganador_proveedor_id: nuevoGanador }).eq('id', itemId);
@@ -1517,7 +1534,7 @@ function renderTablaComparativa() {
 
   const filas = lista.map(item => {
     const precioPorProv = new Map(PRECIOS.filter(p => p.item_id === item.id).map(p => [p.proveedor_id, p]));
-    const mejor = cheapestForItem(item.id);
+    const mejor = cheapestForItem(item.id, tc);
     const celdasPrecio = invitados.map(inv => {
       const p = precioPorProv.get(inv.proveedor_id);
       const esMejor = mejor && mejor.proveedorId === inv.proveedor_id;
@@ -1558,13 +1575,19 @@ function renderTablaComparativa() {
       `<option value="${inv.proveedor_id}" ${item.ganador_proveedor_id === inv.proveedor_id ? 'selected' : ''}>${escAttr(inv.nombre)}</option>`
     )].join('');
     // Si hay 2+ precios cargados pero no se resaltó ninguno como más
-    // barato, es porque están en monedas distintas (ver cheapestForItem)
-    // — sin este aviso no se nota por qué esta fila en particular no
+    // barato, es porque están en monedas distintas y todavía no hay un
+    // tipo de cambio cargado arriba de la tabla (ver cheapestForItem) —
+    // sin este aviso no se nota por qué esta fila en particular no
     // sugirió ganador solo, a diferencia de una columna con monedas
-    // mezcladas (que sí tiene su propio ⚠️ en el encabezado).
+    // mezcladas (que sí tiene su propio ⚠️ en el encabezado). Si SÍ hay
+    // tipo de cambio, el ganador se calculó convirtiendo a pesos — se
+    // avisa igual (distinto ícono) para que quede claro que es una
+    // comparación aproximada, no los precios reales uno contra el otro.
     const avisoFilaMixta = (!mejor && conPrecio.length > 1)
-      ? `<div style="font-size:10px;color:var(--muted)" title="Los precios cargados en esta fila están en monedas distintas — no se comparan entre sí">⚠️ monedas mezcladas</div>`
-      : '';
+      ? `<div style="font-size:10px;color:var(--muted)" title="Los precios cargados en esta fila están en monedas distintas — cargá un Tipo de cambio arriba de la tabla para poder compararlos">⚠️ monedas mezcladas</div>`
+      : (mejor && mejor.convertido
+        ? `<div style="font-size:10px;color:var(--muted)" title="Esta fila tiene precios en distintas monedas — se comparó convirtiendo a pesos con el Tipo de cambio cargado arriba, es una referencia, no un precio real">≈ convertido con T.C.</div>`
+        : '');
 
     // Cuando la unidad "como lo pidió Ingeniería" (cant_ums/ums — mts para
     // perfiles, m2 para chapas) es distinta de la unidad de compra
@@ -2876,6 +2899,17 @@ export function init() {
   document.getElementById('cot_f_grupo')?.addEventListener('change', renderTablaComparativa);
   document.getElementById('cot_f_nrosolic')?.addEventListener('change', renderTablaComparativa);
   document.getElementById('cot_tipo_cambio')?.addEventListener('input', () => {
+    renderTablaComparativa();
+    renderResumenProveedores();
+  });
+  // Recién al salir del campo (no en cada tecla, para no escribir a cada
+  // dígito tipeado) se persiste el ganador automático de las filas con
+  // monedas mezcladas que ahora sí se pueden comparar con este tipo de
+  // cambio — mismas reglas de siempre (ganador_manual no se toca). Si se
+  // borra el tipo de cambio, esas filas vuelven a quedar sin ganador
+  // automático, consistente con no inventar una conversión sin TC.
+  document.getElementById('cot_tipo_cambio')?.addEventListener('change', async () => {
+    await Promise.all(ITEMS.filter(it => !it.ganador_manual).map(it => aplicarGanadorAutomatico(it.id)));
     renderTablaComparativa();
     renderResumenProveedores();
   });

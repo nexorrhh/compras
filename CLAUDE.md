@@ -1070,17 +1070,25 @@ OT del modal "+ Agregar ítem para cotizar" (ver más abajo).
    vistas comparten el mismo `PRECIOS`/`guardarPrecio()` así que lo que se carga en el modal ya aparece
    en la comparativa al cerrarlo (botón "Listo, comparar").
 7. **Comparar y elegir**: la celda más barata de cada fila se resalta en verde, y una columna "Ganador"
-   sugiere automáticamente al proveedor más barato apenas hay precios cargados. **El resaltado y la
-   sugerencia automática solo se calculan cuando todos los precios de esa fila están en la misma moneda**
-   — si hay ARS y USD mezclados en una misma fila, no se resalta ni se sugiere nada (comparar eso a ojo,
-   no se inventa una cotización de cambio). Arriba de la tabla hay un campo opcional **"Tipo de cambio"**
-   (`tipoCambioActual()`) — puramente de referencia, no se guarda en ningún lado (se pierde al recargar
-   la página) y **no** participa en el resaltado/sugerencia automática (esa regla se mantiene: no se
-   inventa una cotización de cambio para decidir). Sirve solo para mostrar, en una línea chica abajo de
-   cada celda en dólares, a cuánto equivale en pesos ("≈ $X"), y en el panel "Resumen por proveedor", si
-   un proveedor terminó con monto en más de una moneda, una línea extra "≈ Total combinado" con la suma
-   de todo convertido a pesos — para poder chequear de un vistazo si conviene sin tener que sacar la
-   cuenta a mano.
+   sugiere automáticamente al proveedor más barato apenas hay precios cargados. Arriba de la tabla hay un
+   campo opcional **"Tipo de cambio"** (`tipoCambioActual()`) — puramente de referencia, no se guarda en
+   ningún lado (se pierde al recargar la página). Sirve para mostrar, en una línea chica abajo de cada
+   celda en dólares, a cuánto equivale en pesos ("≈ $X"), y en el panel "Resumen por proveedor", si un
+   proveedor terminó con monto en más de una moneda, una línea extra "≈ Total combinado" con la suma de
+   todo convertido a pesos.
+   **Sin tipo de cambio cargado, una fila con ARS y USD mezclados no se resalta ni se sugiere nada**
+   (comparar eso a ojo, no se inventa una cotización de cambio) — mismo criterio original del módulo.
+   **Con un tipo de cambio cargado** (pedido explícito del usuario, 2026-10-15: "que si pongo el precio
+   del dólar automáticamente calcule cuál es el más óptimo en pesos"), `cheapestForItem()` pasa a convertir
+   los precios en USD a pesos con ese valor para decidir cuál es más barato, y la fila sí se resalta y
+   sugiere ganador — con una nota chica "≈ convertido con T.C." en vez de "⚠️ monedas mezcladas" para
+   dejar claro que es una comparación aproximada (el precio/moneda mostrados siguen siendo los realmente
+   cargados, nunca se inventa ni se guarda un "precio convertido" como si fuera el real). La sugerencia
+   automática con tipo de cambio se persiste igual que cualquier otra (`aplicarGanadorAutomatico()`, sigue
+   respetando `ganador_manual`): al tipear se recalcula solo la vista en vivo, y recién al salir del campo
+   (evento `change`, no en cada tecla) se guarda el ganador resultante para las filas que todavía no se
+   eligieron a mano — borrar el tipo de cambio después vuelve a dejar esas filas sin ganador automático,
+   consistente con no decidir sin una base real para comparar.
 8. **Repartir para cumplir mínimos de compra**: acá está el punto que motivó el módulo — muchas compras
    tienen mínimos por proveedor (no se puede comprar 100kg a uno, 10 a otro, 2000 a otro), así que la
    decisión final no siempre es "el más barato por artículo". Por eso el "Ganador" de cada fila se puede
