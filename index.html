@@ -491,6 +491,14 @@
     </div>
   </div>
 
+  <div class="nav-group" id="nav-consol" data-default-sec="consol-dash">
+    <div class="nav-parent"><span>💰</span> Consolidado <span class="nav-chevron">▾</span></div>
+    <div class="nav-children">
+      <div class="nav-item" data-sec="consol-dash"><span>📊</span> Dashboard</div>
+      <div class="nav-item" data-sec="consol-semanas"><span>📅</span> Por semana</div>
+    </div>
+  </div>
+
   <div class="nav-group" id="nav-param" data-default-sec="param-usuarios">
     <div class="nav-parent"><span>⚙️</span> Parametrización <span class="nav-chevron">▾</span></div>
     <div class="nav-children">
@@ -1253,6 +1261,39 @@
   </div>
   <div class="brow"><button type="button" class="btn p" onclick="cm('mCOTPROV')">Listo, comparar</button></div>
 </div></div>
+
+<!-- ============ CONSOLIDADO — DASHBOARD ============ -->
+<div class="sec" id="s-consol-dash">
+  <div class="ptitle">Consolidado — Dashboard</div>
+  <div class="psub">Cuánto se le compró ya confirmado a cada proveedor, agrupado por semana — solo cuenta lo que ya pasó por "✅ Confirmar compra" en Cotizaciones, no lo que todavía es solo un ganador sugerido/elegido en la comparativa</div>
+  <div class="kpi-grid">
+    <div class="kpi"><div class="kpi-val text-accent" id="consd_k_semanas">–</div><div class="kpi-lbl">Semanas con compras</div></div>
+    <div class="kpi"><div class="kpi-val" id="consd_k_proveedores">–</div><div class="kpi-lbl">Proveedores</div></div>
+    <div class="kpi"><div class="kpi-val text-green" id="consd_k_items">–</div><div class="kpi-lbl">Ítems confirmados</div></div>
+    <div class="kpi"><div class="kpi-val text-yellow" id="consd_k_semanaactual">–</div><div class="kpi-lbl">Confirmados esta semana</div></div>
+  </div>
+  <div class="psub" style="margin:4px 0 8px">Monto confirmado por semana (últimas 12) — un gráfico por moneda si hay más de una</div>
+  <div class="charts-grid" id="consd_evol_wrap"></div>
+  <div class="psub" style="margin:4px 0 8px">Top proveedores por monto confirmado — un gráfico por moneda si hay más de una</div>
+  <div class="charts-grid" id="consd_ranking_wrap"></div>
+  <div class="sh"><h2>Accesos rápidos</h2></div>
+  <div style="display:flex;gap:10px;flex-wrap:wrap">
+    <button class="btn p" id="consd-ir-semanas">📅 Ver por semana</button>
+  </div>
+</div>
+
+<!-- ============ CONSOLIDADO — POR SEMANA ============ -->
+<div class="sec" id="s-consol-semanas">
+  <div class="ptitle">Consolidado — Por semana</div>
+  <div class="psub">Compras confirmadas agrupadas por semana (lunes a domingo) y por proveedor — desplegá una semana para ver el detalle por proveedor</div>
+  <div class="sh">
+    <button type="button" class="btn" id="consem_exportar">📥 Exportar (.xlsx)</button>
+  </div>
+  <div class="tw"><table>
+    <thead><tr><th>Semana</th><th>Proveedores</th><th>Ítems</th><th>Monto</th></tr></thead>
+    <tbody id="t-consol-semanas"></tbody>
+  </table></div>
+</div>
 
 <!-- ============ PARAMETRIZACIÓN — USUARIOS ============ -->
 <div class="sec" id="s-param-usuarios">

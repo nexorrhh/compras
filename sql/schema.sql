@@ -338,6 +338,9 @@ create table compras_cotizaciones_items (
   ganador_proveedor_id uuid references compras_proveedores(id) on delete set null,
   ganador_manual boolean not null default false,
   confirmado boolean not null default false,
+  -- Fecha real en que se confirmó la compra (ver sql/028_cotizaciones_confirmado_en.sql
+  -- y CLAUDE.md sección 14) — alimenta el consolidado de compras por semana.
+  confirmado_en timestamptz,
   duplicado_aceptado boolean not null default false
 );
 

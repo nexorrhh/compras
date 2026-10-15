@@ -102,6 +102,7 @@ export const MODULOS_APP = [
   { key: 'cot', label: '🧮 Cotizaciones' },
   { key: 'ot', label: '🏷️ OT' },
   { key: 'materot', label: '📐 Materiales OT' },
+  { key: 'consol', label: '💰 Consolidado' },
   { key: 'param', label: '⚙️ Parametrización' },
 ];
 

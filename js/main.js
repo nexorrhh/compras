@@ -23,6 +23,7 @@ import * as notasPedido from './modules/notas-pedido.js';
 import * as cotizaciones from './modules/cotizaciones.js';
 import * as ot from './modules/ot.js';
 import * as materot from './modules/materot.js';
+import * as consolidado from './modules/consolidado.js';
 import * as parametrizacion from './modules/parametrizacion.js';
 
 const MODULES = {
@@ -35,6 +36,7 @@ const MODULES = {
   'cot-pendientes': cotizaciones,
   'ot-dash': ot, 'ot-cards': ot,
   'materot-dash': materot, 'materot-cards': materot, 'materot-grupos': materot,
+  'consol-dash': consolidado, 'consol-semanas': consolidado,
   'param-usuarios': parametrizacion,
 };
 

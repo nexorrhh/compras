@@ -48,6 +48,7 @@ seguros, permisos). El resto de los módulos se va a ir sumando a medida que se 
 | **OT** | `[DETALLADO]` (sección 10) | Seguimiento de compras por orden de trabajo — tarjetas por OT + gráficos, distinguiendo lo comprado de lo asignado de stock; lee los datos de Cotizaciones, sin tablas propias |
 | **Parametrización** | `[DETALLADO]` (sección 12) | Alta de perfiles con PIN self-service y restricción de qué módulos puede ver cada uno (a nivel interfaz, no seguridad real) |
 | **Materiales OT** | `[DETALLADO]` (sección 13) | Seguimiento por OT del export de Capataz "Gestión personalizada de Ventas y Compras" (variante por OT) — Cotizado/Planificado/Solicitado/Comprado/Asignado/Recibido/Entregado, visto en KGS, con agrupación manual de OT adicionales bajo su OT madre |
+| **Consolidado de Compras** | `[DETALLADO]` (sección 14) | Cuánto se le compró ya confirmado a cada proveedor, agrupado por semana — sin tablas propias, lee las compras confirmadas en Cotizaciones |
 | Presupuesto y gastos de compras | `[TBD]` | Presupuestado vs. real por categoría/área, alertas de desvío |
 | Contratos y vencimientos | `[TBD]` | Contratos de servicios, alquileres, licencias — no solo de vehículos |
 | Circuito de aprobaciones | `[TBD]` | Reglas de autorización de pagos/compras según monto |
@@ -1771,6 +1772,7 @@ tablero-compras/
 │       ├── cotizaciones.js  (Cotizaciones — se alimenta de Capataz y de Proveedores, ver sección 9)
 │       ├── ot.js  (OT — lee y reagrupa los datos de Cotizaciones, sin tablas propias, ver sección 10)
 │       ├── materot.js  (Materiales OT — Cotizado/Planificado/Solicitado/Comprado en KGS, ver sección 13)
+│       ├── consolidado.js  (Consolidado de Compras — confirmado por proveedor y por semana, ver sección 14)
 │       └── parametrizacion.js  (Parametrización — alta de perfiles y módulos habilitados, ver sección 12)
 ├── Excels/                (archivos de ejemplo de OC, Stock y NP — en .gitignore, no se suben al repo)
 ├── Cotizar.xlsx           (archivo de ejemplo de Cotizaciones — también en .gitignore, datos reales)
@@ -1804,7 +1806,8 @@ tablero-compras/
     ├── 024_proveedores_agenda_por_grupos.sql
     ├── 025_proveedores_tango_api.sql
     ├── 026_proveedores_sync_tango.sql
-    └── 027_cotizaciones_precio_alternativo.sql
+    ├── 027_cotizaciones_precio_alternativo.sql
+    └── 028_cotizaciones_confirmado_en.sql
 ```
 
 > `porteria.html` y `solicitud.html` son entry points separados (audiencias distintas: portero de
@@ -1831,7 +1834,7 @@ interfaz**: se ocultan del nav los grupos de módulos que el perfil no tiene hab
 que el PIN de siempre (para que la persona no navegue a algo que no le corresponde, no como defensa
 contra alguien con conocimientos técnicos). Implementarlo de verdad (que ni con la anon key se pueda
 leer/escribir un módulo sin permiso) requeriría sumar Supabase Auth + RLS por tabla en las ~30 tablas
-`compras_*` — un cambio grande, que queda afuera de esta versión (sigue como TBD en la sección 15).
+`compras_*` — un cambio grande, que queda afuera de esta versión (sigue como TBD en la sección 16).
 
 ### 12.2 Modelo de datos — `sql/019_usuarios_modulos.sql`
 
@@ -2034,7 +2037,7 @@ detalle de OT. A diferencia del resto del módulo, este dato **no sale de Capata
   nombre de proyecto/cliente, no solo por número de OT. El tooltip del badge "+N adicionales" lista
   también el nombre de cada hija, cuando está cargado.
 - El menú exacto de Tango para bajar este export no está confirmado con el usuario — pendiente (ver
-  sección 15).
+  sección 16).
 
 ### 13.5 Vistas
 
@@ -2124,7 +2127,85 @@ se pierde nada, solo deja de usarse. El módulo ya no la lee ni la escribe.
   precios) — unificarlos podría evaluarse más adelante si hiciera falta, no se pidió para esta primera
   versión.
 
-## 14. Notas específicas de entorno
+## 14. Módulo: Consolidado de Compras `[DETALLADO]`
+
+Pedido explícito del usuario (2026-10-15), mirando a mano la hoja "Consolidado" que ya arma el informe
+de reparto de Cotizaciones (ver sección 9.2) cada vez que necesitaba saber cuánto le estaba comprando a
+cada proveedor: "por cada cotización que voy armando que me diga tanto a cada proveedor... en lo posible
+separado por semana". Esa hoja existe por solicitud/bloque — acá hacía falta una vista continua, across
+todas las solicitudes, agrupada en el tiempo. Mismo criterio que OT/Materiales OT (secciones 10/13):
+módulo de nav propio ("💰 Consolidado ▾"), **sin tablas propias** — lee y reagrupa los datos de
+Cotizaciones (`js/modules/consolidado.js`).
+
+### 14.1 De dónde sale el dato y qué cuenta
+
+Antes de construir esto se le preguntó explícitamente al usuario dos cosas, porque cualquiera de las dos
+respuestas era razonable y cambiaba el diseño:
+
+- **¿Qué compras cuenta?** — eligió **solo las confirmadas** (`confirmado = true`, botón "✅ Confirmar
+  compra", ver 9.2 punto 9), no cualquier ítem con un ganador sugerido/elegido (que es lo que sí suma el
+  "Resumen por proveedor" dentro de cada cotización). El consolidado tiene que reflejar compras
+  realmente decididas, no una estimación que puede cambiar.
+- **¿Con qué fecha se arman las semanas?** — eligió la **fecha real en que se confirmó la compra**, no
+  la fecha de creación de la solicitud. Como `confirmado` nunca había guardado un timestamp, esto sumó
+  una columna nueva: `compras_cotizaciones_items.confirmado_en` (ver 14.4), que se completa sola al
+  tocar "✅ Confirmar compra" (`confirmarCompraProveedor()`/`confirmarCompraPendienteProveedor()` en
+  `js/modules/cotizaciones.js`) y se borra si se deshace esa confirmación
+  (`deshacerConfirmacion()`) o si el ítem pierde su ganador (retaguearlo a otro bloque, desinvitar al
+  proveedor ganador — mismos puntos donde ya se reseteaba `confirmado`, ver 9.2/9.4).
+
+**Compras confirmadas antes de esta migración:** no había forma de recuperar la fecha real en que se
+tocó "Confirmar compra" en esos casos (no se guardaba), así que la migración
+[`sql/028_cotizaciones_confirmado_en.sql`](sql/028_cotizaciones_confirmado_en.sql) les hace un backfill
+aproximado con `compras_cotizaciones.created_at` (fecha de creación de la solicitud) — mejor esa
+aproximación, dejándolas visibles aunque en la semana equivocada, que perderlas en silencio del
+consolidado. De acá en más todo ítem que se confirme ya queda con la fecha real.
+
+### 14.2 Qué muestra el tablero
+
+- **Dashboard** (`consol-dash`) — 4 KPIs (semanas con compras confirmadas, proveedores distintos,
+  ítems confirmados en total, ítems confirmados en la semana actual) + **"Monto confirmado por
+  semana"** (barras, últimas 12 semanas en orden cronológico) + **"Top proveedores por monto
+  confirmado"** (barras horizontales, todas las semanas) — un gráfico por moneda en los dos casos si
+  hay más de una (mismo criterio de no mezclar ARS/USD en un mismo eje que el resto del tablero, ver
+  9.2 punto 7).
+- **Por semana** (`consol-semanas`) — una tabla con una fila por semana (lunes a domingo, la más
+  reciente primero), expandible (mismo patrón `.oc-row`/`.oc-detail` que OC/Stock/Proveedores/Notas de
+  Pedido) mostrando cantidad de proveedores, ítems y monto total; al desplegar, el detalle por
+  proveedor (Proveedor/Ítems/Monto/Cantidad — mismas columnas que la hoja "Consolidado" del informe de
+  reparto, ver 9.2, pero ahora juntando todas las solicitudes de esa semana). El botón
+  **"📥 Exportar (.xlsx)"** (`exportarConsolidado()`) baja **todas** las semanas de una (no solo lo que
+  se está viendo) a una sola hoja plana Semana/Proveedor/$/Monto/Cantidad, pensada para poder armar una
+  tabla dinámica en Excel si hiciera falta más adelante.
+
+### 14.3 Cómo se define "semana"
+
+Lunes a domingo, en hora local del navegador — `claveSemana()`/`labelSemana()` en
+`js/modules/consolidado.js` calculan el lunes de la semana de un `confirmado_en` dado y lo usan como
+clave de agrupación (ordena bien como texto, no hace falta guardar nada aparte). No es una semana ISO
+con número de semana del año, es simplemente "esta semana calendario" tal como la piensa el usuario.
+
+### 14.4 Modelo de datos
+
+No crea tablas nuevas. La única columna nueva es
+[`sql/028_cotizaciones_confirmado_en.sql`](sql/028_cotizaciones_confirmado_en.sql),
+`compras_cotizaciones_items.confirmado_en timestamptz` (ver también sección 9.3) — todo lo demás
+(`compras_cotizaciones_items`, `compras_cotizaciones_precios`, `compras_proveedores`) ya existía para
+Cotizaciones. `cargarTodo()` en `js/modules/consolidado.js` solo trae los ítems con `confirmado = true`
+(no toda la tabla como hace OT) — es lo único que le importa a este módulo, y evita traer de más.
+
+### 14.5 Decisiones tomadas y alcance actual
+
+- **Solo confirmadas, no "con ganador"** y **semana por fecha de confirmación, no por fecha de la
+  solicitud** — ver 14.1, las dos decisiones se le preguntaron explícitamente al usuario antes de
+  construir el módulo, ambas con la opción recomendada elegida.
+- **Sin desglose por OT en esta vista** — el usuario pidió "cuánto a cada proveedor" y "separado por
+  semana", no por OT; ese cruce ya existe en el módulo **OT** (sección 10) si hiciera falta más
+  adelante, no se duplicó acá a propósito para no repetir la misma vista dos veces.
+- **Sin vínculo con Notas de Pedido ni con Orden de Compra todavía** — es un panorama de lo ya
+  decidido/confirmado en Cotizaciones, no genera ni cierra nada en otros módulos.
+
+## 15. Notas específicas de entorno
 
 - Dijiste que vas a trabajar este proyecto en **Antigravity** (cuenta de la empresa). Ojo con un detalle
   que ya tenemos registrado de tu workflow: **Antigravity no carga `CLAUDE.md` automáticamente** — usa
@@ -2134,7 +2215,7 @@ se pierde nada, solo deja de usarse. El módulo ya no la lee ni la escribe.
   `CLAUDE.md`. Lo más simple: mantener el contenido en `CLAUDE.md` y tener una copia (o symlink) como
   `AGENTS.md`.
 
-## 15. Decisiones abiertas (TBD)
+## 16. Decisiones abiertas (TBD)
 
 Ya decidido al construir el módulo Flota (2026-08-04):
 - [x] Esquema de datos: se migró al diseño de la sección 4.4 (`compras_vehiculos` separado de
@@ -2201,6 +2282,17 @@ Ya decidido al construir el módulo Materiales OT (2026-10-02):
   archivada no pesa en el panorama general, pero su propio detalle se sigue viendo igual que cualquier
   otra. Se archiva por OT efectiva (madre + adicionales juntas), no hija por hija.
 
+Ya decidido al construir el módulo Consolidado de Compras (2026-10-15):
+- [x] Solo cuenta compras **confirmadas** (`confirmado = true`), no cualquier ítem con un ganador
+  sugerido/elegido — preguntado explícitamente antes de construir, ver sección 14.1.
+- [x] La semana se arma con la fecha real de confirmación (`confirmado_en`, columna nueva), no con la
+  fecha de creación de la solicitud — mismo motivo, ver sección 14.1. Las compras confirmadas antes de
+  la migración quedaron con un backfill aproximado (fecha de la solicitud) en vez de perderse.
+- [x] Sin tablas propias — lee y reagrupa `compras_cotizaciones_items`/`_precios`/`compras_proveedores`,
+  mismo patrón que OT/Materiales OT.
+- [x] Sin desglose por OT en esta vista (ya existe en el módulo OT, sección 10) ni vínculo con Notas de
+  Pedido/OC todavía — ver sección 14.5.
+
 Todavía sin decidir:
 - [ ] Materiales OT: confirmar el nombre exacto de la variante del export de Capataz (el instructivo de
   carga en `js/main.js` asume el mismo menú que Cotizaciones, sin confirmar — ver sección 13.7).
@@ -2225,7 +2317,7 @@ Todavía sin decidir:
 - [ ] Categorización de proveedores (ver 5.3): clasificarlos por tipo (materia prima, pintura, insumos,
   etc.) para poder adaptar/filtrar el Dashboard de OC según categoría — todavía no tiene tabla ni UI.
 
-## 16. Próximos pasos sugeridos
+## 17. Próximos pasos sugeridos
 
 1. Correr `sql/schema.sql` contra el proyecto Supabase real (ya hecho — tablas `compras_*` creadas).
 2. Correr [`sql/002_seguros_archivo.sql`](sql/002_seguros_archivo.sql) (ya hecho) y
@@ -2292,9 +2384,13 @@ Todavía sin decidir:
     agrega `alternativo`/`nota_alternativo` a `compras_cotizaciones_precios` para marcar una cotización
     en otra medida/spec sin excluirla de la comparación (ver sección 9.2) (**todavía falta correr en la
     base real**).
-27. Probar el circuito completo: pedir vehículo (solicitud.html) → aprobar y asignar (index.html) →
+27. Correr [`sql/028_cotizaciones_confirmado_en.sql`](sql/028_cotizaciones_confirmado_en.sql) — agrega
+    `confirmado_en` a `compras_cotizaciones_items` (con backfill aproximado para lo ya confirmado) y
+    alimenta el módulo Consolidado de Compras (ver sección 14) (**todavía falta correr en la base
+    real** — hasta que se corra, el módulo Consolidado no va a mostrar ninguna compra confirmada).
+28. Probar el circuito completo: pedir vehículo (solicitud.html) → aprobar y asignar (index.html) →
    registrar salida/retorno (porteria.html) → ver el movimiento reflejado en el dashboard.
-28. Evaluar RLS (Row Level Security) en las tablas `compras_*` — hoy cualquiera con el link de
+29. Evaluar RLS (Row Level Security) en las tablas `compras_*` — hoy cualquiera con el link de
    `solicitud.html`/`porteria.html` puede leer/escribir todas las tablas, sin ningún login de por medio.
-29. Ir completando los módulos `[TBD]` de la sección 3 a medida que los necesites, usando el módulo
+30. Ir completando los módulos `[TBD]` de la sección 3 a medida que los necesites, usando el módulo
    Flota (carpeta `js/modules/`) como plantilla.

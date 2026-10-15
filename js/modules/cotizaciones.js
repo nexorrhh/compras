@@ -915,11 +915,11 @@ async function aplicarBloqueSeleccionados(nuevoBloque) {
   if (!ids.length) { toast('Seleccioná al menos un ítem', 'er'); return; }
   for (let i = 0; i < ids.length; i += 100) {
     const { error } = await SB.from('compras_cotizaciones_items')
-      .update({ bloque: nuevoBloque, ganador_proveedor_id: null, ganador_manual: false, confirmado: false })
+      .update({ bloque: nuevoBloque, ganador_proveedor_id: null, ganador_manual: false, confirmado: false, confirmado_en: null })
       .in('id', ids.slice(i, i + 100));
     if (error) { toast(error.message, 'er'); return; }
   }
-  ITEMS.forEach(it => { if (ids.includes(it.id)) { it.bloque = nuevoBloque; it.ganador_proveedor_id = null; it.ganador_manual = false; it.confirmado = false; } });
+  ITEMS.forEach(it => { if (ids.includes(it.id)) { it.bloque = nuevoBloque; it.ganador_proveedor_id = null; it.ganador_manual = false; it.confirmado = false; it.confirmado_en = null; } });
   toast(`✓ ${ids.length} ítem${ids.length === 1 ? '' : 's'} marcado${ids.length === 1 ? '' : 's'} como "${nuevoBloque || 'General'}"`);
   poblarTabsBloque();
   renderTablaComparativa();
@@ -1127,12 +1127,12 @@ async function quitarInvitado(invId, proveedorId) {
 
   const afectados = ITEMS.filter(it => (it.bloque || '') === bloqueInv && it.ganador_proveedor_id === proveedorId).map(it => it.id);
   if (afectados.length) {
-    await SB.from('compras_cotizaciones_items').update({ ganador_proveedor_id: null, ganador_manual: false, confirmado: false }).in('id', afectados);
+    await SB.from('compras_cotizaciones_items').update({ ganador_proveedor_id: null, ganador_manual: false, confirmado: false, confirmado_en: null }).in('id', afectados);
   }
 
   INVITADOS = INVITADOS.filter(i => i.id !== invId);
   PRECIOS = PRECIOS.filter(p => !(p.proveedor_id === proveedorId && itemIds.includes(p.item_id)));
-  ITEMS.forEach(it => { if ((it.bloque || '') === bloqueInv && it.ganador_proveedor_id === proveedorId) { it.ganador_proveedor_id = null; it.ganador_manual = false; it.confirmado = false; } });
+  ITEMS.forEach(it => { if ((it.bloque || '') === bloqueInv && it.ganador_proveedor_id === proveedorId) { it.ganador_proveedor_id = null; it.ganador_manual = false; it.confirmado = false; it.confirmado_en = null; } });
   const idxResumen = INVITADOS_RESUMEN.findIndex(i => i.cotizacion_id === COT_ACTUAL.id);
   if (idxResumen >= 0) INVITADOS_RESUMEN.splice(idxResumen, 1);
 
@@ -1813,11 +1813,12 @@ async function confirmarCompraProveedor(proveedorId) {
   const pendientes = ITEMS.filter(it => (it.bloque || '') === bloque && it.a_comprar && it.ganador_proveedor_id === proveedorId && !it.confirmado);
   if (!pendientes.length) return;
   const ids = pendientes.map(it => it.id);
+  const ahora = new Date().toISOString();
   for (let i = 0; i < ids.length; i += 100) {
-    const { error } = await SB.from('compras_cotizaciones_items').update({ confirmado: true }).in('id', ids.slice(i, i + 100));
+    const { error } = await SB.from('compras_cotizaciones_items').update({ confirmado: true, confirmado_en: ahora }).in('id', ids.slice(i, i + 100));
     if (error) { toast(error.message, 'er'); return; }
   }
-  ITEMS.forEach(it => { if (ids.includes(it.id)) it.confirmado = true; });
+  ITEMS.forEach(it => { if (ids.includes(it.id)) { it.confirmado = true; it.confirmado_en = ahora; } });
   toast(`✓ OC Generada (${ids.length} ítem${ids.length === 1 ? '' : 's'})`);
   renderTablaComparativa();
   renderResumenProveedores();
@@ -1835,9 +1836,10 @@ async function confirmarCompraProveedor(proveedorId) {
 async function deshacerConfirmacion(itemId) {
   const item = ITEMS.find(i => i.id === itemId);
   if (!item) return;
-  const { error } = await SB.from('compras_cotizaciones_items').update({ confirmado: false }).eq('id', itemId);
+  const { error } = await SB.from('compras_cotizaciones_items').update({ confirmado: false, confirmado_en: null }).eq('id', itemId);
   if (error) { toast(error.message, 'er'); return; }
   item.confirmado = false;
+  item.confirmado_en = null;
   toast('✓ Confirmación deshecha — el ítem volvió a la comparativa');
   renderTablaComparativa();
   renderResumenProveedores();
@@ -2517,8 +2519,9 @@ async function confirmarCompraPendienteProveedor(proveedorId) {
   const grupos = PEND_GRUPOS.filter(g => grupoGanadorInfo(g).valor === proveedorId);
   const itemIds = grupos.flatMap(g => g.itemIds);
   if (!itemIds.length) return;
+  const ahora = new Date().toISOString();
   for (let i = 0; i < itemIds.length; i += 100) {
-    const { error } = await SB.from('compras_cotizaciones_items').update({ confirmado: true }).in('id', itemIds.slice(i, i + 100));
+    const { error } = await SB.from('compras_cotizaciones_items').update({ confirmado: true, confirmado_en: ahora }).in('id', itemIds.slice(i, i + 100));
     if (error) { toast(error.message, 'er'); return; }
   }
   const cotizacionesAfectadas = new Set(grupos.flatMap(g => g.origenes.map(o => o.cotizacion_id)));
