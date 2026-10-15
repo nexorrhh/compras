@@ -1219,6 +1219,35 @@ async function guardarPrecio(itemId, proveedorId, valorStr) {
   renderResumenProveedores();
 }
 
+// Caso real del usuario: un proveedor cotizó una medida/spec distinta a
+// la pedida (ej. otro espesor de chapa) pero igual quiere comparar ese
+// precio contra el resto — marcarlo "alternativo" es solo un aviso
+// visual (celda resaltada + nota opcional de qué cambió), no saca nada
+// del cálculo de ganador/resumen/informe de reparto: el precio se sigue
+// comparando normalmente, por pedido explícito ("quiero comparar los
+// precios contra otros proveedores"). Solo se puede marcar si ya hay un
+// precio cargado (no hay nada que marcar sobre una celda vacía).
+async function toggleAlternativoPrecio(itemId, proveedorId) {
+  const p = PRECIOS.find(pr => pr.item_id === itemId && pr.proveedor_id === proveedorId);
+  if (!p || p.precio_unitario == null) { toast('Cargá un precio primero', 'er'); return; }
+  const activar = !p.alternativo;
+  let nota = null;
+  if (activar) {
+    const ingresada = prompt('¿Qué es distinto en esta cotización? (opcional)', p.nota_alternativo || '');
+    if (ingresada === null) return; // canceló, no cambia nada
+    nota = ingresada.trim() || null;
+  }
+  const { data, error } = await SB.from('compras_cotizaciones_precios')
+    .update({ alternativo: activar, nota_alternativo: nota })
+    .eq('item_id', itemId).eq('proveedor_id', proveedorId)
+    .select().single();
+  if (error) { toast(error.message, 'er'); return; }
+  PRECIOS = [...PRECIOS.filter(pr => !(pr.item_id === itemId && pr.proveedor_id === proveedorId)), data];
+  renderTablaComparativa();
+  renderModalProveedorItems();
+  renderResumenProveedores();
+}
+
 // La cantidad (cant_umc) que trae el archivo de Capataz es un cálculo
 // TEÓRICO (peso nominal según tabla, no lo que realmente se termina
 // comprando) — un caso real del usuario: pidió 107,930549 KGS de una
@@ -1483,9 +1512,24 @@ function renderTablaComparativa() {
       const equivalencia = (tc && p && p.precio_unitario != null && p.moneda === 'USD')
         ? `<div style="font-size:10px;color:var(--muted)">≈ ${fmtMonto(Number(p.precio_unitario) * tc, 'ARS')}</div>`
         : '';
-      return `<td class="${esMejor ? 'cot-precio-min' : ''}" style="white-space:nowrap">
+      // "Alternativo" — caso real del usuario: un proveedor cotizó una
+      // medida/spec distinta a la pedida (ej. otro espesor), pero quiere
+      // seguir comparando ese precio contra el resto igual. Marcar no
+      // excluye nada de ganador/resumen/informe, solo resalta la celda
+      // (ver toggleAlternativoPrecio()) para no perder de vista la
+      // diferencia al decidir. Solo tiene sentido si ya hay un precio
+      // cargado — no hay nada que marcar todavía si la celda está vacía.
+      const esAlternativo = !!(p && p.alternativo);
+      const btnAlternativo = (p && p.precio_unitario != null)
+        ? `<button type="button" class="bsm cot-toggle-alternativo${esAlternativo ? ' y' : ''}" data-item="${item.id}" data-prov="${inv.proveedor_id}"
+            title="${esAlternativo ? `Cotización alternativa${p.nota_alternativo ? ': ' + escAttr(p.nota_alternativo) : ''} — click para quitar la marca` : 'Marcar como cotización alternativa (otra medida/spec) — igual sirve para comparar'}"
+            style="padding:1px 4px;font-size:10px;margin-left:3px;vertical-align:middle">🔀</button>`
+        : '';
+      const notaAlternativo = (esAlternativo && p.nota_alternativo)
+        ? `<div style="font-size:10px;color:var(--yellow)">🔀 ${escAttr(p.nota_alternativo)}</div>` : '';
+      return `<td class="${esMejor ? 'cot-precio-min' : ''}" style="white-space:nowrap${esAlternativo ? ';border-left:3px solid var(--yellow)' : ''}">
         ${simbolo}<input type="text" inputmode="decimal" class="cot-precio-input" data-item="${item.id}" data-prov="${inv.proveedor_id}"
-          value="${p && p.precio_unitario != null ? p.precio_unitario : ''}" placeholder="—">${equivalencia}
+          value="${p && p.precio_unitario != null ? p.precio_unitario : ''}" placeholder="—">${btnAlternativo}${equivalencia}${notaAlternativo}
       </td>`;
     }).join('');
 
@@ -1806,12 +1850,26 @@ function renderModalProveedorItems() {
   const lista = itemsVisibles();
   tbody.innerHTML = lista.length ? lista.map(item => {
     const p = PRECIOS.find(pr => pr.item_id === item.id && pr.proveedor_id === PROV_MODAL_ID);
-    return `<tr>
+    // Mismo botón "alternativo" que la comparativa (ver
+    // toggleAlternativoPrecio()) — se agregó acá primero porque este
+    // modal (carga enfocada por proveedor) es donde el usuario detectó
+    // el caso real: una cotización en otra medida/spec que igual quiere
+    // comparar contra el resto.
+    const esAlternativo = !!(p && p.alternativo);
+    const btnAlternativo = (p && p.precio_unitario != null)
+      ? `<button type="button" class="bsm cotprov-toggle-alternativo${esAlternativo ? ' y' : ''}" data-item="${item.id}"
+          title="${esAlternativo ? `Cotización alternativa${p.nota_alternativo ? ': ' + escAttr(p.nota_alternativo) : ''} — click para quitar la marca` : 'Marcar como cotización alternativa (otra medida/spec) — igual sirve para comparar'}"
+          style="padding:1px 4px;font-size:10px;margin-left:3px;vertical-align:middle">🔀</button>`
+      : '';
+    return `<tr${esAlternativo ? ' style="background:rgba(245,158,11,.06)"' : ''}>
       <td>${escAttr(item.cod_articulo)}</td>
       <td>${escAttr(item.descripcion || '')}${item.desc_adicional ? `<div style="font-size:11px;color:var(--muted)">${escAttr(item.desc_adicional)}</div>` : ''}</td>
       <td style="text-align:right;white-space:nowrap">${item.cant_umc != null ? numFmt(item.cant_umc) : '–'} ${escAttr(item.umc || '')}</td>
-      <td><input type="text" inputmode="decimal" class="cotprov-precio-input" data-item="${item.id}"
-        value="${p && p.precio_unitario != null ? p.precio_unitario : ''}" placeholder="—" style="width:90px;text-align:right"></td>
+      <td style="white-space:nowrap">
+        <input type="text" inputmode="decimal" class="cotprov-precio-input" data-item="${item.id}"
+          value="${p && p.precio_unitario != null ? p.precio_unitario : ''}" placeholder="—" style="width:90px;text-align:right">${btnAlternativo}
+        ${esAlternativo && p.nota_alternativo ? `<div style="font-size:10px;color:var(--yellow)">🔀 ${escAttr(p.nota_alternativo)}</div>` : ''}
+      </td>
       <td class="cotprov-subtotal" data-item="${item.id}" style="text-align:right">–</td>
     </tr>`;
   }).join('') : '<tr><td colspan="5" style="text-align:center;padding:18px;color:var(--muted)">Sin ítems para mostrar en este bloque</td></tr>';
@@ -1914,6 +1972,9 @@ function initDelegacionDetalle() {
     const borrarManualBtn = e.target.closest('.cot-borrar-manual');
     if (borrarManualBtn) { borrarItemManual(borrarManualBtn.dataset.item); return; }
 
+    const altBtn = e.target.closest('.cot-toggle-alternativo');
+    if (altBtn) { toggleAlternativoPrecio(altBtn.dataset.item, altBtn.dataset.prov); return; }
+
     const tabBloque = e.target.closest('.cot-bloque-tab');
     if (tabBloque) {
       BLOQUE_TAB = tabBloque.dataset.bloque;
@@ -1967,6 +2028,10 @@ function initModalProveedor() {
     if (e.key !== 'Enter' && e.key !== 'Tab') return;
     e.preventDefault();
     enfocarPrecioAdyacente(e.target, e.shiftKey ? -1 : 1);
+  });
+  document.getElementById('cotprov_items')?.addEventListener('click', e => {
+    const altBtn = e.target.closest('.cotprov-toggle-alternativo');
+    if (altBtn && PROV_MODAL_ID) toggleAlternativoPrecio(altBtn.dataset.item, PROV_MODAL_ID);
   });
   document.getElementById('cotprov_moneda')?.addEventListener('change', async e => {
     if (PROV_MODAL_ID) await cambiarMonedaColumna(PROV_MODAL_ID, e.target.value);

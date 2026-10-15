@@ -356,6 +356,11 @@ create table compras_cotizaciones_precios (
   proveedor_id uuid not null references compras_proveedores(id) on delete cascade,
   precio_unitario numeric,
   moneda text not null default 'ARS' check (moneda in ('ARS', 'USD')),
+  -- El proveedor cotizó una medida/spec distinta a la pedida (ej. otro
+  -- espesor) pero el precio igual se quiere comparar contra el resto —
+  -- ver sql/027_cotizaciones_precio_alternativo.sql y CLAUDE.md 9.2.
+  alternativo boolean not null default false,
+  nota_alternativo text,
   unique (item_id, proveedor_id)
 );
 

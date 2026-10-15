@@ -1327,6 +1327,25 @@ agregando queda junto, al pie de la tabla, fácil de encontrar. Aplica también 
 (reusa `itemsVisibles()`, igual que siempre) pero no a la vista global "Pendientes (todas)" ni a su propio
 export (`exportarParaCotizarPendientes()`), que ordenan con su propia lógica aparte (ver 9.5).
 
+**Marcar un precio como "alternativo"** (pedido explícito del usuario, 2026-10-15, viendo el modal de
+carga enfocada por proveedor — ver punto 6): caso real — un proveedor cotizó una medida/spec distinta a
+la pedida (ej. otro espesor de chapa), pero el usuario igual quiere comparar ese precio contra el resto:
+"quiero comparar los precios contra otros proveedores". El botón 🔀 al lado de cada precio ya cargado
+(`toggleAlternativoPrecio()` en `js/modules/cotizaciones.js`, disponible tanto en la comparativa como en
+el modal `mCOTPROV`) marca `alternativo = true` en `compras_cotizaciones_precios` y pide, con `prompt()`
+(mismo criterio que `crearGrupo()` en Proveedores — es un solo campo de texto opcional, no justifica un
+modal propio), una nota corta de qué es distinto (ej. "cotizó 3/16 en vez de 1/4"). Marcarlo es **solo un
+aviso visual** — borde/fondo amarillo en la celda y la nota debajo si se cargó — y **no saca nada del
+cálculo**: sigue participando en `cheapestForItem()` (resaltado de más barato), en el "Resumen por
+proveedor" y en el informe de reparto exactamente igual que cualquier otro precio, a propósito, porque el
+usuario pidió poder seguir comparándolo, no excluirlo. Solo se puede marcar un precio ya cargado (una
+celda vacía no tiene nada que marcar); volver a tocar el botón lo desmarca y borra la nota.
+`compras_cotizaciones_precios.alternativo`/`nota_alternativo` (ver
+[`sql/027_cotizaciones_precio_alternativo.sql`](sql/027_cotizaciones_precio_alternativo.sql)) no se
+tocan en el `upsert` de `guardarPrecio()` (solo manda `item_id`/`proveedor_id`/`precio_unitario`/
+`moneda`) — Postgres conserva el resto de las columnas en un `ON CONFLICT DO UPDATE` parcial, así que
+corregir el precio de una celda ya marcada alternativa no le borra la marca sola.
+
 **Autocomplete de "Descripción" contra el catálogo** (mismo pedido, 2026-10-15, ampliado: "que si
 escribo busque el nombre exacto"): tipear en el campo Descripción busca entre los artículos ya conocidos
 por el tablero (código y descripción, acento/case-insensitive vía `norm()`) y, al elegir uno, completa
@@ -1341,7 +1360,7 @@ artículos, no tiene sentido traerlo si nunca se usa el buscador. Si ninguna de 
 el formulario sigue funcionando igual (sin sugerencias) — el campo siempre admite texto libre, por si el
 artículo urgente todavía no apareció en ningún Stock/Materiales OT cargado.
 
-### 9.3 Modelo de datos — `sql/013_cotizaciones.sql` + `sql/014_cotizaciones_bloques.sql` + `sql/015_cotizaciones_confirmado.sql` + `sql/016_cotizaciones_condicion_pago.sql` + `sql/017_cotizaciones_duplicado_aceptado.sql` + `sql/018_articulos_largo_barra.sql`
+### 9.3 Modelo de datos — `sql/013_cotizaciones.sql` + `sql/014_cotizaciones_bloques.sql` + `sql/015_cotizaciones_confirmado.sql` + `sql/016_cotizaciones_condicion_pago.sql` + `sql/017_cotizaciones_duplicado_aceptado.sql` + `sql/018_articulos_largo_barra.sql` + `sql/027_cotizaciones_precio_alternativo.sql`
 
 Cinco tablas (ver `sql/schema.sql` para el estado final), sin RLS (mismo criterio que el resto de
 `compras_*`):
@@ -1366,6 +1385,8 @@ Cinco tablas (ver `sql/schema.sql` para el estado final), sin RLS (mismo criteri
 - `compras_cotizaciones_precios` — el precio cargado por cada proveedor invitado para cada artículo
   (`unique(item_id, proveedor_id)`, sin columna de bloque propia — se resuelve solo, porque el `item_id`
   ya define a qué bloque pertenece), con su propia `moneda` (aunque la UI la fija por columna, ver 9.2).
+  `alternativo`/`nota_alternativo` (ver 9.2, "Marcar un precio como alternativo") marcan una cotización
+  en otra medida/spec sin excluirla de ningún cálculo — es solo un aviso visual.
 - `compras_articulos_largo_barra` — `cod_articulo` como PK (un largo de barra por artículo, igual
   criterio que `compras_articulos_grupo`), independiente de cualquier solicitud puntual: cargado una vez
   para un artículo, queda disponible para cualquier otra cotización futura que tenga ese mismo artículo
@@ -1732,7 +1753,11 @@ tablero-compras/
     ├── 020_materiales_ot.sql
     ├── 021_materot_archivado.sql
     ├── 022_materot_kg_por_etapa.sql
-    └── 023_materot_ot_info.sql
+    ├── 023_materot_ot_info.sql
+    ├── 024_proveedores_agenda_por_grupos.sql
+    ├── 025_proveedores_tango_api.sql
+    ├── 026_proveedores_sync_tango.sql
+    └── 027_cotizaciones_precio_alternativo.sql
 ```
 
 > `porteria.html` y `solicitud.html` son entry points separados (audiencias distintas: portero de
@@ -2216,9 +2241,13 @@ Todavía sin decidir:
 25. Correr [`sql/026_proveedores_sync_tango.sql`](sql/026_proveedores_sync_tango.sql) — asegura los
     campos de teléfono/email y el índice único requerido por el upsert del actualizador unificado
     (**todavía falta correr en la base real**).
-26. Probar el circuito completo: pedir vehículo (solicitud.html) → aprobar y asignar (index.html) →
+26. Correr [`sql/027_cotizaciones_precio_alternativo.sql`](sql/027_cotizaciones_precio_alternativo.sql) —
+    agrega `alternativo`/`nota_alternativo` a `compras_cotizaciones_precios` para marcar una cotización
+    en otra medida/spec sin excluirla de la comparación (ver sección 9.2) (**todavía falta correr en la
+    base real**).
+27. Probar el circuito completo: pedir vehículo (solicitud.html) → aprobar y asignar (index.html) →
    registrar salida/retorno (porteria.html) → ver el movimiento reflejado en el dashboard.
-27. Evaluar RLS (Row Level Security) en las tablas `compras_*` — hoy cualquiera con el link de
+28. Evaluar RLS (Row Level Security) en las tablas `compras_*` — hoy cualquiera con el link de
    `solicitud.html`/`porteria.html` puede leer/escribir todas las tablas, sin ningún login de por medio.
-28. Ir completando los módulos `[TBD]` de la sección 3 a medida que los necesites, usando el módulo
+29. Ir completando los módulos `[TBD]` de la sección 3 a medida que los necesites, usando el módulo
    Flota (carpeta `js/modules/`) como plantilla.
