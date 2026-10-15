@@ -655,7 +655,17 @@ function itemsVisibles() {
   if (grupoF === SIN_CLASIFICAR) lista = lista.filter(i => !grupoNombreDeItem(i));
   else if (grupoF) lista = lista.filter(i => grupoNombreDeItem(i) === grupoF);
   if (nroSolicF) lista = lista.filter(i => i.nro_solicitud === nroSolicF);
-  return lista.slice().sort((a, b) => (a.descripcion || '').localeCompare(b.descripcion || '', 'es'));
+  // Los ítems agregados a mano (ver guardarItemManual(), nro_solicitud=null
+  // porque no vienen de Capataz) quedan siempre AL FINAL de la lista, en vez
+  // de intercalarse alfabéticamente con el resto — pedido explícito del
+  // usuario: lo que agrega quiere encontrarlo junto, al pie, no perdido en
+  // medio de los ítems importados.
+  return lista.slice().sort((a, b) => {
+    const am = a.nro_solicitud ? 0 : 1;
+    const bm = b.nro_solicitud ? 0 : 1;
+    if (am !== bm) return am - bm;
+    return (a.descripcion || '').localeCompare(b.descripcion || '', 'es');
+  });
 }
 
 // Exporta exactamente lo que se está viendo (mismos filtros de bloque/
@@ -1526,7 +1536,7 @@ function renderTablaComparativa() {
 
     return `<tr${item.confirmado ? ' style="background:var(--row-hover)"' : ''}>
       <td><input type="checkbox" class="cot-check-row" data-id="${item.id}" style="width:auto"></td>
-      <td style="white-space:nowrap;color:var(--muted);font-size:12px">${escAttr(formatOTExport(item.nro_solicitud) || '–')}</td>
+      <td style="white-space:nowrap;color:var(--muted);font-size:12px">${item.nro_solicitud ? escAttr(formatOTExport(item.nro_solicitud)) : `– <button type="button" class="bsm cot-borrar-manual" data-item="${item.id}" title="Quitar este ítem agregado a mano" style="padding:1px 5px;margin-left:2px">🗑️</button>`}</td>
       <td>${escAttr(item.cod_articulo)}</td>
       <td>${escAttr(item.descripcion || '')}${item.desc_adicional ? `<div style="font-size:11px;color:var(--muted)">${escAttr(item.desc_adicional)}</div>` : ''}</td>
       <td style="text-align:right;white-space:nowrap">${celdaCantidad}</td>
@@ -1900,6 +1910,9 @@ function initDelegacionDetalle() {
       ajustarABarraEntera(ajustarBarraBtn.dataset.item, input?.value);
       return;
     }
+
+    const borrarManualBtn = e.target.closest('.cot-borrar-manual');
+    if (borrarManualBtn) { borrarItemManual(borrarManualBtn.dataset.item); return; }
 
     const tabBloque = e.target.closest('.cot-bloque-tab');
     if (tabBloque) {
@@ -2602,6 +2615,18 @@ function initAutocompleteCatalogo() {
   input.addEventListener('blur', () => setTimeout(() => { box.style.display = 'none'; }, 120));
 }
 
+// Las unidades que tienen una equivalencia real en kg (perfiles en metros,
+// chapas en m²) son MTS/MT2 — igual criterio que "Ajustar a barra entera"
+// (ver 9.1) y que tieneEquivalencia() en renderTablaComparativa(). Para
+// LTS/UNI no hay ninguna conversión física que tenga sentido pedir.
+const UNIDADES_CON_EQUIVALENCIA_KG = new Set(['MTS', 'MT2']);
+
+function actualizarVisibilidadKgManual() {
+  const unidad = document.getElementById('coti_unidad')?.value || '';
+  const wrap = document.getElementById('coti_kg_wrap');
+  if (wrap) wrap.style.display = UNIDADES_CON_EQUIVALENCIA_KG.has(unidad) ? '' : 'none';
+}
+
 function abrirModalAgregarItem() {
   if (!COT_ACTUAL) return;
   // El tab "⚠️ Duplicado" es un modo de vista, no un bloque real (ver
@@ -2611,6 +2636,7 @@ function abrirModalAgregarItem() {
   form?.reset();
   om('mCOTITEM');
   document.getElementById('coti_cod')?.focus();
+  actualizarVisibilidadKgManual();
   cargarCatalogoArticulos(); // dispara la carga lazy, no bloquea la apertura del modal
 }
 
@@ -2621,23 +2647,59 @@ async function guardarItemManual(e) {
   const descripcion = (document.getElementById('coti_desc')?.value || '').trim();
   const desc_adicional = (document.getElementById('coti_desc_adic')?.value || '').trim() || null;
   const cantTxt = (document.getElementById('coti_cant')?.value || '').trim().replace(',', '.');
-  const cant_umc = Number(cantTxt);
-  const umc = document.getElementById('coti_unidad')?.value || null;
+  const cant = Number(cantTxt);
+  const unidad = document.getElementById('coti_unidad')?.value || null;
   const n_ot = (document.getElementById('coti_ot')?.value || '').trim() || null;
   if (!cod_articulo || !descripcion) { toast('Completá código y descripción', 'er'); return; }
-  if (!isFinite(cant_umc) || cant_umc <= 0) { toast('Ingresá una cantidad mayor a 0', 'er'); return; }
+  if (!isFinite(cant) || cant <= 0) { toast('Ingresá una cantidad mayor a 0', 'er'); return; }
 
-  const row = {
-    cotizacion_id: COT_ACTUAL.id, bloque: bloqueActual(), nro_solicitud: null,
-    cod_articulo, descripcion, desc_adicional, cant_ums: null, ums: null, cant_umc, umc, t_comp: null, n_ot,
-  };
+  // Si se cargó la equivalencia en KG (solo posible para MTS/MT2, ver
+  // UNIDADES_CON_EQUIVALENCIA_KG), el ítem queda con la misma forma
+  // cant_ums/ums (lo pedido) + cant_umc/umc (lo que se compra, en KGS) que
+  // trae cualquier ítem de Capataz — eso es lo único que necesita
+  // tieneEquivalencia() en renderTablaComparativa() para mostrar las dos
+  // cantidades editables y dejar corregir cualquiera de las dos más
+  // adelante (ver guardarCantidadEquivalente()), igual que un ítem
+  // importado. Sin esa equivalencia, se guarda como antes: una sola
+  // cantidad en cant_umc/umc, cant_ums/ums en null.
+  const kgTxt = UNIDADES_CON_EQUIVALENCIA_KG.has(unidad)
+    ? (document.getElementById('coti_cant_kg')?.value || '').trim().replace(',', '.')
+    : '';
+  const cantKg = kgTxt === '' ? null : Number(kgTxt);
+  if (kgTxt !== '' && (!isFinite(cantKg) || cantKg <= 0)) { toast('La equivalencia en KG tiene que ser mayor a 0', 'er'); return; }
+
+  const row = cantKg != null
+    ? { cotizacion_id: COT_ACTUAL.id, bloque: bloqueActual(), nro_solicitud: null,
+        cod_articulo, descripcion, desc_adicional, cant_ums: cant, ums: unidad, cant_umc: cantKg, umc: 'KGS', t_comp: null, n_ot }
+    : { cotizacion_id: COT_ACTUAL.id, bloque: bloqueActual(), nro_solicitud: null,
+        cod_articulo, descripcion, desc_adicional, cant_ums: null, ums: null, cant_umc: cant, umc: unidad, t_comp: null, n_ot };
   const { data, error } = await SB.from('compras_cotizaciones_items').insert(row).select().single();
   if (error) { toast(error.message, 'er'); return; }
 
   ITEMS.push(data);
-  ITEMS_RESUMEN.push({ cotizacion_id: COT_ACTUAL.id, a_comprar: true });
+  sincronizarResumenItems();
   cm('mCOTITEM');
   toast(`✓ "${cod_articulo}" agregado a ${bloqueActual() || 'General'}`);
+  poblarFiltroGrupo();
+  poblarFiltroNroSolic();
+  poblarTabsBloque();
+  renderTablaComparativa();
+  renderResumenProveedores();
+}
+
+// Solo se ofrece para ítems agregados a mano (nro_solicitud=null, ver
+// guardarItemManual) — un ítem importado de Capataz no se borra desde acá,
+// tiene su propio circuito (marcar "No comprar" si no hace falta, ver 9.2).
+async function borrarItemManual(itemId) {
+  const item = ITEMS.find(i => i.id === itemId);
+  if (!item || item.nro_solicitud) return;
+  if (!confirm(`¿Quitar "${item.cod_articulo}" de esta solicitud? No se puede deshacer.`)) return;
+  const { error } = await SB.from('compras_cotizaciones_items').delete().eq('id', itemId);
+  if (error) { toast(error.message, 'er'); return; }
+  ITEMS = ITEMS.filter(i => i.id !== itemId);
+  PRECIOS = PRECIOS.filter(p => p.item_id !== itemId);
+  sincronizarResumenItems();
+  toast(`✓ "${item.cod_articulo}" quitado`);
   poblarFiltroGrupo();
   poblarFiltroNroSolic();
   poblarTabsBloque();
@@ -2678,6 +2740,7 @@ export function init() {
   document.getElementById('cot_bulk_bloque_gral')?.addEventListener('click', () => aplicarBloqueSeleccionados(''));
   document.getElementById('cot_agregar_item')?.addEventListener('click', abrirModalAgregarItem);
   document.getElementById('fCOTITEM')?.addEventListener('submit', guardarItemManual);
+  document.getElementById('coti_unidad')?.addEventListener('change', actualizarVisibilidadKgManual);
   initAutocompleteCatalogo();
 
   initAutocompleteInvitar();

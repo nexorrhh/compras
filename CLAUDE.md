@@ -1286,17 +1286,46 @@ Descripción, Detalle (opcional), Cantidad + Unidad (`<select>` fijo KGS/MTS/MT2
 — un `insert` directo en `compras_cotizaciones_items` con `nro_solicitud = null` (no viene de Capataz) y
 `bloque = bloqueActual()`, para que quede en el mismo bloque que se esté viendo (General/Pañol/
 Despacho), igual criterio que invitar un proveedor o tildar "Marcar como Pañol/Despacho". De ahí en más
-se comporta como cualquier ítem normal (cotizar, elegir ganador, confirmar compra, exportar) — las dos
-diferencias son consecuencia directa de no tener `nro_solicitud`, no casos especiales en el código:
-- **Sin equivalencia mts/kg editable** (ver 9.1): esa funcionalidad depende de que el archivo de Capataz
-  traiga `cant_ums`/`ums` además de `cant_umc`/`umc`; un ítem manual solo carga una cantidad en la
-  unidad de compra, como cualquier otro ítem sin esa equivalencia (ej. bulonería).
-- **Nunca se marca como duplicado entre solicitudes** (ver más arriba): `claveDuplicado()` es
-  `it.nro_solicitud`, y `buscarDuplicadosEntreSolicitudes()` ya descarta los ítems sin ese dato — no se
-  necesitó ningún cambio para que esto funcione bien solo.
+se comporta como cualquier ítem normal (cotizar, elegir ganador, confirmar compra, exportar) — la única
+diferencia real es consecuencia directa de no tener `nro_solicitud`, no un caso especial en el código:
+**nunca se marca como duplicado entre solicitudes** (ver más arriba) — `claveDuplicado()` es
+`it.nro_solicitud`, y `buscarDuplicadosEntreSolicitudes()` ya descarta los ítems sin ese dato, no se
+necesitó ningún cambio para que esto funcione bien solo.
 
 El botón se oculta mientras se está viendo el tab "⚠️ Duplicado" (`BLOQUE_DUPLICADOS`, un modo de vista
 que nunca se guarda como bloque real — ver 9.4) — agregar ahí no tendría a qué bloque real asignarse.
+
+**Equivalencia en KG al agregar un ítem manual** (mismo pedido, ampliado el mismo día: "necesito que me
+deje poner los kg, es decir puse los metros pero debería dejarme poner kg"): el primer diseño del modal
+solo tenía una Cantidad + Unidad, que se guardaba siempre como `cant_umc`/`umc` — para un perfil cargado
+en MTS, eso dejaba al ítem sin la equivalencia mts↔kg editable de la sección 9.1 (`tieneEquivalencia()`
+en `renderTablaComparativa()` la exige: `ums`/`umc` distintos + `cant_ums > 0`), porque un ítem manual
+nunca tuvo `cant_ums`/`ums` en absoluto. Ahora, si la unidad elegida es **MTS o MT2** (`UNIDADES_CON_
+EQUIVALENCIA_KG` — las únicas con una conversión física real a kg, mismo criterio que "Ajustar a barra
+entera"), el modal suma un campo opcional **"Equivalencia en KG"**: si se completa, el ítem se guarda con
+`cant_ums`/`ums` = lo tipeado en Cantidad/Unidad y `cant_umc`/`umc` = ese KG / `'KGS'` — exactamente la
+misma forma que trae un ítem de Capataz con equivalencia, así que la comparativa ya lo trata igual (dos
+cantidades editables, cualquiera de las dos recalcula la otra, "Ajustar a barra entera" disponible). Si
+se deja vacío (o la unidad es KGS/LTS/UNI), se guarda como antes — una sola cantidad, sin equivalencia.
+
+**Quitar un ítem agregado a mano** (mismo pedido): como el primer ítem urgente que cargó el usuario para
+probar el modal quedó sin esta equivalencia (ya no había forma de agregarla después — la comparativa solo
+ofrece *editar* `cant_ums`/`cant_umc` cuando `tieneEquivalencia()` ya es cierto desde el alta), hacía
+falta poder borrarlo y volver a cargarlo bien. La columna "N° Sol." muestra "–" para cualquier ítem sin
+`nro_solicitud` (siempre un ítem agregado a mano, nunca uno de Capataz) junto a un botón 🗑️
+(`borrarItemManual()`) que pide confirmación y hace un `delete` real en `compras_cotizaciones_items` (sus
+precios cargados se van solos por `on delete cascade`, ver 9.3). Es exclusivo de los ítems manuales a
+propósito — uno importado de Capataz no se borra nunca desde acá, tiene su propio circuito ("No comprar"
+si no hace falta, ver 9.2 punto 2).
+
+**Los ítems agregados a mano quedan siempre al final de la lista** (mismo pedido: "necesito que todo lo
+que agregue quede último"): `itemsVisibles()` ordenaba todo alfabéticamente por descripción sin distinguir
+el origen, así que un ítem urgente recién cargado podía aparecer intercalado en cualquier parte de la
+tabla según su nombre. Ahora el criterio de orden es primero "¿tiene `nro_solicitud`?" (los de Capataz
+antes, los manuales después) y recién dentro de cada grupo, alfabético como siempre — así lo que se va
+agregando queda junto, al pie de la tabla, fácil de encontrar. Aplica también a `exportarParaCotizar()`
+(reusa `itemsVisibles()`, igual que siempre) pero no a la vista global "Pendientes (todas)" ni a su propio
+export (`exportarParaCotizarPendientes()`), que ordenan con su propia lógica aparte (ver 9.5).
 
 **Autocomplete de "Descripción" contra el catálogo** (mismo pedido, 2026-10-15, ampliado: "que si
 escribo busque el nombre exacto"): tipear en el campo Descripción busca entre los artículos ya conocidos
