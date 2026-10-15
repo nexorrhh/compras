@@ -963,6 +963,14 @@ exacto que `cot_f_grupo`/`poblarFiltroGrupo()`, para poder aislar dentro de una 
 crudo (con ceros) para que el filtro compare exacto contra lo guardado en el ítem — solo lo que ve el
 usuario pasa por `formatOTExport()`.
 
+**Columna "OT" en la comparativa** (pedido explícito del usuario, 2026-10-15: "quisiera que en esta vista
+también se pueda ver el Nro de OT que tiene el ítem"): hasta acá el N° de OT (`n_ot`, ver más arriba) solo
+se veía en los exports (Exportar para cotizar, informe de reparto) y en el módulo **OT** (sección 10), no
+en pantalla. `renderTablaComparativa()` suma una columna **"OT"** justo después de Código (mismo orden
+Código/OT/Descripción que ya usan los exports) con `formatOTExport(item.n_ot) || '–'` — de solo lectura,
+el `n_ot` se sigue cargando únicamente desde el archivo de Capataz o, para un ítem manual, desde el campo
+OT del modal "+ Agregar ítem para cotizar" (ver más abajo).
+
 ### 9.2 Cómo se usa
 
 1. **Crear una solicitud**: se le pone un nombre (para poder encontrarla después — ej. "Estructura
@@ -1317,6 +1325,20 @@ falta poder borrarlo y volver a cargarlo bien. La columna "N° Sol." muestra "�
 precios cargados se van solos por `on delete cascade`, ver 9.3). Es exclusivo de los ítems manuales a
 propósito — uno importado de Capataz no se borra nunca desde acá, tiene su propio circuito ("No comprar"
 si no hace falta, ver 9.2 punto 2).
+
+**Editar un ítem agregado a mano** (pedido explícito del usuario, mismo día, tras olvidarse de cargarle
+la OT a uno real: "quiero que además de borrar pongas para editar"): borrar y volver a cargar todo de
+cero por un campo mal puesto era demasiado para un error chico. El botón ✏️, al lado del 🗑️, abre el
+mismo modal `mCOTITEM` pero en **modo edición** (`abrirModalEditarItem()`/`ITEM_EDITANDO_ID` en
+`js/modules/cotizaciones.js` — una variable de módulo en vez de duplicar el formulario: `null` = modo
+"agregar", un id = modo "editar"), precargado con los valores actuales — incluida la equivalencia en KG
+si el ítem ya la tenía (`tieneEquiv = item.ums && item.cant_ums != null`, mismo criterio que
+`tieneEquivalencia()` en la comparativa). `guardarItemManual()` queda compartida entre altas y
+ediciones: arma `camposCantidad` una sola vez (igual lógica de siempre) y al final hace `update` en vez
+de `insert` si `ITEM_EDITANDO_ID` está seteado — sin tocar `bloque`/`nro_solicitud`/`t_comp`, que no se
+editan desde este modal. También sirve para el caso de "Le faltan los KG, se los quiero poner": abrir un
+ítem MTS/MT2 ya cargado sin equivalencia y completar el campo "Equivalencia en KG" que antes solo
+aparecía al crear.
 
 **Los ítems agregados a mano quedan siempre al final de la lista** (mismo pedido: "necesito que todo lo
 que agregue quede último"): `itemsVisibles()` ordenaba todo alfabéticamente por descripción sin distinguir

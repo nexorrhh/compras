@@ -23,6 +23,7 @@ let PROVEEDORES_GRUPOS = []; // agenda manual proveedor↔grupo (para invitar un
 let ARTICULOS_GRUPO_MAP = new Map(); // cod_articulo -> grupo_id (compras_articulos_grupo, misma clasificación que Proveedores)
 let ARTICULOS_LARGO_BARRA = new Map(); // cod_articulo -> largo_barra (compras_articulos_largo_barra, ver ajustarABarraEntera())
 let CATALOGO_ARTICULOS = null; // cod_articulo -> {cod_articulo, descripcion, unidad} — lazy, ver cargarCatalogoArticulos()
+let ITEM_EDITANDO_ID = null; // id del ítem manual que se está editando en mCOTITEM — null = modal en modo "agregar"
 
 let COT_ACTUAL = null;      // la solicitud abierta en la vista detalle
 let ITEMS = [];             // items de COT_ACTUAL
@@ -1578,10 +1579,14 @@ function renderTablaComparativa() {
       : `<input type="text" inputmode="decimal" class="cot-cant-input" data-item="${item.id}"
           value="${item.cant_umc != null ? item.cant_umc : ''}" style="width:80px;text-align:right;display:inline-block;margin-right:4px">${escAttr(item.umc || '')}`;
 
+    const accionesManual = item.nro_solicitud ? '' : `
+      <button type="button" class="bsm cot-editar-manual" data-item="${item.id}" title="Editar este ítem agregado a mano" style="padding:1px 5px;margin-left:2px">✏️</button>
+      <button type="button" class="bsm cot-borrar-manual" data-item="${item.id}" title="Quitar este ítem agregado a mano" style="padding:1px 5px;margin-left:2px">🗑️</button>`;
     return `<tr${item.confirmado ? ' style="background:var(--row-hover)"' : ''}>
       <td><input type="checkbox" class="cot-check-row" data-id="${item.id}" style="width:auto"></td>
-      <td style="white-space:nowrap;color:var(--muted);font-size:12px">${item.nro_solicitud ? escAttr(formatOTExport(item.nro_solicitud)) : `– <button type="button" class="bsm cot-borrar-manual" data-item="${item.id}" title="Quitar este ítem agregado a mano" style="padding:1px 5px;margin-left:2px">🗑️</button>`}</td>
+      <td style="white-space:nowrap;color:var(--muted);font-size:12px">${item.nro_solicitud ? escAttr(formatOTExport(item.nro_solicitud)) : '–'}${accionesManual}</td>
       <td>${escAttr(item.cod_articulo)}</td>
+      <td style="white-space:nowrap;color:var(--muted);font-size:12px">${escAttr(formatOTExport(item.n_ot)) || '–'}</td>
       <td>${escAttr(item.descripcion || '')}${item.desc_adicional ? `<div style="font-size:11px;color:var(--muted)">${escAttr(item.desc_adicional)}</div>` : ''}</td>
       <td style="text-align:right;white-space:nowrap">${celdaCantidad}</td>
       <td style="text-align:center"><span class="badge ${item.a_comprar ? 'aprobado' : 'rechazado'} cot-toggle-comprar" data-id="${item.id}" style="cursor:pointer">${item.a_comprar ? 'Sí' : 'No'}</span></td>
@@ -1598,11 +1603,11 @@ function renderTablaComparativa() {
   wrap.innerHTML = `<table>
     <thead><tr>
       <th><input type="checkbox" id="cot_check_all" style="width:auto"></th>
-      <th>N° Sol.</th><th>Código</th><th>Descripción</th><th>Cantidad</th><th>Comprar</th>
+      <th>N° Sol.</th><th>Código</th><th>OT</th><th>Descripción</th><th>Cantidad</th><th>Comprar</th>
       ${headProv}
       <th>Ganador</th>
     </tr></thead>
-    <tbody>${filas || `<tr><td colspan="${6 + invitados.length + 1}" style="text-align:center;padding:18px;color:var(--muted)">Sin ítems para mostrar en este bloque</td></tr>`}</tbody>
+    <tbody>${filas || `<tr><td colspan="${7 + invitados.length + 1}" style="text-align:center;padding:18px;color:var(--muted)">Sin ítems para mostrar en este bloque</td></tr>`}</tbody>
   </table>`;
 
   actualizarBarraBulk();
@@ -1968,6 +1973,9 @@ function initDelegacionDetalle() {
       ajustarABarraEntera(ajustarBarraBtn.dataset.item, input?.value);
       return;
     }
+
+    const editarManualBtn = e.target.closest('.cot-editar-manual');
+    if (editarManualBtn) { abrirModalEditarItem(editarManualBtn.dataset.item); return; }
 
     const borrarManualBtn = e.target.closest('.cot-borrar-manual');
     if (borrarManualBtn) { borrarItemManual(borrarManualBtn.dataset.item); return; }
@@ -2697,12 +2705,56 @@ function abrirModalAgregarItem() {
   // El tab "⚠️ Duplicado" es un modo de vista, no un bloque real (ver
   // BLOQUE_DUPLICADOS) — no tiene sentido agregar un ítem nuevo ahí.
   if (bloqueActual() === BLOQUE_DUPLICADOS) { toast('Elegí el tab General, Pañol o Despacho antes de agregar un ítem', 'er'); return; }
+  ITEM_EDITANDO_ID = null;
   const form = document.getElementById('fCOTITEM');
   form?.reset();
+  const titulo = document.getElementById('coti_titulo');
+  if (titulo) titulo.textContent = '+ Agregar ítem para cotizar';
+  const submitBtn = document.getElementById('coti_submit_btn');
+  if (submitBtn) submitBtn.textContent = 'Agregar';
   om('mCOTITEM');
   document.getElementById('coti_cod')?.focus();
   actualizarVisibilidadKgManual();
   cargarCatalogoArticulos(); // dispara la carga lazy, no bloquea la apertura del modal
+}
+
+// Pedido explícito del usuario (2026-10-15): se había olvidado de
+// cargarle la OT a un ítem manual y no había forma de corregirlo sin
+// borrar y volver a cargar todo de nuevo (código, descripción, cantidad,
+// equivalencia en KG...). Reusa el mismo modal mCOTITEM en modo edición
+// (ITEM_EDITANDO_ID) en vez de duplicar el formulario.
+function abrirModalEditarItem(itemId) {
+  const item = ITEMS.find(i => i.id === itemId);
+  if (!item || item.nro_solicitud) return; // solo ítems agregados a mano, ver guardarItemManual()
+  ITEM_EDITANDO_ID = itemId;
+  const form = document.getElementById('fCOTITEM');
+  form?.reset();
+  const codInput = document.getElementById('coti_cod');
+  if (codInput) codInput.value = item.cod_articulo || '';
+  const descInput = document.getElementById('coti_desc');
+  if (descInput) descInput.value = item.descripcion || '';
+  const descAdicInput = document.getElementById('coti_desc_adic');
+  if (descAdicInput) descAdicInput.value = item.desc_adicional || '';
+  // Si el ítem ya tiene la equivalencia mts/m²↔kg (cant_ums/ums, ver
+  // guardarItemManual()), la unidad "visible" es la pedida (ums) y el kg
+  // va en el campo de equivalencia; si no, es la cantidad/unidad de
+  // compra de siempre (cant_umc/umc).
+  const tieneEquiv = item.ums && item.cant_ums != null;
+  const cantInput = document.getElementById('coti_cant');
+  if (cantInput) cantInput.value = tieneEquiv ? item.cant_ums : (item.cant_umc != null ? item.cant_umc : '');
+  const unidadSel = document.getElementById('coti_unidad');
+  if (unidadSel) unidadSel.value = tieneEquiv ? item.ums : (item.umc || 'KGS');
+  const kgInput = document.getElementById('coti_cant_kg');
+  if (kgInput) kgInput.value = tieneEquiv ? item.cant_umc : '';
+  const otInput = document.getElementById('coti_ot');
+  if (otInput) otInput.value = item.n_ot || '';
+  const titulo = document.getElementById('coti_titulo');
+  if (titulo) titulo.textContent = `✏️ Editar "${item.cod_articulo}"`;
+  const submitBtn = document.getElementById('coti_submit_btn');
+  if (submitBtn) submitBtn.textContent = 'Guardar cambios';
+  om('mCOTITEM');
+  actualizarVisibilidadKgManual();
+  cargarCatalogoArticulos();
 }
 
 async function guardarItemManual(e) {
@@ -2733,18 +2785,28 @@ async function guardarItemManual(e) {
   const cantKg = kgTxt === '' ? null : Number(kgTxt);
   if (kgTxt !== '' && (!isFinite(cantKg) || cantKg <= 0)) { toast('La equivalencia en KG tiene que ser mayor a 0', 'er'); return; }
 
-  const row = cantKg != null
-    ? { cotizacion_id: COT_ACTUAL.id, bloque: bloqueActual(), nro_solicitud: null,
-        cod_articulo, descripcion, desc_adicional, cant_ums: cant, ums: unidad, cant_umc: cantKg, umc: 'KGS', t_comp: null, n_ot }
-    : { cotizacion_id: COT_ACTUAL.id, bloque: bloqueActual(), nro_solicitud: null,
-        cod_articulo, descripcion, desc_adicional, cant_ums: null, ums: null, cant_umc: cant, umc: unidad, t_comp: null, n_ot };
-  const { data, error } = await SB.from('compras_cotizaciones_items').insert(row).select().single();
-  if (error) { toast(error.message, 'er'); return; }
+  const camposCantidad = cantKg != null
+    ? { cant_ums: cant, ums: unidad, cant_umc: cantKg, umc: 'KGS' }
+    : { cant_ums: null, ums: null, cant_umc: cant, umc: unidad };
 
-  ITEMS.push(data);
-  sincronizarResumenItems();
-  cm('mCOTITEM');
-  toast(`✓ "${cod_articulo}" agregado a ${bloqueActual() || 'General'}`);
+  if (ITEM_EDITANDO_ID) {
+    const { data, error } = await SB.from('compras_cotizaciones_items')
+      .update({ cod_articulo, descripcion, desc_adicional, n_ot, ...camposCantidad })
+      .eq('id', ITEM_EDITANDO_ID).select().single();
+    if (error) { toast(error.message, 'er'); return; }
+    ITEMS = ITEMS.map(i => i.id === ITEM_EDITANDO_ID ? data : i);
+    ITEM_EDITANDO_ID = null;
+    cm('mCOTITEM');
+    toast(`✓ "${cod_articulo}" actualizado`);
+  } else {
+    const row = { cotizacion_id: COT_ACTUAL.id, bloque: bloqueActual(), nro_solicitud: null, t_comp: null, cod_articulo, descripcion, desc_adicional, n_ot, ...camposCantidad };
+    const { data, error } = await SB.from('compras_cotizaciones_items').insert(row).select().single();
+    if (error) { toast(error.message, 'er'); return; }
+    ITEMS.push(data);
+    sincronizarResumenItems();
+    cm('mCOTITEM');
+    toast(`✓ "${cod_articulo}" agregado a ${bloqueActual() || 'General'}`);
+  }
   poblarFiltroGrupo();
   poblarFiltroNroSolic();
   poblarTabsBloque();

@@ -1184,7 +1184,7 @@
 <div class="modal-ov" id="mCOTITEM">
 <div class="modal" style="max-width:480px">
   <span class="mcls" onclick="cm('mCOTITEM')">×</span>
-  <div class="mtitle">+ Agregar ítem para cotizar</div>
+  <div class="mtitle" id="coti_titulo">+ Agregar ítem para cotizar</div>
   <div class="psub" style="margin:0 0 14px">Para material urgente que no pasó por Ingeniería/Capataz — se agrega al bloque que estás viendo ahora.</div>
   <form id="fCOTITEM">
     <div class="fg"><label>Código *</label><input id="coti_cod" required autocomplete="off"></div>
@@ -1211,7 +1211,7 @@
       <input id="coti_cant_kg" inputmode="decimal" autocomplete="off" placeholder="Si lo sabés, para poder corregir después en mts o en kg">
     </div>
     <div class="fg"><label>OT (opcional)</label><input id="coti_ot" autocomplete="off"></div>
-    <div class="brow"><button type="button" class="btn" onclick="cm('mCOTITEM')">Cancelar</button><button type="submit" class="btn p">Agregar</button></div>
+    <div class="brow"><button type="button" class="btn" onclick="cm('mCOTITEM')">Cancelar</button><button type="submit" class="btn p" id="coti_submit_btn">Agregar</button></div>
   </form>
 </div></div>
 
