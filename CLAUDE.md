@@ -1298,6 +1298,20 @@ diferencias son consecuencia directa de no tener `nro_solicitud`, no casos espec
 El botón se oculta mientras se está viendo el tab "⚠️ Duplicado" (`BLOQUE_DUPLICADOS`, un modo de vista
 que nunca se guarda como bloque real — ver 9.4) — agregar ahí no tendría a qué bloque real asignarse.
 
+**Autocomplete de "Descripción" contra el catálogo** (mismo pedido, 2026-10-15, ampliado: "que si
+escribo busque el nombre exacto"): tipear en el campo Descripción busca entre los artículos ya conocidos
+por el tablero (código y descripción, acento/case-insensitive vía `norm()`) y, al elegir uno, completa
+Código + Descripción + Unidad de una — mismo patrón visual `.ac-box`/`.ac-item` que ya usa el buscador de
+proveedores para invitar (ver 9.2 punto 5), reusado tal cual. El catálogo (`cargarCatalogoArticulos()`)
+se arma combinando `compras_stock_saldos` y `compras_materot_items` (código/descripción/unidad, ambos
+vienen de Capataz — no hace falta clasificar nada nuevo ni mantener una tabla aparte); Stock pisa encima
+de Materiales OT porque su `unidad_medida` es la fuente más directa, sin derivar nada, pero ninguna de
+las dos fuentes es "más correcta" para la descripción en sí. Se carga **lazy** (recién la primera vez que
+se abre el modal, no en cada visita a la ficha) y se cachea en el módulo — es un catálogo de miles de
+artículos, no tiene sentido traerlo si nunca se usa el buscador. Si ninguna de las dos fuentes responde,
+el formulario sigue funcionando igual (sin sugerencias) — el campo siempre admite texto libre, por si el
+artículo urgente todavía no apareció en ningún Stock/Materiales OT cargado.
+
 ### 9.3 Modelo de datos — `sql/013_cotizaciones.sql` + `sql/014_cotizaciones_bloques.sql` + `sql/015_cotizaciones_confirmado.sql` + `sql/016_cotizaciones_condicion_pago.sql` + `sql/017_cotizaciones_duplicado_aceptado.sql` + `sql/018_articulos_largo_barra.sql`
 
 Cinco tablas (ver `sql/schema.sql` para el estado final), sin RLS (mismo criterio que el resto de

@@ -22,6 +22,7 @@ let GRUPOS = [];            // compras_grupos completo {id, nombre}
 let PROVEEDORES_GRUPOS = []; // agenda manual proveedor↔grupo (para invitar un rubro completo)
 let ARTICULOS_GRUPO_MAP = new Map(); // cod_articulo -> grupo_id (compras_articulos_grupo, misma clasificación que Proveedores)
 let ARTICULOS_LARGO_BARRA = new Map(); // cod_articulo -> largo_barra (compras_articulos_largo_barra, ver ajustarABarraEntera())
+let CATALOGO_ARTICULOS = null; // cod_articulo -> {cod_articulo, descripcion, unidad} — lazy, ver cargarCatalogoArticulos()
 
 let COT_ACTUAL = null;      // la solicitud abierta en la vista detalle
 let ITEMS = [];             // items de COT_ACTUAL
@@ -2530,6 +2531,77 @@ export async function render(secId) {
 // que cualquier ítem sin esa equivalencia. Se agrega al bloque que se
 // esté viendo en ese momento (`bloqueActual()`), igual criterio que
 // invitar un proveedor o tildar "Marcar como Pañol/Despacho".
+// Catálogo de artículos conocidos para el autocomplete de "Descripción"
+// (pedido explícito del usuario, 2026-10-15: "que si escribo busque el
+// nombre exacto") — se arma combinando Stock y Materiales OT (ambos
+// vienen de Capataz, con código + descripción + unidad reales), no hace
+// falta clasificar nada nuevo. Se carga una sola vez (lazy, recién al
+// abrir el modal por primera vez) y se cachea en el módulo — es un
+// catálogo de ~3000+ artículos, no tiene sentido traerlo en cada visita
+// a la ficha si nunca se usa el buscador.
+async function cargarCatalogoArticulos() {
+  if (CATALOGO_ARTICULOS) return CATALOGO_ARTICULOS;
+  const [{ data: saldos, error: e1 }, { data: materot, error: e2 }] = await Promise.all([
+    fetchAll(() => SB.from('compras_stock_saldos').select('cod_articulo,descripcion,unidad_medida')),
+    fetchAll(() => SB.from('compras_materot_items').select('cod_articulo,descripcion,ume')),
+  ]);
+  const map = new Map();
+  for (const r of (materot || [])) {
+    if (!r.cod_articulo) continue;
+    map.set(r.cod_articulo, { cod_articulo: r.cod_articulo, descripcion: r.descripcion || '', unidad: r.ume || '' });
+  }
+  // Stock pisa encima de Materiales OT — unidad_medida de Capataz es la
+  // fuente más directa para la unidad (sin derivar nada), pero ninguna
+  // de las dos es "más correcta" que la otra para la descripción.
+  for (const r of (saldos || [])) {
+    if (!r.cod_articulo) continue;
+    const previo = map.get(r.cod_articulo);
+    map.set(r.cod_articulo, { cod_articulo: r.cod_articulo, descripcion: r.descripcion || previo?.descripcion || '', unidad: r.unidad_medida || previo?.unidad || '' });
+  }
+  if (e1 && e2) { CATALOGO_ARTICULOS = new Map(); return CATALOGO_ARTICULOS; } // ninguna fuente respondió — el form sigue funcionando sin autocomplete
+  CATALOGO_ARTICULOS = map;
+  return map;
+}
+
+function filtrarSugerenciasCatalogo() {
+  const input = document.getElementById('coti_desc');
+  const box = document.getElementById('coti_desc_sug');
+  if (!input || !box || !CATALOGO_ARTICULOS) return;
+  const q = norm(input.value.trim());
+  if (!q) { box.style.display = 'none'; box.innerHTML = ''; return; }
+  const coincidencias = [...CATALOGO_ARTICULOS.values()]
+    .filter(a => norm(a.descripcion).includes(q) || norm(a.cod_articulo).includes(q))
+    .slice(0, 20);
+  if (!coincidencias.length) { box.style.display = 'none'; box.innerHTML = ''; return; }
+  box.innerHTML = coincidencias.map(a => `<div class="ac-item" data-cod="${escAttr(a.cod_articulo)}" data-desc="${escAttr(a.descripcion)}" data-unidad="${escAttr(a.unidad)}">
+    <strong>${escAttr(a.cod_articulo)}</strong> — ${escAttr(a.descripcion)}
+  </div>`).join('');
+  box.style.display = '';
+}
+
+const UNIDADES_COTI_ITEM = new Set(['KGS', 'MTS', 'MT2', 'LTS', 'UNI']);
+
+function initAutocompleteCatalogo() {
+  const input = document.getElementById('coti_desc');
+  const box = document.getElementById('coti_desc_sug');
+  if (!input || !box) return;
+  input.addEventListener('input', filtrarSugerenciasCatalogo);
+  input.addEventListener('focus', filtrarSugerenciasCatalogo);
+  box.addEventListener('mousedown', e => {
+    const item = e.target.closest('.ac-item');
+    if (!item) return;
+    e.preventDefault();
+    input.value = item.dataset.desc || '';
+    const codInput = document.getElementById('coti_cod');
+    if (codInput) codInput.value = item.dataset.cod || '';
+    const unidadSel = document.getElementById('coti_unidad');
+    const unidad = (item.dataset.unidad || '').trim().toUpperCase();
+    if (unidadSel && UNIDADES_COTI_ITEM.has(unidad)) unidadSel.value = unidad;
+    box.style.display = 'none';
+  });
+  input.addEventListener('blur', () => setTimeout(() => { box.style.display = 'none'; }, 120));
+}
+
 function abrirModalAgregarItem() {
   if (!COT_ACTUAL) return;
   // El tab "⚠️ Duplicado" es un modo de vista, no un bloque real (ver
@@ -2539,6 +2611,7 @@ function abrirModalAgregarItem() {
   form?.reset();
   om('mCOTITEM');
   document.getElementById('coti_cod')?.focus();
+  cargarCatalogoArticulos(); // dispara la carga lazy, no bloquea la apertura del modal
 }
 
 async function guardarItemManual(e) {
@@ -2605,6 +2678,7 @@ export function init() {
   document.getElementById('cot_bulk_bloque_gral')?.addEventListener('click', () => aplicarBloqueSeleccionados(''));
   document.getElementById('cot_agregar_item')?.addEventListener('click', abrirModalAgregarItem);
   document.getElementById('fCOTITEM')?.addEventListener('submit', guardarItemManual);
+  initAutocompleteCatalogo();
 
   initAutocompleteInvitar();
   initDelegacionDetalle();

@@ -1188,7 +1188,11 @@
   <div class="psub" style="margin:0 0 14px">Para material urgente que no pasó por Ingeniería/Capataz — se agrega al bloque que estás viendo ahora.</div>
   <form id="fCOTITEM">
     <div class="fg"><label>Código *</label><input id="coti_cod" required autocomplete="off"></div>
-    <div class="fg"><label>Descripción *</label><input id="coti_desc" required autocomplete="off"></div>
+    <div class="fg" style="position:relative">
+      <label>Descripción *</label>
+      <input id="coti_desc" required autocomplete="off" placeholder="Escribí para buscar en el catálogo...">
+      <div class="ac-box" id="coti_desc_sug" style="display:none"></div>
+    </div>
     <div class="fg"><label>Detalle (opcional)</label><input id="coti_desc_adic" autocomplete="off"></div>
     <div style="display:flex;gap:10px">
       <div class="fg" style="flex:1"><label>Cantidad *</label><input id="coti_cant" required inputmode="decimal" autocomplete="off"></div>
