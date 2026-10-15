@@ -687,8 +687,15 @@ function exportarParaCotizar() {
   // La columna OT (`formatOTExport()`, misma lógica que el informe de
   // reparto, ver 9.2) se agregó a pedido del usuario para saber de un
   // vistazo a qué orden de trabajo corresponde cada línea de este Excel.
-  const encabezado = ['Código', 'OT', 'Descripción', 'Detalle', 'Cantidad', 'Unidad', 'Equivalencia', 'Unidad'];
+  // La columna "N° Sol." (mismo dato y formato que la primera columna de
+  // la comparativa en pantalla — nro_solicitud de Capataz, ver 9.1) se
+  // agregó a pedido del usuario (2026-10-15) para poder llevar un orden
+  // de las solicitudes de Capataz también desde este Excel, no solo
+  // mirando la pantalla. Un ítem manual (sin nro_solicitud, ver "+
+  // Agregar ítem para cotizar") queda con esta columna vacía.
+  const encabezado = ['N° Sol.', 'Código', 'OT', 'Descripción', 'Detalle', 'Cantidad', 'Unidad', 'Equivalencia', 'Unidad'];
   const filas = lista.map(it => [
+    formatOTExport(it.nro_solicitud),
     it.cod_articulo,
     formatOTExport(it.n_ot),
     it.descripcion || '',
@@ -2556,10 +2563,15 @@ function exportarParaCotizarPendientes() {
     .slice().sort((a, b) => (a.descripcion || '').localeCompare(b.descripcion || '', 'es'));
   if (!lista.length) { toast('No hay nada pendiente para exportar', 'er'); return; }
 
-  const encabezado = ['Código', 'OT', 'Descripción', 'Detalle', 'Cantidad', 'Unidad', 'Equivalencia', 'Unidad'];
+  // "N° Sol." (mismo pedido que en la ficha individual, ver
+  // exportarParaCotizar()): acá cada fila es un artículo agrupado entre
+  // varias solicitudes, así que junta las distintas nro_solicitud de
+  // origen separadas por coma — mismo criterio que ya usa la columna OT.
+  const encabezado = ['N° Sol.', 'Código', 'OT', 'Descripción', 'Detalle', 'Cantidad', 'Unidad', 'Equivalencia', 'Unidad'];
   const filas = lista.map(g => {
+    const nrosSolic = [...new Set(g.origenes.map(o => formatOTExport(o.nro_solicitud)).filter(Boolean))];
     const ots = [...new Set(g.origenes.map(o => formatOTExport(o.n_ot)).filter(Boolean))];
-    return [g.cod_articulo, ots.join(', '), g.descripcion || '', g.desc_adicional || '', g.cant_ums, g.ums || '', g.cant_umc, g.umc || ''];
+    return [nrosSolic.join(', '), g.cod_articulo, ots.join(', '), g.descripcion || '', g.desc_adicional || '', g.cant_ums, g.ums || '', g.cant_umc, g.umc || ''];
   });
   const ws = XLSX.utils.aoa_to_sheet([encabezado, ...filas]);
   const wb = XLSX.utils.book_new();

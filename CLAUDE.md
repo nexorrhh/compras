@@ -1136,12 +1136,16 @@ OT del modal "+ Agregar ítem para cotizar" (ver más abajo).
 
 **Exportar para cotizar** (`📥 Exportar para cotizar (.xlsx)`, `exportarParaCotizar()`): baja exactamente
 lo que se está viendo en la tabla (mismos filtros de bloque/rubro/"ocultar los que no se compran" que la
-pantalla — mismo criterio que el export de Stock → A comprar) a un Excel con columnas Código / **OT** /
-Descripción / Detalle / **Cantidad** / **Unidad** (en la unidad original de la solicitud, `cant_ums`/
-`ums` — ej. metros para perfiles, m2 para chapas) / **Equivalencia** / **Unidad** (en unidad de compra,
-`cant_umc`/`umc` — ej. kg). La columna **OT** (`formatOTExport()`, misma lógica que el informe de
-reparto — ver más abajo — sin los ceros a la izquierda que trae Capataz) se agregó a pedido del usuario
-(2026-09-17) para saber de un vistazo a qué orden de trabajo corresponde cada línea de este Excel. Dos
+pantalla — mismo criterio que el export de Stock → A comprar) a un Excel con columnas **N° Sol.** /
+Código / **OT** / Descripción / Detalle / **Cantidad** / **Unidad** (en la unidad original de la
+solicitud, `cant_ums`/`ums` — ej. metros para perfiles, m2 para chapas) / **Equivalencia** / **Unidad**
+(en unidad de compra, `cant_umc`/`umc` — ej. kg). La columna **OT** (`formatOTExport()`, misma lógica que
+el informe de reparto — ver más abajo — sin los ceros a la izquierda que trae Capataz) se agregó a
+pedido del usuario (2026-09-17) para saber de un vistazo a qué orden de trabajo corresponde cada línea de
+este Excel. La columna **N° Sol.** (mismo dato/formato que la primera columna de la comparativa en
+pantalla — `nro_solicitud` de Capataz, ver 9.1) se agregó a pedido del usuario (2026-10-15), como
+**primera columna**, "para también poder llevar un orden" de las solicitudes de Capataz desde el Excel
+— queda vacía en un ítem agregado a mano (sin `nro_solicitud`, ver "+ Agregar ítem para cotizar"). Dos
 columnas repiten el encabezado "Unidad" a propósito (pedido explícito del usuario, layout exacto) — como
 un objeto JS no puede tener dos claves iguales, se arma con `XLSX.utils.aoa_to_sheet()` (array de filas)
 en vez de `json_to_sheet()`. Las filas salen en el mismo orden que la tabla en pantalla — alfabético por
@@ -1532,11 +1536,11 @@ por error.
   adivinar.
 
 **Exportar para cotizar** (`exportarParaCotizarPendientes()`, mismo botón/nombre que la ficha
-individual, ver 9.2): mismo layout de columnas (Código/OT/Descripción/Detalle/Cantidad/Unidad/
+individual, ver 9.2): mismo layout de columnas (N° Sol./Código/OT/Descripción/Detalle/Cantidad/Unidad/
 Equivalencia/Unidad), respetando el buscador `cotp_f_q` — la diferencia es que acá cada fila es un
-artículo agrupado entre varias solicitudes, así que la columna **OT** junta las distintas OT de origen
-separadas por coma (puede haber más de una) y Cantidad/Equivalencia son el total pendiente sumado, no
-el de una ficha puntual.
+artículo agrupado entre varias solicitudes, así que **N° Sol.** y **OT** juntan los distintos valores de
+origen separados por coma (puede haber más de uno) y Cantidad/Equivalencia son el total pendiente
+sumado, no el de una ficha puntual.
 
 ## 10. Módulo: OT `[DETALLADO]`
 
