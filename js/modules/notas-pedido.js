@@ -59,7 +59,7 @@ const EMPRESA = {
 async function cargarTodo() {
   const [np, pv, oc] = await Promise.all([
     fetchAll(() => SB.from('compras_notas_pedido').select('*').order('numero', { ascending: false })),
-    SB.from('compras_proveedores').select('id,nombre').order('nombre'),
+    fetchAll(() => SB.from('compras_proveedores').select('id,nombre').order('nombre')),
     fetchAll(() => SB.from('compras_oc_lineas').select('orden_compra,proveedor_nombre,fecha,importe,cant_recibida,cant_pendiente,precio_unitario,articulo_desc,cant_pedida')),
   ]);
   const error = np.error || pv.error || oc.error;

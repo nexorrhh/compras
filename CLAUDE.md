@@ -1690,6 +1690,14 @@ para la evolución en el tiempo y la columna "Solicitud" del detalle).
   en `oc.js`/`stock.js`/`proveedores.js`). Los `.limit(100)`/`.limit(200)` de Flota (vistas acotadas a
   propósito, ej. "últimos 100 movimientos") no necesitan esto — el límite ahí es intencional y menor a
   1000. Si una tabla nueva puede crecer sin techo, hay que usar `fetchAll()` desde el principio.
+  **Reaparición real en `compras_proveedores` (2026-10-15):** la tabla pasó a tener ~2510 filas en
+  cuanto se corrió el sync con Tango (ver sección 7.0) — `js/modules/notas-pedido.js` todavía traía esta
+  tabla con `SB.from('compras_proveedores').select('id,nombre').order('nombre')` sin `fetchAll()` (a
+  diferencia de `cotizaciones.js`/`ot.js`/`proveedores.js`, que ya la paginaban bien), así que el
+  autocomplete de "Proveedor" al crear una Nota de Pedido solo veía los primeros 1000 proveedores en
+  orden alfabético — cualquiera después de ahí (caso real: "MADETEC SA", cód. Tango `000994`, visible
+  en Proveedores → Directorio pero ausente del autocomplete) quedaba invisible sin ningún aviso.
+  Corregido envolviendo esa misma consulta en `fetchAll()`.
 - **Escapar comillas en HTML generado dinámicamente:** los códigos de artículo de bulonería traen
   comillas literales de verdad — ej. `BUL5/8"X134A257`, la marca de pulgada — no son un caso raro, están
   por todo el catálogo. Un `data-cod="${cod}"` o un `onclick="fn('${cod}')"` sin escapar esa comilla
