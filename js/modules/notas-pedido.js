@@ -242,7 +242,7 @@ function renderLista() {
       : '<span class="badge" style="background:var(--bg3);color:var(--muted)">Cerrada</span>';
     const accionVinculo = n.estado === 'PENDIENTE'
       ? `<button class="bsm sto-accion" onclick="window.notasPedido.vincularOC('${n.id}')">🔗 Vincular OC</button>
-         <button class="bsm sto-accion" onclick="window.notasPedido.cerrarNota('${n.id}')" title="Cerrar sin vincular una Orden de Compra — para cotizaciones que no terminaron comprándose">🔒 Cerrar</button>`
+         <button class="bsm sto-accion" onclick="window.notasPedido.cerrarNota('${n.id}')" title="Cerrar sin vincular una Orden de Compra — ej. se cumplió pero no hay OC para vincular, se canceló, o se resolvió de otra forma">🔒 Cerrar</button>`
       : n.estado === 'VINCULADA'
       ? `<button class="bsm sto-accion" onclick="window.notasPedido.desvincular('${n.id}')">Desvincular (OC ${escAttr(n.orden_compra_vinculada || '')})</button>`
       : `<button class="bsm sto-accion" onclick="window.notasPedido.reabrirNota('${n.id}')">↩️ Reabrir</button>`;

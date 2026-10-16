@@ -772,18 +772,20 @@ es justamente el problema que este módulo vino a resolver.
 
 **Cerrar una NP sin OC vinculada** (pedido explícito del usuario, 2026-10-16: "quisiera poder cerrar
 nota de pedido ya que a algunas no se le hizo oc" — la lista de Pendientes se le estaba llenando de NP de
-hace 50+ días que nunca iban a tener una OC real). No es solo por cancelación: el usuario aclaró el mismo
-día que también puede pasar porque **el material entró a stock directo, sin pasar por una Orden de
-Compra** ("se puede cerrar también porque no va a tener OC... se ingresó al stock sin orden de compra,
-puede suceder eso además de cancelarse") — por eso el motivo es un campo de **texto libre**, no una lista
-fija de razones: cualquier caso donde una NP nunca va a tener una OC propia entra acá sin necesitar un
-valor nuevo en el código. Tercer estado,
-**`CERRADA`** (ver [`sql/029_notas_pedido_cerrada.sql`](sql/029_notas_pedido_cerrada.sql)), independiente
-de `VINCULADA` — son dos caminos de cierre distintos, no se pisan entre sí. El botón 🔒 **"Cerrar"**
-(solo en una NP `PENDIENTE`, al lado de "🔗 Vincular OC") abre el modal `mCERRARNP`
+hace 50+ días que nunca iban a tener una OC real). **No es un cierre por cancelación/abandono** — el
+primer intento de explicación lo entendió al revés y el usuario corrigió explícitamente ("quiero cerrar
+una nota de pedido por haberse cumplido, eso no entendiste"): el caso principal es una NP que **se
+cumplió igual**, pero el material entró directo a stock sin pasar por una Orden de Compra formal (no
+todas las compras generan una OC en Tango) — "Cerrar" certifica que esa NP ya está resuelta, cumplida o
+no, cuando no hay (ni va a haber) una OC con la cual vincularla. El motivo es un campo de **texto libre**,
+no una lista fija de razones ni un flag de éxito/fracaso — cada caso (cumplida sin OC, cancelada,
+resuelta de otra forma) se anota como corresponda, sin necesitar un valor nuevo en el código. Tercer
+estado, **`CERRADA`** (ver [`sql/029_notas_pedido_cerrada.sql`](sql/029_notas_pedido_cerrada.sql)),
+independiente de `VINCULADA` — son dos caminos de cierre distintos, no se pisan entre sí. El botón 🔒
+**"Cerrar"** (solo en una NP `PENDIENTE`, al lado de "🔗 Vincular OC") abre el modal `mCERRARNP`
 (`cerrarNota()`/`confirmarCerrarNota()` en `js/modules/notas-pedido.js`) con un campo de texto opcional
-**"Motivo"** (ej. "se canceló la compra") — guardado en `motivo_cierre`, junto con `cerrada_en`
-(timestamp real del cierre). Es **reversible**: una NP `CERRADA` muestra "↩️ Reabrir"
+**"Motivo"** (ej. "se cumplió, entró a stock sin OC") — guardado en `motivo_cierre`, junto con
+`cerrada_en` (timestamp real del cierre). Es **reversible**: una NP `CERRADA` muestra "↩️ Reabrir"
 (`reabrirNota()`, mismo criterio que "Desvincular" para una `VINCULADA` — confirmación directa con
 `confirm()`, sin modal, porque reabrir no necesita capturar ningún dato nuevo) que la vuelve a
 `PENDIENTE` y borra `motivo_cierre`/`cerrada_en`. El filtro de estado (`np_f_estado`) suma la opción
