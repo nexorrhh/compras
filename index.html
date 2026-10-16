@@ -407,10 +407,10 @@
 <div class="modal" style="max-width:420px">
   <span class="mcls" onclick="cm('mCERRARNP')">×</span>
   <div class="mtitle" id="mCERRARNP_t">🔒 Cerrar Nota de Pedido</div>
-  <div class="psub" style="margin:0 0 14px">Para cotizaciones que no terminaron comprándose (se canceló, se resolvió de otra forma) — no hace falta vincular ninguna Orden de Compra. Se puede reabrir después si hace falta.</div>
+  <div class="psub" style="margin:0 0 14px">Para una NP que nunca va a tener una Orden de Compra propia — se canceló, se resolvió de otra forma, o el material entró a stock directo sin pasar por una OC. Se puede reabrir después si hace falta.</div>
   <form id="fCERRARNP">
     <div class="fg"><label>Motivo (opcional)</label>
-      <input id="cnp_motivo" autocomplete="off" placeholder="Ej. se canceló la compra">
+      <input id="cnp_motivo" autocomplete="off" placeholder="Ej. se canceló la compra / entró a stock sin OC">
     </div>
     <div class="brow"><button type="button" class="btn" onclick="cm('mCERRARNP')">Cancelar</button><button type="submit" class="btn p">🔒 Cerrar</button></div>
   </form>

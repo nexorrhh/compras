@@ -771,9 +771,13 @@ NP `PENDIENTE` muestra hace cuántos días se creó, con el mismo semáforo ámb
 es justamente el problema que este módulo vino a resolver.
 
 **Cerrar una NP sin OC vinculada** (pedido explícito del usuario, 2026-10-16: "quisiera poder cerrar
-nota de pedido ya que a algunas no se le hizo oc" — caso real: una cotización urgente que al final no se
-compró, se canceló, o se resolvió de otra forma sin pasar por una OC formal; la lista de Pendientes se le
-estaba llenando de NP de hace 50+ días que nunca iban a tener una OC real). Tercer estado,
+nota de pedido ya que a algunas no se le hizo oc" — la lista de Pendientes se le estaba llenando de NP de
+hace 50+ días que nunca iban a tener una OC real). No es solo por cancelación: el usuario aclaró el mismo
+día que también puede pasar porque **el material entró a stock directo, sin pasar por una Orden de
+Compra** ("se puede cerrar también porque no va a tener OC... se ingresó al stock sin orden de compra,
+puede suceder eso además de cancelarse") — por eso el motivo es un campo de **texto libre**, no una lista
+fija de razones: cualquier caso donde una NP nunca va a tener una OC propia entra acá sin necesitar un
+valor nuevo en el código. Tercer estado,
 **`CERRADA`** (ver [`sql/029_notas_pedido_cerrada.sql`](sql/029_notas_pedido_cerrada.sql)), independiente
 de `VINCULADA` — son dos caminos de cierre distintos, no se pisan entre sí. El botón 🔒 **"Cerrar"**
 (solo en una NP `PENDIENTE`, al lado de "🔗 Vincular OC") abre el modal `mCERRARNP`
