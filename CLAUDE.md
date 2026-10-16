@@ -772,24 +772,34 @@ es justamente el problema que este módulo vino a resolver.
 
 **Cerrar una NP sin OC vinculada** (pedido explícito del usuario, 2026-10-16: "quisiera poder cerrar
 nota de pedido ya que a algunas no se le hizo oc" — la lista de Pendientes se le estaba llenando de NP de
-hace 50+ días que nunca iban a tener una OC real). **No es un cierre por cancelación/abandono** — el
-primer intento de explicación lo entendió al revés y el usuario corrigió explícitamente ("quiero cerrar
-una nota de pedido por haberse cumplido, eso no entendiste"): el caso principal es una NP que **se
-cumplió igual**, pero el material entró directo a stock sin pasar por una Orden de Compra formal (no
-todas las compras generan una OC en Tango) — "Cerrar" certifica que esa NP ya está resuelta, cumplida o
-no, cuando no hay (ni va a haber) una OC con la cual vincularla. El motivo es un campo de **texto libre**,
-no una lista fija de razones ni un flag de éxito/fracaso — cada caso (cumplida sin OC, cancelada,
-resuelta de otra forma) se anota como corresponda, sin necesitar un valor nuevo en el código. Tercer
-estado, **`CERRADA`** (ver [`sql/029_notas_pedido_cerrada.sql`](sql/029_notas_pedido_cerrada.sql)),
+hace 50+ días que nunca iban a tener una OC real). Iteró en dos vueltas antes de llegar al diseño actual:
+- **No es un cierre por cancelación/abandono únicamente** — el primer intento de explicación lo entendió
+  al revés, y el usuario corrigió explícitamente ("quiero cerrar una nota de pedido por haberse cumplido,
+  eso no entendiste"): el caso principal es una NP que **se cumplió igual**, pero el material entró
+  directo a stock sin pasar por una Orden de Compra formal (no todas las compras generan una OC en
+  Tango).
+- **El motivo no alcanza como texto libre suelto** — la primera versión solo tenía un campo de texto
+  opcional; el usuario pidió explícitamente que el modal **pregunte** cumplida o cancelada ("quiero que
+  si toco cerrar me pregunte cumplida o cancelada"), no que dependa de que alguien lo escriba bien a
+  mano. Por eso `tipo_cierre` es una **elección obligatoria** (`CUMPLIDA` / `CANCELADA`, dos radio buttons
+  en el modal) y el "Motivo/detalle" queda como campo libre aparte, ahora sí opcional, para una aclaración
+  extra (ej. "se derivó a otro proveedor").
+
+Tercer estado, **`CERRADA`** (ver [`sql/029_notas_pedido_cerrada.sql`](sql/029_notas_pedido_cerrada.sql)),
 independiente de `VINCULADA` — son dos caminos de cierre distintos, no se pisan entre sí. El botón 🔒
 **"Cerrar"** (solo en una NP `PENDIENTE`, al lado de "🔗 Vincular OC") abre el modal `mCERRARNP`
-(`cerrarNota()`/`confirmarCerrarNota()` en `js/modules/notas-pedido.js`) con un campo de texto opcional
-**"Motivo"** (ej. "se cumplió, entró a stock sin OC") — guardado en `motivo_cierre`, junto con
-`cerrada_en` (timestamp real del cierre). Es **reversible**: una NP `CERRADA` muestra "↩️ Reabrir"
-(`reabrirNota()`, mismo criterio que "Desvincular" para una `VINCULADA` — confirmación directa con
+(`cerrarNota()`/`confirmarCerrarNota()` en `js/modules/notas-pedido.js`), que exige elegir "✅ Se cumplió"
+o "🚫 Se canceló" antes de confirmar (`tipo_cierre`, validado tanto por `required` en los radios como en
+`confirmarCerrarNota()` por las dudas) — guardado junto con el "Motivo/detalle" opcional
+(`motivo_cierre`) y `cerrada_en` (timestamp real del cierre). La lista distingue las dos situaciones con
+badges de colores (`aprobado`/verde para Cumplida, `rechazado`/rojo para Cancelada, mismos colores que ya
+usa el resto del tablero para éxito/fracaso) en vez de un "Cerrada" genérico. Es **reversible**: una NP
+`CERRADA` muestra "↩️ Reabrir" (`reabrirNota()`, mismo criterio que "Desvincular" para una `VINCULADA` —
+confirmación directa con
 `confirm()`, sin modal, porque reabrir no necesita capturar ningún dato nuevo) que la vuelve a
-`PENDIENTE` y borra `motivo_cierre`/`cerrada_en`. El filtro de estado (`np_f_estado`) suma la opción
-"Cerradas", y el resumen de la lista ahora cuenta las tres categorías.
+`PENDIENTE` y borra `tipo_cierre`/`motivo_cierre`/`cerrada_en`. El filtro de estado (`np_f_estado`) suma
+la opción "Cerradas" (agrupa Cumplida y Cancelada), y el resumen de la lista ahora cuenta las tres
+categorías (Pendiente/Vinculada/Cerrada).
 
 ### 8.3 Ítems y PDF
 
@@ -891,8 +901,9 @@ login, ver sección 11 — y `sql/schema.sql` para el estado final), sin RLS (mi
 - `compras_notas_pedido` — `proveedor_nombre` es texto libre (copiado al crear, igual que
   `compras_oc_lineas.proveedor_nombre`) con `proveedor_id` opcional si coincide con una ficha real de
   `compras_proveedores`; no ata la carga a que el proveedor ya exista en el catálogo. `estado` admite
-  `PENDIENTE`/`VINCULADA`/`CERRADA` (ver 8.2); `motivo_cierre`/`cerrada_en` solo se completan en el
-  camino de cierre sin OC, independiente de `orden_compra_vinculada`/`vinculada_en`.
+  `PENDIENTE`/`VINCULADA`/`CERRADA` (ver 8.2); `tipo_cierre` (`CUMPLIDA`/`CANCELADA`)/`motivo_cierre`/
+  `cerrada_en` solo se completan en el camino de cierre sin OC, independiente de
+  `orden_compra_vinculada`/`vinculada_en`.
 
 Es solo para **CIMOMET** (no Co.Mo.Ing) — membrete fijo, sin selector de empresa; decisión del usuario.
 

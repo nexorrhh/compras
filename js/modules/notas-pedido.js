@@ -210,7 +210,7 @@ function filaDetalleNota(n) {
       ${campo('Adjuntos', n.adjuntos)}
       ${campo('Autorizado por', n.revisado_por)}
       ${n.estado === 'VINCULADA' ? `<div><strong>Vinculada a OC:</strong> ${escAttr(n.orden_compra_vinculada || '')}${n.vinculada_en ? ` (${fmt(n.vinculada_en.slice(0, 10))})` : ''}</div>` : ''}
-      ${n.estado === 'CERRADA' ? `<div><strong>Cerrada${n.cerrada_en ? ` (${fmt(n.cerrada_en.slice(0, 10))})` : ''}:</strong> ${escAttr(n.motivo_cierre || 'sin motivo cargado')}</div>` : ''}
+      ${n.estado === 'CERRADA' ? `<div><strong>${n.tipo_cierre === 'CANCELADA' ? 'Cancelada' : n.tipo_cierre === 'CUMPLIDA' ? 'Cumplida' : 'Cerrada'}${n.cerrada_en ? ` (${fmt(n.cerrada_en.slice(0, 10))})` : ''}${n.motivo_cierre ? `:</strong> ${escAttr(n.motivo_cierre)}` : '</strong>'}</div>` : ''}
     </div>`;
 }
 
@@ -239,10 +239,12 @@ function renderLista() {
     const antig = n.estado === 'PENDIENTE' ? `<span class="badge ${claseAntiguedad(dias)}">hace ${dias} día${dias === 1 ? '' : 's'}</span>` : '';
     const estadoBadge = n.estado === 'PENDIENTE' ? '<span class="badge pendiente">Pendiente</span>'
       : n.estado === 'VINCULADA' ? '<span class="badge comp">Vinculada</span>'
+      : n.tipo_cierre === 'CANCELADA' ? '<span class="badge rechazado">Cancelada</span>'
+      : n.tipo_cierre === 'CUMPLIDA' ? '<span class="badge aprobado">Cumplida</span>'
       : '<span class="badge" style="background:var(--bg3);color:var(--muted)">Cerrada</span>';
     const accionVinculo = n.estado === 'PENDIENTE'
       ? `<button class="bsm sto-accion" onclick="window.notasPedido.vincularOC('${n.id}')">🔗 Vincular OC</button>
-         <button class="bsm sto-accion" onclick="window.notasPedido.cerrarNota('${n.id}')" title="Cerrar sin vincular una Orden de Compra — ej. se cumplió pero no hay OC para vincular, se canceló, o se resolvió de otra forma">🔒 Cerrar</button>`
+         <button class="bsm sto-accion" onclick="window.notasPedido.cerrarNota('${n.id}')" title="Cerrar sin vincular una Orden de Compra — para marcarla como cumplida (ej. entró a stock sin OC) o cancelada">🔒 Cerrar</button>`
       : n.estado === 'VINCULADA'
       ? `<button class="bsm sto-accion" onclick="window.notasPedido.desvincular('${n.id}')">Desvincular (OC ${escAttr(n.orden_compra_vinculada || '')})</button>`
       : `<button class="bsm sto-accion" onclick="window.notasPedido.reabrirNota('${n.id}')">↩️ Reabrir</button>`;
@@ -512,6 +514,7 @@ function cerrarNota(id) {
   if (!n) return;
   NP_A_CERRAR = id;
   document.getElementById('mCERRARNP_t').textContent = `🔒 Cerrar NP ${n.numero} (${n.proveedor_nombre})`;
+  document.querySelectorAll('input[name="cnp_tipo"]').forEach(r => { r.checked = false; });
   const motivoInput = document.getElementById('cnp_motivo');
   if (motivoInput) motivoInput.value = '';
   om('mCERRARNP');
@@ -523,17 +526,22 @@ async function confirmarCerrarNota(e) {
   const id = NP_A_CERRAR;
   const n = NOTAS.find(x => x.id === id);
   if (!id || !n) return;
+  // El tipo (Cumplida/Cancelada) es obligatorio — pedido explícito del
+  // usuario, el primer diseño solo tenía un motivo libre y eso no
+  // distinguía claramente las dos situaciones reales.
+  const tipo = document.querySelector('input[name="cnp_tipo"]:checked')?.value || null;
+  if (!tipo) { toast('Elegí si se cumplió o se canceló', 'er'); return; }
   const motivo = (document.getElementById('cnp_motivo')?.value || '').trim() || null;
 
   const { data, error } = await SB.from('compras_notas_pedido')
-    .update({ estado: 'CERRADA', motivo_cierre: motivo, cerrada_en: new Date().toISOString() })
+    .update({ estado: 'CERRADA', tipo_cierre: tipo, motivo_cierre: motivo, cerrada_en: new Date().toISOString() })
     .eq('id', id).select().single();
   if (error) { toast(error.message, 'er'); return; }
 
   NOTAS = NOTAS.map(x => x.id === id ? data : x);
   NP_A_CERRAR = null;
   cm('mCERRARNP');
-  toast(`✓ NP ${n.numero} cerrada`);
+  toast(`✓ NP ${n.numero} cerrada (${tipo === 'CANCELADA' ? 'cancelada' : 'cumplida'})`);
   renderLista();
 }
 
@@ -543,7 +551,7 @@ async function reabrirNota(id) {
   if (!confirm(`¿Reabrir la NP ${n.numero}? Vuelve a quedar Pendiente.`)) return;
 
   const { data, error } = await SB.from('compras_notas_pedido')
-    .update({ estado: 'PENDIENTE', motivo_cierre: null, cerrada_en: null })
+    .update({ estado: 'PENDIENTE', tipo_cierre: null, motivo_cierre: null, cerrada_en: null })
     .eq('id', id).select().single();
   if (error) { toast(error.message, 'er'); return; }
 

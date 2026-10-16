@@ -284,8 +284,11 @@ create table compras_notas_pedido (
   orden_compra_vinculada text,
   vinculada_en timestamptz,
   -- Cerrar sin OC vinculada (ver sql/029_notas_pedido_cerrada.sql y
-  -- CLAUDE.md sección 8.2) — caso real: se pidió una cotización urgente
-  -- que al final no se compró, se canceló o se resolvió de otra forma.
+  -- CLAUDE.md sección 8.2) — caso real: la NP se cumplió igual pero el
+  -- material entró directo a stock sin pasar por una OC formal, o se
+  -- canceló/resolvió de otra forma. tipo_cierre distingue cuál de las
+  -- dos fue, elegido obligatoriamente al cerrar.
+  tipo_cierre text check (tipo_cierre is null or tipo_cierre in ('CUMPLIDA', 'CANCELADA')),
   motivo_cierre text,
   cerrada_en timestamptz,
   created_at timestamptz not null default now()

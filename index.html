@@ -407,10 +407,23 @@
 <div class="modal" style="max-width:420px">
   <span class="mcls" onclick="cm('mCERRARNP')">×</span>
   <div class="mtitle" id="mCERRARNP_t">🔒 Cerrar Nota de Pedido</div>
-  <div class="psub" style="margin:0 0 14px">Para una NP que nunca va a tener una Orden de Compra propia — se cumplió (el material entró a stock directo, sin pasar por una OC formal), se canceló, o se resolvió de otra forma. Se puede reabrir después si hace falta.</div>
+  <div class="psub" style="margin:0 0 14px">Para una NP que nunca va a tener una Orden de Compra propia. Se puede reabrir después si hace falta.</div>
   <form id="fCERRARNP">
-    <div class="fg"><label>Motivo (opcional)</label>
-      <input id="cnp_motivo" autocomplete="off" placeholder="Ej. se cumplió, entró a stock sin OC">
+    <div class="fg">
+      <label>¿Qué pasó? *</label>
+      <div style="display:flex;gap:18px;margin-top:4px">
+        <label style="display:flex;align-items:center;gap:6px;font-weight:400;cursor:pointer">
+          <input type="radio" name="cnp_tipo" value="CUMPLIDA" required style="width:auto"> ✅ Se cumplió <span style="color:var(--muted);font-size:12px">(ej. entró a stock sin OC)</span>
+        </label>
+      </div>
+      <div style="display:flex;gap:18px;margin-top:8px">
+        <label style="display:flex;align-items:center;gap:6px;font-weight:400;cursor:pointer">
+          <input type="radio" name="cnp_tipo" value="CANCELADA" required style="width:auto"> 🚫 Se canceló
+        </label>
+      </div>
+    </div>
+    <div class="fg"><label>Detalle (opcional)</label>
+      <input id="cnp_motivo" autocomplete="off" placeholder="Ej. se derivó a otro proveedor">
     </div>
     <div class="brow"><button type="button" class="btn" onclick="cm('mCERRARNP')">Cancelar</button><button type="submit" class="btn p">🔒 Cerrar</button></div>
   </form>
