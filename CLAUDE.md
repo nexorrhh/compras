@@ -770,8 +770,20 @@ NP `PENDIENTE` muestra hace cuántos días se creó, con el mismo semáforo ámb
 `estadoVencimiento()` en `utils.js` — para que una NP "colgada" salte a la vista en vez de perderse, que
 es justamente el problema que este módulo vino a resolver.
 
-No se distingue "Material" vs "Servicio" como campo propio — decisión del usuario: son pocas NP (Compras
-prefiere siempre que se pueda ir directo a Orden de Compra), no justifica un campo/filtro dedicado.
+**Cerrar una NP sin OC vinculada** (pedido explícito del usuario, 2026-10-16: "quisiera poder cerrar
+nota de pedido ya que a algunas no se le hizo oc" — caso real: una cotización urgente que al final no se
+compró, se canceló, o se resolvió de otra forma sin pasar por una OC formal; la lista de Pendientes se le
+estaba llenando de NP de hace 50+ días que nunca iban a tener una OC real). Tercer estado,
+**`CERRADA`** (ver [`sql/029_notas_pedido_cerrada.sql`](sql/029_notas_pedido_cerrada.sql)), independiente
+de `VINCULADA` — son dos caminos de cierre distintos, no se pisan entre sí. El botón 🔒 **"Cerrar"**
+(solo en una NP `PENDIENTE`, al lado de "🔗 Vincular OC") abre el modal `mCERRARNP`
+(`cerrarNota()`/`confirmarCerrarNota()` en `js/modules/notas-pedido.js`) con un campo de texto opcional
+**"Motivo"** (ej. "se canceló la compra") — guardado en `motivo_cierre`, junto con `cerrada_en`
+(timestamp real del cierre). Es **reversible**: una NP `CERRADA` muestra "↩️ Reabrir"
+(`reabrirNota()`, mismo criterio que "Desvincular" para una `VINCULADA` — confirmación directa con
+`confirm()`, sin modal, porque reabrir no necesita capturar ningún dato nuevo) que la vuelve a
+`PENDIENTE` y borra `motivo_cierre`/`cerrada_en`. El filtro de estado (`np_f_estado`) suma la opción
+"Cerradas", y el resumen de la lista ahora cuenta las tres categorías.
 
 ### 8.3 Ítems y PDF
 
@@ -864,13 +876,17 @@ adelante ya no va a incluir la imagen.
 
 ### 8.4 Modelo de datos
 
-Dos migraciones (ver [`sql/007_notas_pedido.sql`](sql/007_notas_pedido.sql) y
-[`sql/009_entrega_parcial.sql`](sql/009_entrega_parcial.sql) — `sql/008_usuarios.sql` es el login, ver
-sección 11 — y `sql/schema.sql` para el estado final), sin RLS (mismo criterio que el resto de `compras_*`):
+Tres migraciones (ver [`sql/007_notas_pedido.sql`](sql/007_notas_pedido.sql),
+[`sql/009_entrega_parcial.sql`](sql/009_entrega_parcial.sql) y
+[`sql/029_notas_pedido_cerrada.sql`](sql/029_notas_pedido_cerrada.sql) — `sql/008_usuarios.sql` es el
+login, ver sección 11 — y `sql/schema.sql` para el estado final), sin RLS (mismo criterio que el resto de
+`compras_*`):
 
 - `compras_notas_pedido` — `proveedor_nombre` es texto libre (copiado al crear, igual que
   `compras_oc_lineas.proveedor_nombre`) con `proveedor_id` opcional si coincide con una ficha real de
-  `compras_proveedores`; no ata la carga a que el proveedor ya exista en el catálogo.
+  `compras_proveedores`; no ata la carga a que el proveedor ya exista en el catálogo. `estado` admite
+  `PENDIENTE`/`VINCULADA`/`CERRADA` (ver 8.2); `motivo_cierre`/`cerrada_en` solo se completan en el
+  camino de cierre sin OC, independiente de `orden_compra_vinculada`/`vinculada_en`.
 
 Es solo para **CIMOMET** (no Co.Mo.Ing) — membrete fijo, sin selector de empresa; decisión del usuario.
 
@@ -1807,7 +1823,8 @@ tablero-compras/
     ├── 025_proveedores_tango_api.sql
     ├── 026_proveedores_sync_tango.sql
     ├── 027_cotizaciones_precio_alternativo.sql
-    └── 028_cotizaciones_confirmado_en.sql
+    ├── 028_cotizaciones_confirmado_en.sql
+    └── 029_notas_pedido_cerrada.sql
 ```
 
 > `porteria.html` y `solicitud.html` son entry points separados (audiencias distintas: portero de
@@ -2388,9 +2405,13 @@ Todavía sin decidir:
     `confirmado_en` a `compras_cotizaciones_items` (con backfill aproximado para lo ya confirmado) y
     alimenta el módulo Consolidado de Compras (ver sección 14) (**todavía falta correr en la base
     real** — hasta que se corra, el módulo Consolidado no va a mostrar ninguna compra confirmada).
-28. Probar el circuito completo: pedir vehículo (solicitud.html) → aprobar y asignar (index.html) →
+28. Correr [`sql/029_notas_pedido_cerrada.sql`](sql/029_notas_pedido_cerrada.sql) — agrega el estado
+    `CERRADA` (+ `motivo_cierre`/`cerrada_en`) a `compras_notas_pedido` para poder cerrar una NP sin
+    vincularla a una OC (ver sección 8.2) (**todavía falta correr en la base real** — hasta que se
+    corra, el botón "🔒 Cerrar" va a fallar con un error de constraint).
+29. Probar el circuito completo: pedir vehículo (solicitud.html) → aprobar y asignar (index.html) →
    registrar salida/retorno (porteria.html) → ver el movimiento reflejado en el dashboard.
-29. Evaluar RLS (Row Level Security) en las tablas `compras_*` — hoy cualquiera con el link de
+30. Evaluar RLS (Row Level Security) en las tablas `compras_*` — hoy cualquiera con el link de
    `solicitud.html`/`porteria.html` puede leer/escribir todas las tablas, sin ningún login de por medio.
-30. Ir completando los módulos `[TBD]` de la sección 3 a medida que los necesites, usando el módulo
+31. Ir completando los módulos `[TBD]` de la sección 3 a medida que los necesites, usando el módulo
    Flota (carpeta `js/modules/`) como plantilla.

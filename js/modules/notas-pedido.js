@@ -210,6 +210,7 @@ function filaDetalleNota(n) {
       ${campo('Adjuntos', n.adjuntos)}
       ${campo('Autorizado por', n.revisado_por)}
       ${n.estado === 'VINCULADA' ? `<div><strong>Vinculada a OC:</strong> ${escAttr(n.orden_compra_vinculada || '')}${n.vinculada_en ? ` (${fmt(n.vinculada_en.slice(0, 10))})` : ''}</div>` : ''}
+      ${n.estado === 'CERRADA' ? `<div><strong>Cerrada${n.cerrada_en ? ` (${fmt(n.cerrada_en.slice(0, 10))})` : ''}:</strong> ${escAttr(n.motivo_cierre || 'sin motivo cargado')}</div>` : ''}
     </div>`;
 }
 
@@ -225,7 +226,8 @@ function renderLista() {
   if (resumen) {
     const pend = NOTAS.filter(n => n.estado === 'PENDIENTE').length;
     const vinc = NOTAS.filter(n => n.estado === 'VINCULADA').length;
-    resumen.textContent = `${pend} pendiente${pend === 1 ? '' : 's'} · ${vinc} vinculada${vinc === 1 ? '' : 's'}`;
+    const cerr = NOTAS.filter(n => n.estado === 'CERRADA').length;
+    resumen.textContent = `${pend} pendiente${pend === 1 ? '' : 's'} · ${vinc} vinculada${vinc === 1 ? '' : 's'} · ${cerr} cerrada${cerr === 1 ? '' : 's'}`;
   }
 
   const tb = document.getElementById('t-np-lista');
@@ -235,10 +237,15 @@ function renderLista() {
   tb.innerHTML = lista.map(n => {
     const dias = diasDesde(n.fecha);
     const antig = n.estado === 'PENDIENTE' ? `<span class="badge ${claseAntiguedad(dias)}">hace ${dias} día${dias === 1 ? '' : 's'}</span>` : '';
-    const estadoBadge = n.estado === 'PENDIENTE' ? '<span class="badge pendiente">Pendiente</span>' : '<span class="badge comp">Vinculada</span>';
+    const estadoBadge = n.estado === 'PENDIENTE' ? '<span class="badge pendiente">Pendiente</span>'
+      : n.estado === 'VINCULADA' ? '<span class="badge comp">Vinculada</span>'
+      : '<span class="badge" style="background:var(--bg3);color:var(--muted)">Cerrada</span>';
     const accionVinculo = n.estado === 'PENDIENTE'
-      ? `<button class="bsm sto-accion" onclick="window.notasPedido.vincularOC('${n.id}')">🔗 Vincular OC</button>`
-      : `<button class="bsm sto-accion" onclick="window.notasPedido.desvincular('${n.id}')">Desvincular (OC ${escAttr(n.orden_compra_vinculada || '')})</button>`;
+      ? `<button class="bsm sto-accion" onclick="window.notasPedido.vincularOC('${n.id}')">🔗 Vincular OC</button>
+         <button class="bsm sto-accion" onclick="window.notasPedido.cerrarNota('${n.id}')" title="Cerrar sin vincular una Orden de Compra — para cotizaciones que no terminaron comprándose">🔒 Cerrar</button>`
+      : n.estado === 'VINCULADA'
+      ? `<button class="bsm sto-accion" onclick="window.notasPedido.desvincular('${n.id}')">Desvincular (OC ${escAttr(n.orden_compra_vinculada || '')})</button>`
+      : `<button class="bsm sto-accion" onclick="window.notasPedido.reabrirNota('${n.id}')">↩️ Reabrir</button>`;
     return `<tr class="oc-row">
       <td><span class="oc-chevron">▸</span> ${n.numero}</td>
       <td>${fmt(n.fecha)}</td>
@@ -493,6 +500,58 @@ async function desvincular(id) {
   renderLista();
 }
 
+// Cerrar una NP sin que tenga una OC vinculada — caso real pedido por
+// el usuario: se mandó a cotizar algo urgente pero al final no se
+// compró, se canceló, o se resolvió de otra forma sin pasar por una OC
+// formal. Distinto de "Vincular OC": acá nunca hay una orden de compra
+// de por medio, solo se cierra el seguimiento de esa NP puntual.
+let NP_A_CERRAR = null;
+
+function cerrarNota(id) {
+  const n = NOTAS.find(x => x.id === id);
+  if (!n) return;
+  NP_A_CERRAR = id;
+  document.getElementById('mCERRARNP_t').textContent = `🔒 Cerrar NP ${n.numero} (${n.proveedor_nombre})`;
+  const motivoInput = document.getElementById('cnp_motivo');
+  if (motivoInput) motivoInput.value = '';
+  om('mCERRARNP');
+  motivoInput?.focus();
+}
+
+async function confirmarCerrarNota(e) {
+  e.preventDefault();
+  const id = NP_A_CERRAR;
+  const n = NOTAS.find(x => x.id === id);
+  if (!id || !n) return;
+  const motivo = (document.getElementById('cnp_motivo')?.value || '').trim() || null;
+
+  const { data, error } = await SB.from('compras_notas_pedido')
+    .update({ estado: 'CERRADA', motivo_cierre: motivo, cerrada_en: new Date().toISOString() })
+    .eq('id', id).select().single();
+  if (error) { toast(error.message, 'er'); return; }
+
+  NOTAS = NOTAS.map(x => x.id === id ? data : x);
+  NP_A_CERRAR = null;
+  cm('mCERRARNP');
+  toast(`✓ NP ${n.numero} cerrada`);
+  renderLista();
+}
+
+async function reabrirNota(id) {
+  const n = NOTAS.find(x => x.id === id);
+  if (!n) return;
+  if (!confirm(`¿Reabrir la NP ${n.numero}? Vuelve a quedar Pendiente.`)) return;
+
+  const { data, error } = await SB.from('compras_notas_pedido')
+    .update({ estado: 'PENDIENTE', motivo_cierre: null, cerrada_en: null })
+    .eq('id', id).select().single();
+  if (error) { toast(error.message, 'er'); return; }
+
+  NOTAS = NOTAS.map(x => x.id === id ? data : x);
+  toast('Reabierta — vuelve a estar Pendiente');
+  renderLista();
+}
+
 async function eliminarNota(id) {
   const n = NOTAS.find(x => x.id === id);
   if (!n) return;
@@ -714,9 +773,10 @@ export function init() {
   document.getElementById('np_f_estado')?.addEventListener('change', renderLista);
   document.getElementById('np_f_q')?.addEventListener('input', renderLista);
   document.getElementById('voc_f_q')?.addEventListener('input', renderListaVincularOC);
+  document.getElementById('fCERRARNP')?.addEventListener('submit', confirmarCerrarNota);
   initExpandCollapse('t-np-lista');
   initExpandCollapse('voc_lista');
   initAutocompleteProveedor();
 
-  window.notasPedido = { descargarPdf, vincularOC, confirmarVincularOC, desvincular, eliminarNota };
+  window.notasPedido = { descargarPdf, vincularOC, confirmarVincularOC, desvincular, cerrarNota, reabrirNota, eliminarNota };
 }

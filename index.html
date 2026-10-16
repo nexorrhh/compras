@@ -402,6 +402,20 @@
   <div class="brow"><button type="button" class="btn" onclick="cm('mVINCULAROC')">Cancelar</button></div>
 </div></div>
 
+<!-- ============ MODAL — CERRAR NOTA DE PEDIDO SIN OC ============ -->
+<div class="modal-ov" id="mCERRARNP">
+<div class="modal" style="max-width:420px">
+  <span class="mcls" onclick="cm('mCERRARNP')">×</span>
+  <div class="mtitle" id="mCERRARNP_t">🔒 Cerrar Nota de Pedido</div>
+  <div class="psub" style="margin:0 0 14px">Para cotizaciones que no terminaron comprándose (se canceló, se resolvió de otra forma) — no hace falta vincular ninguna Orden de Compra. Se puede reabrir después si hace falta.</div>
+  <form id="fCERRARNP">
+    <div class="fg"><label>Motivo (opcional)</label>
+      <input id="cnp_motivo" autocomplete="off" placeholder="Ej. se canceló la compra">
+    </div>
+    <div class="brow"><button type="button" class="btn" onclick="cm('mCERRARNP')">Cancelar</button><button type="submit" class="btn p">🔒 Cerrar</button></div>
+  </form>
+</div></div>
+
 <header>
   <div class="logo"><div class="logo-icon">🛒</div><span>Tablero de Compras</span><span class="hbadge">CIMOMET</span></div>
   <div style="display:flex;align-items:center;gap:8px">
@@ -868,6 +882,7 @@
       <select id="np_f_estado">
         <option value="PENDIENTE">Pendientes</option>
         <option value="VINCULADA">Vinculadas</option>
+        <option value="CERRADA">Cerradas</option>
         <option value="">Todas</option>
       </select>
       <input placeholder="Buscar proveedor..." id="np_f_q">

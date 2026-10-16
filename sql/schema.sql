@@ -280,9 +280,14 @@ create table compras_notas_pedido (
   lugar_entrega text,
   adjuntos text,
   revisado_por text,
-  estado text not null default 'PENDIENTE' check (estado in ('PENDIENTE', 'VINCULADA')),
+  estado text not null default 'PENDIENTE' check (estado in ('PENDIENTE', 'VINCULADA', 'CERRADA')),
   orden_compra_vinculada text,
   vinculada_en timestamptz,
+  -- Cerrar sin OC vinculada (ver sql/029_notas_pedido_cerrada.sql y
+  -- CLAUDE.md sección 8.2) — caso real: se pidió una cotización urgente
+  -- que al final no se compró, se canceló o se resolvió de otra forma.
+  motivo_cierre text,
+  cerrada_en timestamptz,
   created_at timestamptz not null default now()
 );
 
