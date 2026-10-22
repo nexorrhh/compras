@@ -51,7 +51,17 @@ let OT_ACTUAL = null; // OT madre que se está viendo en el detalle; null = vist
 let OT_TAB = 'resumen';
 let MOSTRAR_ARCHIVADAS = false; // checkbox de "Por OT" — oculta archivadas por defecto
 
+// Costo realizado — cruza cada artículo de Materiales OT contra el
+// último precio ganador cargado en Cotizaciones para ese cod_articulo
+// (cualquier solicitud, no solo las de esta OT). Lazy: recién se trae
+// la primera vez que se abre la sub-pestaña "💰 Costo" de alguna OT, no
+// en cada visita al módulo (ver 2026-10-22, pedido explícito del
+// usuario — "por ahora lo mismo local, lo que tenemos").
+let PRECIO_POR_ARTICULO = null; // cod_articulo -> {precio_unitario, moneda, umc, proveedor_nombre, fecha}
+
 const numFmt = (n, dec = 2) => Number(n || 0).toLocaleString('es-AR', { maximumFractionDigits: dec });
+const SIMBOLO = m => m === 'USD' ? 'U$S' : '$';
+const fmtMonto = (n, moneda) => SIMBOLO(moneda) + (moneda === 'USD' ? ' ' : '') + numFmt(n, 2);
 function setTxt(id, v) { const el = document.getElementById(id); if (el) el.textContent = v; }
 
 // Capataz trae el N° de OT con ceros a la izquierda ("000000000596") —
@@ -326,6 +336,62 @@ function kgPorRubro(items, campo = 'comprado') {
   return porRubro;
 }
 
+// ------------------------------------------------------------
+// Costo realizado — cruza por cod_articulo contra Cotizaciones. Ver
+// nota de PRECIO_POR_ARTICULO más arriba y CLAUDE.md sección 13.9.
+// ------------------------------------------------------------
+async function cargarPreciosCotizaciones() {
+  if (PRECIO_POR_ARTICULO) return PRECIO_POR_ARTICULO;
+  const [{ data: items, error: e1 }, { data: precios, error: e2 }, { data: cots, error: e3 }, { data: provs, error: e4 }] = await Promise.all([
+    fetchAll(() => SB.from('compras_cotizaciones_items').select('id,cotizacion_id,cod_articulo,umc,ganador_proveedor_id')),
+    fetchAll(() => SB.from('compras_cotizaciones_precios').select('item_id,proveedor_id,precio_unitario,moneda')),
+    fetchAll(() => SB.from('compras_cotizaciones').select('id,created_at')),
+    fetchAll(() => SB.from('compras_proveedores').select('id,nombre')),
+  ]);
+  const error = e1 || e2 || e3 || e4;
+  if (error) { toast(error.message, 'er'); PRECIO_POR_ARTICULO = new Map(); return PRECIO_POR_ARTICULO; }
+
+  const precioPorClave = new Map((precios || []).map(p => [`${p.item_id}|${p.proveedor_id}`, p]));
+  const fechaCot = new Map((cots || []).map(c => [c.id, c.created_at || '']));
+  const nombreProv = new Map((provs || []).map(p => [p.id, p.nombre]));
+
+  // Un mismo artículo puede haberse cotizado varias veces, en distintas
+  // solicitudes — se toma el precio de la cotización más reciente (por
+  // fecha de creación de la solicitud) que tenga un ganador con precio
+  // cargado, no un promedio ni el más bajo histórico (mismo criterio de
+  // "no inventar" de siempre: es el dato real más actual que hay).
+  const mapa = new Map();
+  for (const it of (items || [])) {
+    if (!it.ganador_proveedor_id) continue;
+    const precio = precioPorClave.get(`${it.id}|${it.ganador_proveedor_id}`);
+    if (!precio || precio.precio_unitario == null) continue;
+    const fecha = fechaCot.get(it.cotizacion_id) || '';
+    const actual = mapa.get(it.cod_articulo);
+    if (!actual || fecha > actual.fecha) {
+      mapa.set(it.cod_articulo, {
+        precio_unitario: Number(precio.precio_unitario),
+        moneda: precio.moneda,
+        umc: it.umc,
+        proveedor_nombre: nombreProv.get(it.ganador_proveedor_id) || '(?)',
+        fecha,
+      });
+    }
+  }
+  PRECIO_POR_ARTICULO = mapa;
+  return mapa;
+}
+
+// Mismo artículo del mismo catálogo de Capataz, así que la unidad de
+// compra debería coincidir entre los dos módulos — si no coincide, no
+// se inventa una conversión, se marca aparte (ver renderCosto()).
+function unidadesCompatibles(a, b) {
+  return (a || '').trim().toUpperCase() === (b || '').trim().toUpperCase();
+}
+
+function chipsMonto(mapa) {
+  return [...mapa.entries()].map(([m, v]) => fmtMonto(v, m)).join(' + ') || '–';
+}
+
 function estadisticasOT(items) {
   const { tot } = sumarKg(items);
   const nOK = items.filter(it => (it.estado || '').toUpperCase() === 'OK').length;
@@ -567,8 +633,10 @@ function mostrarTabOT(tab) {
   document.querySelectorAll('#mro_det_tabs .subtab').forEach(b => b.classList.toggle('active', b.dataset.tab === tab));
   const pr = document.getElementById('mro_det_panel_resumen');
   const pd = document.getElementById('mro_det_panel_detalle');
+  const pc = document.getElementById('mro_det_panel_costo');
   if (pr) pr.style.display = tab === 'resumen' ? '' : 'none';
   if (pd) pd.style.display = tab === 'detalle' ? '' : 'none';
+  if (pc) pc.style.display = tab === 'costo' ? '' : 'none';
 }
 
 function renderDetalle() {
@@ -641,6 +709,84 @@ function renderDetalle() {
   }
 
   mostrarTabOT(OT_TAB);
+  // Si ya se había entrado a "Costo" antes (en esta misma OT o en otra)
+  // los precios ya están en caché — alcanza con repintar la tabla. Si
+  // todavía no se cargaron ni una vez, el click en la sub-pestaña (ver
+  // init()) es el que dispara cargarPreciosCotizaciones().
+  if (OT_TAB === 'costo' && PRECIO_POR_ARTICULO) renderCosto();
+}
+
+// Valoriza los ítems de la OT actual contra PRECIO_POR_ARTICULO —
+// "Costo realizado" (Comprado × precio) y "Ahorro por stock asignado"
+// (Asignado × precio: lo que hubiera costado comprar lo que en cambio
+// se cubrió con stock existente — no es un gasto real, es la referencia
+// de cuánto NO se gastó). Pedido explícito del usuario, 2026-10-22.
+function renderCosto() {
+  if (OT_ACTUAL === null || !PRECIO_POR_ARTICULO) return;
+  const items = agruparPorOTMadre().get(OT_ACTUAL) || [];
+  const tc = Number((document.getElementById('mroc_tipo_cambio')?.value || '').trim().replace(',', '.')) || null;
+
+  const costoPorMoneda = new Map();
+  const ahorroPorMoneda = new Map();
+  let nValorizados = 0, nSinPrecio = 0;
+
+  const filas = items.map(it => {
+    const precioInfo = PRECIO_POR_ARTICULO.get(it.cod_articulo);
+    if (!precioInfo || !unidadesCompatibles(it.ume, precioInfo.umc)) {
+      nSinPrecio++;
+      return { it, precioInfo: null, motivo: precioInfo ? 'unidad distinta' : 'sin cotización' };
+    }
+    nValorizados++;
+    const costoComprado = Number(it.comprado || 0) * precioInfo.precio_unitario;
+    const ahorroStock = Number(it.cant_asig || 0) * precioInfo.precio_unitario;
+    costoPorMoneda.set(precioInfo.moneda, (costoPorMoneda.get(precioInfo.moneda) || 0) + costoComprado);
+    ahorroPorMoneda.set(precioInfo.moneda, (ahorroPorMoneda.get(precioInfo.moneda) || 0) + ahorroStock);
+    return { it, precioInfo, costoComprado, ahorroStock };
+  });
+
+  setTxt('mroc_k_costo', chipsMonto(costoPorMoneda));
+  setTxt('mroc_k_ahorro', chipsMonto(ahorroPorMoneda));
+  setTxt('mroc_k_valorizados', nValorizados);
+  setTxt('mroc_k_sinprecio', nSinPrecio);
+
+  const combDiv = id => document.getElementById(id);
+  const combinarUSD = mapa => [...mapa.entries()].reduce((acc, [m, v]) => acc + (m === 'USD' ? v * tc : v), 0);
+  const costoComb = combDiv('mroc_k_costo_comb');
+  const ahorroComb = combDiv('mroc_k_ahorro_comb');
+  if (costoComb) costoComb.textContent = (tc && costoPorMoneda.size > 1) ? `≈ ${fmtMonto(combinarUSD(costoPorMoneda), 'ARS')} combinado` : '';
+  if (ahorroComb) ahorroComb.textContent = (tc && ahorroPorMoneda.size > 1) ? `≈ ${fmtMonto(combinarUSD(ahorroPorMoneda), 'ARS')} combinado` : '';
+
+  const tbody = document.getElementById('t-mro-costo');
+  if (tbody) {
+    const filasHtml = filas
+      .slice()
+      .sort((a, b) => (a.it.descripcion || '').localeCompare(b.it.descripcion || '', 'es'))
+      .map(f => {
+        const it = f.it;
+        if (!f.precioInfo) {
+          return `<tr style="opacity:.6">
+            <td>${escAttr(it.cod_articulo)}</td>
+            <td>${escAttr(it.descripcion || '')}</td>
+            <td>${escAttr(it.agrupacion || '–')}</td>
+            <td style="text-align:right">${numFmt(it.comprado)} ${escAttr(it.ume || '')}</td>
+            <td colspan="2" style="text-align:center;color:var(--muted)" title="${it.ume ? `Esta OT lo mide en ${escAttr(it.ume)}` : ''}">${f.motivo === 'unidad distinta' ? '⚠️ unidad distinta' : 'Sin cotización'}</td>
+            <td style="text-align:right">${numFmt(it.cant_asig)} ${escAttr(it.ume || '')}</td>
+            <td style="text-align:center;color:var(--muted)">–</td>
+          </tr>`;
+        }
+        return `<tr>
+          <td>${escAttr(it.cod_articulo)}</td>
+          <td>${escAttr(it.descripcion || '')}</td>
+          <td>${escAttr(it.agrupacion || '–')}</td>
+          <td style="text-align:right">${numFmt(it.comprado)} ${escAttr(it.ume || '')}</td>
+          <td style="text-align:right" title="Proveedor ganador: ${escAttr(f.precioInfo.proveedor_nombre)}">${fmtMonto(f.precioInfo.precio_unitario, f.precioInfo.moneda)}</td>
+          <td style="text-align:right">${fmtMonto(f.costoComprado, f.precioInfo.moneda)}</td>
+          <td style="text-align:right">${numFmt(it.cant_asig)} ${escAttr(it.ume || '')}</td>
+          <td style="text-align:right">${fmtMonto(f.ahorroStock, f.precioInfo.moneda)}</td>
+        </tr>`;
+      }).join('');
+    tbody.innerHTML = filasHtml || `<tr><td colspan="8" style="text-align:center;padding:18px;color:var(--muted)">Sin ítems</td></tr>`;
+  }
 }
 
 // Solo lista los rubros que efectivamente aparecen en ESTA OT (mismo
@@ -788,12 +934,18 @@ export function init() {
     const card = e.target.closest('.ot-card');
     if (card) abrirDetalle(card.dataset.ot);
   });
-  document.getElementById('mro_det_tabs')?.addEventListener('click', e => {
+  document.getElementById('mro_det_tabs')?.addEventListener('click', async e => {
     const btn = e.target.closest('.subtab');
-    if (btn) mostrarTabOT(btn.dataset.tab);
+    if (!btn) return;
+    mostrarTabOT(btn.dataset.tab);
+    if (btn.dataset.tab === 'costo' && !PRECIO_POR_ARTICULO) {
+      await cargarPreciosCotizaciones();
+      if (OT_TAB === 'costo') renderCosto(); // por si cambió de tab mientras cargaba
+    }
   });
   document.getElementById('mrod_f_rubro')?.addEventListener('change', renderDetalle);
   document.getElementById('mrod_f_sinmov')?.addEventListener('change', renderDetalle);
+  document.getElementById('mroc_tipo_cambio')?.addEventListener('input', () => { if (PRECIO_POR_ARTICULO) renderCosto(); });
 
   document.getElementById('mro_file')?.addEventListener('change', e => {
     const file = e.target.files[0];

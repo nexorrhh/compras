@@ -1168,6 +1168,7 @@
     <div class="subtabs" id="mro_det_tabs" style="margin:10px 0 16px">
       <button type="button" class="subtab active" data-tab="resumen">📊 Resumen</button>
       <button type="button" class="subtab" data-tab="detalle">📋 Detalle</button>
+      <button type="button" class="subtab" data-tab="costo">💰 Costo</button>
     </div>
 
     <div id="mro_det_panel_resumen">
@@ -1196,6 +1197,24 @@
       <div class="tw"><table>
         <thead><tr><th>OT</th><th>Código</th><th>Descripción</th><th>Rubro</th><th>Unidad</th><th>Cotiz. (kg)</th><th>Plan. (kg)</th><th>Solic. (kg)</th><th>Comprado (kg)</th><th>Asig. (kg)</th><th>Recibido (kg)</th><th>Entregado (kg)</th><th>Estado</th></tr></thead>
         <tbody id="t-mro-detalle"></tbody>
+      </table></div>
+    </div>
+
+    <div id="mro_det_panel_costo" style="display:none">
+      <div class="psub" style="margin:0 0 8px">Precio = el último precio ganador cargado en Cotizaciones para ese artículo (cualquier solicitud, no solo las de esta OT) — un artículo que nunca se cotizó, o que quedó con una unidad distinta a la de acá, queda sin precio: no se inventa nada. Primera versión para ver cómo queda — se va a ir ajustando.</div>
+      <div class="kpi-grid">
+        <div class="kpi"><div class="kpi-val text-green" id="mroc_k_costo">–</div><div class="kpi-lbl">Costo realizado (comprado)</div><div class="psub" id="mroc_k_costo_comb" style="margin:2px 0 0;font-size:11px"></div></div>
+        <div class="kpi"><div class="kpi-val text-accent" id="mroc_k_ahorro">–</div><div class="kpi-lbl">Ahorro por stock asignado</div><div class="psub" id="mroc_k_ahorro_comb" style="margin:2px 0 0;font-size:11px"></div></div>
+        <div class="kpi"><div class="kpi-val" id="mroc_k_valorizados">–</div><div class="kpi-lbl">Ítems valorizados</div></div>
+        <div class="kpi"><div class="kpi-val text-yellow" id="mroc_k_sinprecio">–</div><div class="kpi-lbl">Ítems sin precio</div></div>
+      </div>
+      <div class="fg" style="max-width:220px">
+        <label>Tipo de cambio (referencia, no se guarda)</label>
+        <input id="mroc_tipo_cambio" inputmode="decimal" placeholder="ej: 1450">
+      </div>
+      <div class="tw"><table>
+        <thead><tr><th>Código</th><th>Descripción</th><th>Rubro</th><th>Comprado</th><th>Precio unit.</th><th>Costo comprado</th><th>Asignado</th><th>Ahorro stock</th></tr></thead>
+        <tbody id="t-mro-costo"></tbody>
       </table></div>
     </div>
   </div>

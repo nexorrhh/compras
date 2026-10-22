@@ -2104,7 +2104,8 @@ Mismo patrón de nav colapsable que el resto ("📐 Materiales OT ▾"):
   es de la OT madre misma — pedido explícito del usuario para poder rastrear el origen de cada material
   sin tener que desarmar la agrupación). El Detalle suma un filtro de **rubro** (`mrod_f_rubro`, solo
   lista los rubros presentes en ESTA OT, mismo criterio que `cot_f_grupo` en Cotizaciones) y el checkbox
-  **"Ocultar ítems sin movimiento"** (`mrod_f_sinmov`, tildado por defecto, ver más abajo).
+  **"Ocultar ítems sin movimiento"** (`mrod_f_sinmov`, tildado por defecto, ver más abajo). Una tercera
+  sub-pestaña, **💰 Costo**, valoriza esos mismos ítems cruzando contra Cotizaciones — ver 13.9.
 - **Agrupar OT** (`materot-grupos`) — administración de la relación OT adicional → OT madre (ver 13.3).
 
 **Revisión exhaustiva de un archivo real y "qué más se puede armar"** (pedido explícito del usuario,
@@ -2186,11 +2187,51 @@ se pierde nada, solo deja de usarse. El módulo ya no la lee ni la escribe.
   (Venta y Compras → Movimientos → Gestión personalizada de ventas y compras) aclarando "la vista por
   OT" — no se confirmó con el usuario el nombre exacto de esa variante dentro de Capataz, revisar el
   texto cuando lo use de verdad por primera vez.
-- **Sin vínculo con Cotizaciones ni con el módulo OT todavía**: aunque ambos terminan hablando de
-  compras por OT, son dos fuentes de datos distintas (Cotizaciones/OT no traen Cotizado/Planificado/
-  Asignado/Recibido/Entregado; este archivo no pasa por el circuito de invitar proveedores/comparar
-  precios) — unificarlos podría evaluarse más adelante si hiciera falta, no se pidió para esta primera
-  versión.
+- **Sin vínculo con el módulo OT todavía**: ambos terminan hablando de compras por OT pero son dos
+  fuentes de datos distintas (OT no trae Cotizado/Planificado/Asignado/Recibido/Entregado) —
+  unificarlos podría evaluarse más adelante si hiciera falta, no se pidió para esta primera versión.
+  Con **Cotizaciones** sí hay un vínculo, agregado el 2026-10-22 — ver 13.9.
+
+### 13.9 Costo realizado — cruce con Cotizaciones
+
+Pedido explícito del usuario (2026-10-22): "ponerle precio a cada uno de los ítems... armar un resumen
+de costo realizado de cada OT... determinar el costo realizado del OT en materiales, y también que me
+pueda decir cuánto me ahorré sacando de stock". Antes de construirlo se conversó el criterio (ninguna de
+las dos preguntas tenía una respuesta obvia) y el usuario confirmó: **"por ahora lo mismo local, lo que
+tenemos, y en el caso que no tenga el precio, no se lo pongamos... para ver cómo queda"** — una primera
+versión simple, explícitamente provisoria ("después iremos ajustando").
+
+- **De dónde sale el precio**: Materiales OT no tiene precios propios — se cruza cada `cod_articulo` de
+  la OT contra `compras_cotizaciones_items`/`compras_cotizaciones_precios` (**de todas las solicitudes de
+  Cotizaciones, no solo las de esa OT**), buscando el precio del proveedor **ganador**
+  (`ganador_proveedor_id`) de la cotización donde ese artículo aparezca. Un mismo artículo puede haberse
+  cotizado varias veces en solicitudes distintas — se toma la **más reciente** (por
+  `compras_cotizaciones.created_at`), no un promedio ni la más barata histórica, mismo criterio de "no
+  inventar, usar el dato real más actual" que el resto del tablero. `cargarPreciosCotizaciones()` en
+  `js/modules/materot.js` arma este mapa `cod_articulo -> precio` una sola vez (**lazy**, recién al
+  entrar por primera vez a la sub-pestaña "💰 Costo" de alguna OT, no en cada visita al módulo) y lo
+  cachea en memoria para el resto de la sesión.
+- **Un artículo que nunca se cotizó queda "Sin cotización", sin precio inventado** — la fila sigue
+  apareciendo en la tabla (con el Comprado/Asignado reales) pero las columnas de costo quedan vacías, a
+  propósito, para no ensuciar los totales con un número inventado.
+- **Chequeo de unidad**: la unidad de compra en Cotizaciones (`umc`) y la unidad del artículo en
+  Materiales OT (`ume`) deberían coincidir (mismo artículo del mismo catálogo de Capataz) — si no
+  coinciden (texto distinto), tampoco se calcula el costo, se marca "⚠️ unidad distinta" en vez de
+  multiplicar cantidades que no son comparables.
+- **Costo realizado (Comprado)** = `comprado × precio` (en la unidad nativa del artículo, `ume` — NO el
+  kg equivalente que usa el resto del módulo, ver 13.2 — porque el precio de Cotizaciones está cotizado
+  por esa misma unidad de compra). **Ahorro por stock asignado** = `cant_asig × precio` — no es un gasto
+  real, es la referencia de cuánto hubiera costado comprar lo que en cambio se cubrió con stock
+  existente. Las dos cosas se muestran **separadas**, nunca sumadas entre sí (mezclarlas confundiría
+  gasto real con valor de inventario que ya se tenía).
+- **Monedas**: se agrupan por separado (ARS/USD, mismo criterio de "no mezclar" de todo el tablero, ver
+  9.2 punto 7) con el mismo patrón de **"Tipo de cambio" de referencia** que ya usa Cotizaciones/
+  Consolidado (`mroc_tipo_cambio`, no se guarda en ningún lado) para mostrar un total combinado en pesos
+  si hace falta.
+- **Alcance de esta primera versión**: solo vive en la sub-pestaña "💰 Costo" de **cada OT puntual**
+  (`renderCosto()`) — todavía no hay un total agregado en el Dashboard del módulo, a propósito, para
+  poder revisar primero cómo da por OT antes de sumarlo todo. Horas de mano de obra quedan afuera
+  (pedido explícito del usuario, "por el momento creo que avanzamos solamente con los materiales").
 
 ## 14. Módulo: Consolidado de Compras `[DETALLADO]`
 
