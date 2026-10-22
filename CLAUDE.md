@@ -2214,16 +2214,26 @@ versión simple, explícitamente provisoria ("después iremos ajustando").
 - **Un artículo que nunca se cotizó queda "Sin cotización", sin precio inventado** — la fila sigue
   apareciendo en la tabla (con el Comprado/Asignado reales) pero las columnas de costo quedan vacías, a
   propósito, para no ensuciar los totales con un número inventado.
-- **Chequeo de unidad**: la unidad de compra en Cotizaciones (`umc`) y la unidad del artículo en
-  Materiales OT (`ume`) deberían coincidir (mismo artículo del mismo catálogo de Capataz) — si no
-  coinciden (texto distinto), tampoco se calcula el costo, se marca "⚠️ unidad distinta" en vez de
-  multiplicar cantidades que no son comparables.
-- **Costo realizado (Comprado)** = `comprado × precio` (en la unidad nativa del artículo, `ume` — NO el
-  kg equivalente que usa el resto del módulo, ver 13.2 — porque el precio de Cotizaciones está cotizado
-  por esa misma unidad de compra). **Ahorro por stock asignado** = `cant_asig × precio` — no es un gasto
-  real, es la referencia de cuánto hubiera costado comprar lo que en cambio se cubrió con stock
-  existente. Las dos cosas se muestran **separadas**, nunca sumadas entre sí (mezclarlas confundiría
-  gasto real con valor de inventario que ya se tenía).
+- **Chequeo de unidad — siempre KG cuando Cotizaciones cotiza por KG** (corregido 2026-10-22, pedido
+  explícito del usuario tras ver casi todos los ítems de perfiles/ángulos marcados "⚠️ unidad distinta":
+  "siempre se tiene que tomar el KG como unidad de medida"). La primera versión exigía que `umc`
+  (Cotizaciones) y `ume` (Materiales OT) coincidieran como texto — pero perfiles/chapas/ángulos se
+  cotizan en Cotizaciones por **KG** (ver 9.1: "kg para perfiles/chapas"), mientras que Materiales OT a
+  veces los mide nativamente en `MTS`/`MT2` (longitud/superficie) — con ese chequeo, prácticamente
+  cualquier perfil o ángulo quedaba "sin costear" aunque sí tenía precio cargado, porque `ume` y `umc`
+  nunca iban a coincidir como texto para ese artículo. `cantidadParaCosto()` en `js/modules/materot.js`
+  ahora distingue: si el precio ganador está cotizado en `KGS`, se usa siempre el **kg equivalente** del
+  ítem (`kgsItem()`, el mismo que ya usa toda la pestaña Detalle — ver 13.2) para Comprado/Asignado, sin
+  importar en qué unidad lo mida esta OT — es el mismo peso físico, no una conversión inventada. Solo si
+  el precio está en otra unidad (`UNI`/`LTS`, ej. bulonería/pintura) se sigue exigiendo que coincida con
+  la unidad nativa del ítem (`ume === umc`), usando la cantidad nativa como antes — ahí no hay un
+  equivalente en kg que tenga sentido multiplicar contra un precio por unidad/litro. El "⚠️ unidad
+  distinta" queda como aviso real para ese caso residual, no como el estado por defecto.
+- **Costo realizado (Comprado)** = cantidad (en KG si el precio está cotizado en KG, nativa en caso
+  contrario — ver arriba) `× precio`. **Ahorro por stock asignado** = cantidad (misma regla) `× precio`
+  — no es un gasto real, es la referencia de cuánto hubiera costado comprar lo que en cambio se cubrió
+  con stock existente. Las dos cosas se muestran **separadas**, nunca sumadas entre sí (mezclarlas
+  confundiría gasto real con valor de inventario que ya se tenía).
 - **Monedas**: se agrupan por separado (ARS/USD, mismo criterio de "no mezclar" de todo el tablero, ver
   9.2 punto 7) con el mismo patrón de **"Tipo de cambio" de referencia** que ya usa Cotizaciones/
   Consolidado (`mroc_tipo_cambio`, no se guarda en ningún lado) para mostrar un total combinado en pesos

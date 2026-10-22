@@ -388,6 +388,25 @@ function unidadesCompatibles(a, b) {
   return (a || '').trim().toUpperCase() === (b || '').trim().toUpperCase();
 }
 
+// Cotizaciones cotiza perfiles/chapas/ángulos por KG (ver CLAUDE.md 9.1)
+// aunque Materiales OT los mida nativamente en MTS/MT2 — son el mismo
+// peso físico, no dos unidades distintas, y Materiales OT ya trae ese
+// kg equivalente para cada etapa (kgsItem(), ver 13.2). Por eso, cuando
+// el precio ganador está cotizado en KGS, se usa siempre el equivalente
+// en kg del ítem (sin importar en qué unidad lo mida esta OT) — recién
+// si el precio está en otra unidad (UNI/LTS, ej. bulonería/pintura) se
+// exige que coincida con la unidad nativa del ítem, como antes. Pedido
+// explícito del usuario, 2026-10-22 ("siempre se tiene que tomar el KG
+// como unidad de medida").
+function cantidadParaCosto(it, precioInfo) {
+  if ((precioInfo.umc || '').trim().toUpperCase() === 'KGS') {
+    const k = kgsItem(it);
+    return { comprado: k.comprado, asig: k.asig, unidad: 'KGS' };
+  }
+  if (!unidadesCompatibles(it.ume, precioInfo.umc)) return null;
+  return { comprado: Number(it.comprado || 0), asig: Number(it.cant_asig || 0), unidad: it.ume || '' };
+}
+
 function chipsMonto(mapa) {
   return [...mapa.entries()].map(([m, v]) => fmtMonto(v, m)).join(' + ') || '–';
 }
@@ -732,16 +751,17 @@ function renderCosto() {
 
   const filas = items.map(it => {
     const precioInfo = PRECIO_POR_ARTICULO.get(it.cod_articulo);
-    if (!precioInfo || !unidadesCompatibles(it.ume, precioInfo.umc)) {
+    const cant = precioInfo ? cantidadParaCosto(it, precioInfo) : null;
+    if (!precioInfo || !cant) {
       nSinPrecio++;
       return { it, precioInfo: null, motivo: precioInfo ? 'unidad distinta' : 'sin cotización' };
     }
     nValorizados++;
-    const costoComprado = Number(it.comprado || 0) * precioInfo.precio_unitario;
-    const ahorroStock = Number(it.cant_asig || 0) * precioInfo.precio_unitario;
+    const costoComprado = cant.comprado * precioInfo.precio_unitario;
+    const ahorroStock = cant.asig * precioInfo.precio_unitario;
     costoPorMoneda.set(precioInfo.moneda, (costoPorMoneda.get(precioInfo.moneda) || 0) + costoComprado);
     ahorroPorMoneda.set(precioInfo.moneda, (ahorroPorMoneda.get(precioInfo.moneda) || 0) + ahorroStock);
-    return { it, precioInfo, costoComprado, ahorroStock };
+    return { it, precioInfo, cant, costoComprado, ahorroStock };
   });
 
   setTxt('mroc_k_costo', chipsMonto(costoPorMoneda));
@@ -778,10 +798,10 @@ function renderCosto() {
           <td>${escAttr(it.cod_articulo)}</td>
           <td>${escAttr(it.descripcion || '')}</td>
           <td>${escAttr(it.agrupacion || '–')}</td>
-          <td style="text-align:right">${numFmt(it.comprado)} ${escAttr(it.ume || '')}</td>
+          <td style="text-align:right">${numFmt(f.cant.comprado)} ${escAttr(f.cant.unidad)}</td>
           <td style="text-align:right" title="Proveedor ganador: ${escAttr(f.precioInfo.proveedor_nombre)}">${fmtMonto(f.precioInfo.precio_unitario, f.precioInfo.moneda)}</td>
           <td style="text-align:right">${fmtMonto(f.costoComprado, f.precioInfo.moneda)}</td>
-          <td style="text-align:right">${numFmt(it.cant_asig)} ${escAttr(it.ume || '')}</td>
+          <td style="text-align:right">${numFmt(f.cant.asig)} ${escAttr(f.cant.unidad)}</td>
           <td style="text-align:right">${fmtMonto(f.ahorroStock, f.precioInfo.moneda)}</td>
         </tr>`;
       }).join('');
