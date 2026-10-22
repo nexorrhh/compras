@@ -1207,6 +1207,7 @@
         <div class="kpi"><div class="kpi-val text-accent" id="mroc_k_ahorro">–</div><div class="kpi-lbl">Ahorro por stock asignado</div><div class="psub" id="mroc_k_ahorro_comb" style="margin:2px 0 0;font-size:11px"></div></div>
         <div class="kpi"><div class="kpi-val" id="mroc_k_valorizados">–</div><div class="kpi-lbl">Ítems valorizados</div></div>
         <div class="kpi"><div class="kpi-val text-yellow" id="mroc_k_sinprecio">–</div><div class="kpi-lbl">Ítems sin precio</div></div>
+        <div class="kpi"><div class="kpi-val" id="mroc_k_horas">–</div><div class="kpi-lbl">Horas cargadas (Capataz)</div></div>
       </div>
       <div class="fg" style="max-width:220px">
         <label>Tipo de cambio (referencia, no se guarda)</label>
@@ -1215,6 +1216,12 @@
       <div class="tw"><table>
         <thead><tr><th>Código</th><th>Descripción</th><th>Rubro</th><th>Comprado</th><th>Precio unit.</th><th>Costo comprado</th><th>Asignado</th><th>Ahorro stock</th></tr></thead>
         <tbody id="t-mro-costo"></tbody>
+      </table></div>
+
+      <div class="psub" style="margin:18px 0 8px">Horas cargadas en Capataz para esta OT (traídas del Tablero RRHH, tabla <code>horas_ot_detalle</code> — mismo proyecto Supabase, sin credenciales nuevas), agrupadas por categoría de tarea. Mismo filtro que ya aplica ese tablero antes de totalizar: excluye horas anómalas (&gt;16h en un día) y personal mensual (carga Capataz de forma inconsistente). Las OT adicionales suman acá bajo su OT madre, igual que los kilos. Primera versión: solo horas, todavía sin convertir a costo en pesos ni comparar contra presupuesto — se va a ir ajustando.</div>
+      <div class="tw"><table>
+        <thead><tr><th>Categoría</th><th style="text-align:right">Horas</th><th style="text-align:right">%</th></tr></thead>
+        <tbody id="t-mro-horas"></tbody>
       </table></div>
     </div>
   </div>

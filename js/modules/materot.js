@@ -59,6 +59,24 @@ let MOSTRAR_ARCHIVADAS = false; // checkbox de "Por OT" — oculta archivadas po
 // usuario — "por ahora lo mismo local, lo que tenemos").
 let PRECIO_POR_ARTICULO = null; // cod_articulo -> {precio_unitario, moneda, umc, proveedor_nombre, fecha}
 
+// Horas por OT — pedido explícito del usuario, 2026-10-22: sumar las horas
+// cargadas en Capataz (vía el Tablero RRHH, tabla horas_ot_detalle — mismo
+// proyecto Supabase que éste, sin credenciales nuevas) junto al resto del
+// resumen de Costo. Primera versión confirmada con el usuario: solo horas
+// por categoría (operación), sin convertir a pesos ni comparar contra
+// presupuesto todavía (no existe ninguna fuente de eso en ningún tablero)
+// — se suma en una vuelta futura. Mismo filtro que ya aplica el propio
+// Tablero RRHH antes de totalizar (excluye horas anómalas >16h/día y
+// personal mensual, que carga Capataz de forma inconsistente — ver
+// horas-ot.js de ese proyecto), para que los números coincidan entre los
+// dos tableros; reusa rrhh_puestos_config/empleados, ya presentes en este
+// mismo proyecto (ver js/modules/flota-personal.js). Las OT "adicionales"
+// se suman bajo su OT madre, igual que los kilos — comparando por N° de
+// OT sin ceros, que es el formato que ya trae esta tabla. Lazy, igual
+// criterio que PRECIO_POR_ARTICULO: recién se trae al abrir por primera
+// vez la pestaña "💰 Costo".
+let HORAS_POR_OT = null; // ot (formateado, sin ceros) -> Map(operación -> horas)
+
 const numFmt = (n, dec = 2) => Number(n || 0).toLocaleString('es-AR', { maximumFractionDigits: dec });
 const SIMBOLO = m => m === 'USD' ? 'U$S' : '$';
 const fmtMonto = (n, moneda) => SIMBOLO(moneda) + (moneda === 'USD' ? ' ' : '') + numFmt(n, 2);
@@ -269,6 +287,17 @@ function mapaMadres() {
   return new Map(GRUPOS.map(g => [g.n_ot_hija, g.n_ot_madre]));
 }
 
+// Mismo mapaMadres() pero con las claves/valores formateados (sin ceros a
+// la izquierda) — es el formato en el que horas_ot_detalle.ot ya viene
+// guardado (ver cargarHorasPorOT()), a diferencia de compras_materot_items
+// .n_ot que conserva los ceros.
+function mapaMadresFormateado() {
+  const m = mapaMadres();
+  const out = new Map();
+  for (const [hija, madre] of m) out.set(formatOT(hija), formatOT(madre));
+  return out;
+}
+
 function otEfectiva(nOt, madres) {
   const ot = (nOt || '').trim();
   return madres.get(ot) || ot;
@@ -386,6 +415,43 @@ async function cargarPreciosCotizaciones() {
 // se inventa una conversión, se marca aparte (ver renderCosto()).
 function unidadesCompatibles(a, b) {
   return (a || '').trim().toUpperCase() === (b || '').trim().toUpperCase();
+}
+
+// Ver nota de HORAS_POR_OT más arriba y CLAUDE.md sección 13.9 (horas).
+function normPuesto(s) { return (s || '').trim().toUpperCase(); }
+
+async function cargarHorasPorOT() {
+  if (HORAS_POR_OT) return HORAS_POR_OT;
+  const [{ data: filas, error: e1 }, { data: config, error: e2 }, { data: emps, error: e3 }] = await Promise.all([
+    fetchAll(() => SB.from('horas_ot_detalle').select('ot,legajo,empresa,operacion,horas').eq('anomalo', false).not('ot', 'is', null)),
+    fetchAll(() => SB.from('rrhh_puestos_config').select('desc_puesto,tipo')),
+    fetchAll(() => SB.from('empleados').select('legajo,empresa,desc_puesto')),
+  ]);
+  const error = e1 || e2 || e3;
+  if (error) { toast(error.message, 'er'); HORAS_POR_OT = new Map(); return HORAS_POR_OT; }
+
+  // Mismo criterio que tipoPuesto()/obtenerClasificacionPuestos() del
+  // Tablero RRHH (data/clasificacion-puestos.js): un puesto sin fila en
+  // rrhh_puestos_config queda "sin_asignar" — solo se excluye 'mensual'.
+  const tipoPorPuesto = new Map((config || []).map(c => [normPuesto(c.desc_puesto), c.tipo]));
+  const puestoPorEmpleado = new Map((emps || []).map(e => [`${e.empresa}|${e.legajo}`, e.desc_puesto]));
+  const esMensual = (empresa, legajo) => {
+    const puesto = puestoPorEmpleado.get(`${empresa}|${legajo}`);
+    return (tipoPorPuesto.get(normPuesto(puesto)) || 'sin_asignar') === 'mensual';
+  };
+
+  const madresF = mapaMadresFormateado();
+  const mapa = new Map();
+  for (const f of (filas || [])) {
+    if (esMensual(f.empresa, f.legajo)) continue;
+    const ot = madresF.get(f.ot) || f.ot;
+    const categoria = f.operacion || '(Sin categoría)';
+    if (!mapa.has(ot)) mapa.set(ot, new Map());
+    const porCategoria = mapa.get(ot);
+    porCategoria.set(categoria, (porCategoria.get(categoria) || 0) + Number(f.horas || 0));
+  }
+  HORAS_POR_OT = mapa;
+  return mapa;
 }
 
 // Cotizaciones cotiza perfiles/chapas/ángulos por KG (ver CLAUDE.md 9.1)
@@ -807,6 +873,32 @@ function renderCosto() {
       }).join('');
     tbody.innerHTML = filasHtml || `<tr><td colspan="8" style="text-align:center;padding:18px;color:var(--muted)">Sin ítems</td></tr>`;
   }
+
+  renderHorasOT();
+}
+
+// Horas cargadas en Capataz para la OT actual, por categoría — ver
+// HORAS_POR_OT más arriba y CLAUDE.md sección 13.9. Independiente de
+// PRECIO_POR_ARTICULO (puede faltar uno y estar el otro, cada uno se
+// pinta con lo que tenga disponible).
+function renderHorasOT() {
+  if (OT_ACTUAL === null) return;
+  const tbody = document.getElementById('t-mro-horas');
+  if (!tbody) return;
+  if (!HORAS_POR_OT) { setTxt('mroc_k_horas', '–'); return; }
+
+  const porCategoria = HORAS_POR_OT.get(formatOT(OT_ACTUAL)) || new Map();
+  const filas = [...porCategoria.entries()].sort((a, b) => b[1] - a[1]);
+  const total = filas.reduce((s, [, h]) => s + h, 0);
+
+  setTxt('mroc_k_horas', `${numFmt(total, 1)}h`);
+  tbody.innerHTML = filas.length
+    ? filas.map(([categoria, horas]) => `<tr>
+        <td>${escAttr(categoria)}</td>
+        <td style="text-align:right">${numFmt(horas, 1)}h</td>
+        <td style="text-align:right">${total > 0 ? Math.round(horas / total * 100) : 0}%</td>
+      </tr>`).join('')
+    : `<tr><td colspan="3" style="text-align:center;padding:18px;color:var(--muted)">Sin horas cargadas para esta OT</td></tr>`;
 }
 
 // Solo lista los rubros que efectivamente aparecen en ESTA OT (mismo
@@ -958,8 +1050,8 @@ export function init() {
     const btn = e.target.closest('.subtab');
     if (!btn) return;
     mostrarTabOT(btn.dataset.tab);
-    if (btn.dataset.tab === 'costo' && !PRECIO_POR_ARTICULO) {
-      await cargarPreciosCotizaciones();
+    if (btn.dataset.tab === 'costo' && (!PRECIO_POR_ARTICULO || !HORAS_POR_OT)) {
+      await Promise.all([cargarPreciosCotizaciones(), cargarHorasPorOT()]);
       if (OT_TAB === 'costo') renderCosto(); // por si cambió de tab mientras cargaba
     }
   });

@@ -2240,8 +2240,56 @@ versión simple, explícitamente provisoria ("después iremos ajustando").
   si hace falta.
 - **Alcance de esta primera versión**: solo vive en la sub-pestaña "💰 Costo" de **cada OT puntual**
   (`renderCosto()`) — todavía no hay un total agregado en el Dashboard del módulo, a propósito, para
-  poder revisar primero cómo da por OT antes de sumarlo todo. Horas de mano de obra quedan afuera
-  (pedido explícito del usuario, "por el momento creo que avanzamos solamente con los materiales").
+  poder revisar primero cómo da por OT antes de sumarlo todo.
+
+**Horas por OT — cruce con el Tablero RRHH (2026-10-22):** el usuario retomó el pedido de horas que
+había quedado afuera ("por el momento creo que avanzamos solamente con los materiales") con un pedido
+explícito y más concreto: "quiero que tenga las horas... que me saques la cantidad de horas, por
+ejemplo, de armado, soldadura, de corte, de movimiento, etc... que esté dentro de este resumen de OT
+más de los kilos comprados, los kilos asignados, los kilos ahorrados, etcétera" — con el objetivo final
+de armar un costo de proyecto y compararlo contra presupuesto. Antes de construir se investigó dónde
+vive ese dato: **`Tablero_RRHH/components/horas-ot.js`** (otro proyecto del mismo usuario, carpeta
+`Tablero_RRHH` en OneDrive) carga el export de Capataz "Gestión Personalizada PCP" a una tabla
+**`horas_ot_detalle`** — confirmado que vive en el **mismo proyecto Supabase** que usa este tablero
+(`bmueojeeexheprteavay.supabase.co`), así que no hace falta ninguna credencial nueva. Se verificó con
+datos reales (OT 596, vía API) que esa tabla trae exactamente las categorías que pidió el usuario
+("APOYO Y ARMADO", "CORTE GENERAL", "SOLDADURA", "GRANALLA", "PINTURA", "MOVIMIENTO DE MATERIALES",
+etc. en la columna `operacion`) agrupadas por `ot` — mismo número de OT que ya usa Materiales OT, solo
+que sin los ceros a la izquierda (mismo formato que ya produce `formatOT()` acá).
+
+Antes de implementar se le preguntaron tres decisiones explícitas al usuario (ninguna inferible del
+código ni de la consigna), las tres resueltas con la opción recomendada:
+- **Alcance**: solo horas por categoría, **sin convertir a pesos ni comparar contra presupuesto
+  todavía** — no existe en ningún tablero una tarifa $/hora ni una fuente de presupuesto de horas/costo
+  (se buscó explícitamente antes de preguntar). Queda para una vuelta futura, igual criterio de "primera
+  versión simple, se va ajustando" que ya se usó para el costo de materiales.
+- **Agrupación**: las horas de una OT "adicional" se suman bajo su OT madre, igual que ya se hace con
+  los kilos (sección 13.3) — necesitó su propio mapeo porque `horas_ot_detalle.ot` usa el N° de OT sin
+  ceros (`mapaMadresFormateado()`, igual que `mapaMadres()` pero con las claves/valores pasados por
+  `formatOT()`), a diferencia de `compras_materot_items.n_ot` que los conserva.
+- **Filtro**: se replica exactamente el mismo filtro que el propio Tablero RRHH aplica antes de
+  totalizar (`cargarFilasOT()` en `horas-ot.js`) — excluye horas anómalas (`anomalo = true`, más de 16h
+  en un día — carga acumulada de costeo, no asistencia real de ese día) y excluye al personal **mensual**
+  completo (no usa Capataz como su forma habitual de registrar horas, carga de forma inconsistente) —
+  así los números de horas por OT coinciden entre los dos tableros en vez de divergir por un criterio
+  distinto. Esto reusa `rrhh_puestos_config` (desc_puesto → tipo mensual/quincenal) y `empleados`
+  (legajo, empresa, desc_puesto), las mismas tablas de legajos que Flota ya lee para el personal
+  habilitado (ver sección 4.4) — un puesto sin fila en `rrhh_puestos_config` queda "sin_asignar" (no se
+  excluye), mismo criterio que `tipoPuesto()` en el Tablero RRHH.
+
+`cargarHorasPorOT()` en `js/modules/materot.js` arma `HORAS_POR_OT` (`Map` de OT-sin-ceros →
+`Map`(categoría → horas)) con una sola carga **lazy**, junto con `cargarPreciosCotizaciones()` (mismo
+disparador: la primera vez que se abre la sub-pestaña "💰 Costo" de alguna OT, `Promise.all` de los dos)
+— mismo criterio de "no traer si no se usa" de siempre. `renderHorasOT()`, llamada al final de
+`renderCosto()`, pinta un KPI de horas totales y una tabla Categoría/Horas/% debajo de la tabla de costo
+de materiales, dentro de la misma sub-pestaña — es contexto del mismo resumen de costo de la OT, no una
+pestaña nueva. Es independiente del cruce de precios (puede faltar uno y mostrarse el otro igual), pero
+en la práctica los dos se cargan siempre juntos.
+
+Pendiente, explícitamente diferido por el usuario en esta misma conversación: convertir las horas a
+costo en pesos (falta definir una tarifa $/hora, posiblemente distinta por categoría) y la comparación
+contra presupuesto (todavía no existe esa fuente de datos en ningún tablero — habría que definir de
+dónde sale antes de construirla).
 
 ## 14. Módulo: Consolidado de Compras `[DETALLADO]`
 
@@ -2432,6 +2480,10 @@ Todavía sin decidir:
   que no hace falta consultarlas?
 - [ ] Categorización de proveedores (ver 5.3): clasificarlos por tipo (materia prima, pintura, insumos,
   etc.) para poder adaptar/filtrar el Dashboard de OC según categoría — todavía no tiene tabla ni UI.
+- [ ] Materiales OT — Horas por OT (ver 13.9): falta definir una tarifa $/hora (¿única para toda la
+  empresa o distinta por categoría — armado, soldadura, corte...?) para convertir las horas ya sumadas
+  por OT a un costo real en pesos, y falta definir de dónde sale el presupuesto de horas/costo por OT
+  contra el que comparar (no existe esa fuente de datos en ningún tablero todavía).
 
 ## 17. Próximos pasos sugeridos
 
