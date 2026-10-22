@@ -300,6 +300,32 @@ function sumarKg(items) {
   return { tot };
 }
 
+// Un ítem "sin movimiento" tiene las 7 cantidades en KGS en cero — caso
+// real (2026-10-22, archivo MP.xlsx): Capataz lista, para cada OT, todo
+// un catálogo de variantes posibles del rubro (ej. decenas de arandelas)
+// aunque esa obra puntual no haya necesitado la mayoría — ~50% de las
+// filas de cualquier archivo real quedan así. No es un error de carga
+// (se confirmó comparando el Excel crudo contra lo ya guardado, fila por
+// fila, byte a byte) — es ruido de catálogo que convenía poder ocultar.
+function tieneMovimiento(it) {
+  const k = kgsItem(it);
+  return Object.values(k).some(v => v !== 0);
+}
+
+// `agrupacion` (el rubro — CHAPAS/PERFIL/ANGULO/BULONE/etc., ver
+// CLAUDE.md 13) ya se parseaba y guardaba desde el principio, pero
+// ningún gráfico ni filtro lo usaba todavía — "qué más se puede armar
+// con esta información" (pedido del usuario, 2026-10-22).
+function kgPorRubro(items, campo = 'comprado') {
+  const porRubro = new Map();
+  for (const it of items) {
+    const rubro = it.agrupacion || '(Sin rubro)';
+    const kg = kgsItem(it)[campo];
+    porRubro.set(rubro, (porRubro.get(rubro) || 0) + kg);
+  }
+  return porRubro;
+}
+
 function estadisticasOT(items) {
   const { tot } = sumarKg(items);
   const nOK = items.filter(it => (it.estado || '').toUpperCase() === 'OK').length;
@@ -353,6 +379,22 @@ function renderBarrasTopOT(canvasId, grupos) {
   });
 }
 
+// Mismo patrón que renderBarrasTopOT, agrupando por rubro (`agrupacion`)
+// en vez de por OT — ver kgPorRubro().
+function renderBarrasRubro(canvasId, items, topN = 10) {
+  const porRubro = kgPorRubro(items);
+  const datos = [...porRubro.entries()].filter(([, kg]) => kg > 0).sort((a, b) => b[1] - a[1]).slice(0, topN);
+  renderChart(canvasId, canvasId, {
+    type: 'bar',
+    data: { labels: datos.map(d => d[0]), datasets: [{ label: 'KGS comprados', data: datos.map(d => d[1]), backgroundColor: '#14b8a6', borderRadius: 4 }] },
+    options: {
+      indexAxis: 'y', responsive: true, maintainAspectRatio: false,
+      plugins: { legend: { display: false }, tooltip: { callbacks: { label: ctx => `${numFmt(ctx.raw)} KGS` } } },
+      scales: { x: { ticks: { callback: v => numFmt(v) } } },
+    },
+  });
+}
+
 // ------------------------------------------------------------
 // Dashboard
 // ------------------------------------------------------------
@@ -379,6 +421,7 @@ function renderDashboard() {
 
   renderDonutOKDIF('mrd_chart_okdif', nOK, nDIF);
   renderBarrasTopOT('mrd_chart_topot', gruposActivos);
+  renderBarrasRubro('mrd_chart_toprubro', itemsActivos);
 }
 
 // ------------------------------------------------------------
@@ -558,10 +601,21 @@ function renderDetalle() {
   setTxt('mrod_k_dif', st.nDIF);
 
   renderDonutOKDIF('mrod_chart_okdif', st.nOK, st.nDIF);
+  renderBarrasRubro('mrod_chart_rubro', items);
+
+  poblarFiltroRubroDetalle(items);
+  const rubroF = document.getElementById('mrod_f_rubro')?.value || '';
+  const ocultarSinMov = document.getElementById('mrod_f_sinmov')?.checked ?? true;
+
+  let itemsTabla = rubroF ? items.filter(it => it.agrupacion === rubroF) : items;
+  const ocultos = ocultarSinMov ? itemsTabla.filter(it => !tieneMovimiento(it)).length : 0;
+  if (ocultarSinMov) itemsTabla = itemsTabla.filter(tieneMovimiento);
+  const spanOcultos = document.getElementById('mrod_f_sinmov_n');
+  if (spanOcultos) spanOcultos.textContent = ocultos ? `(${ocultos} oculto${ocultos === 1 ? '' : 's'})` : '';
 
   const tbody = document.getElementById('t-mro-detalle');
   if (tbody) {
-    const filas = items
+    const filas = itemsTabla
       .slice()
       .sort((a, b) => (a.descripcion || '').localeCompare(b.descripcion || '', 'es'))
       .map(it => {
@@ -571,6 +625,7 @@ function renderDetalle() {
           <td>${otItem && otItem !== OT_ACTUAL ? `<span class="badge" title="Ítem de la OT adicional ${escAttr(formatOT(otItem))}, agrupada acá">${escAttr(formatOT(otItem))}</span>` : escAttr(formatOT(otItem) || '–')}</td>
           <td>${escAttr(it.cod_articulo)}</td>
           <td>${escAttr(it.descripcion || '')}</td>
+          <td>${escAttr(it.agrupacion || '–')}</td>
           <td>${escAttr(it.ume || '–')}</td>
           <td style="text-align:right">${numFmt(k.cotiz)}</td>
           <td style="text-align:right">${numFmt(k.plan)}</td>
@@ -582,10 +637,22 @@ function renderDetalle() {
           <td><span class="badge ${(it.estado || '').toUpperCase() === 'DIF' ? 'rechazado' : 'aprobado'}">${escAttr(it.estado || '–')}</span></td>
         </tr>`;
       }).join('');
-    tbody.innerHTML = filas || `<tr><td colspan="12" style="text-align:center;padding:18px;color:var(--muted)">Sin ítems</td></tr>`;
+    tbody.innerHTML = filas || `<tr><td colspan="13" style="text-align:center;padding:18px;color:var(--muted)">Sin ítems para los filtros actuales</td></tr>`;
   }
 
   mostrarTabOT(OT_TAB);
+}
+
+// Solo lista los rubros que efectivamente aparecen en ESTA OT (mismo
+// criterio que poblarFiltroGrupo() en Cotizaciones) — conserva la
+// elección actual si el rubro elegido sigue existiendo al repintar.
+function poblarFiltroRubroDetalle(items) {
+  const sel = document.getElementById('mrod_f_rubro');
+  if (!sel) return;
+  const actual = sel.value;
+  const rubros = [...new Set(items.map(it => it.agrupacion).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'es'));
+  sel.innerHTML = '<option value="">Todos los rubros</option>' + rubros.map(r => `<option value="${escAttr(r)}">${escAttr(r)}</option>`).join('');
+  if (rubros.includes(actual)) sel.value = actual;
 }
 
 // ------------------------------------------------------------
@@ -725,6 +792,8 @@ export function init() {
     const btn = e.target.closest('.subtab');
     if (btn) mostrarTabOT(btn.dataset.tab);
   });
+  document.getElementById('mrod_f_rubro')?.addEventListener('change', renderDetalle);
+  document.getElementById('mrod_f_sinmov')?.addEventListener('change', renderDetalle);
 
   document.getElementById('mro_file')?.addEventListener('change', e => {
     const file = e.target.files[0];

@@ -2078,7 +2078,8 @@ detalle de OT. A diferencia del resto del módulo, este dato **no sale de Capata
 Mismo patrón de nav colapsable que el resto ("📐 Materiales OT ▾"):
 
 - **Dashboard** (`materot-dash`) — 4 KPIs (OTs con datos — ya agrupadas por madre —, ítems OK, ítems
-  DIF, ítems sin OT) + 2 gráficos (donut OK vs. DIF, barras "Top 10 OT por KGS comprados").
+  DIF, ítems sin OT) + 3 gráficos (donut OK vs. DIF, barras "Top 10 OT por KGS comprados", barras "Top
+  10 rubros por KGS comprados" — ver más abajo, "Rubro (`agrupacion`) — datos que ya estaban, sin usar").
 - **Por OT** (`materot-cards`) — grilla de tarjetas (mismo patrón visual `.ot-card` que el módulo OT,
   sección 10.3), una por OT madre (con un badge "+N adicionales" si tiene hijas agrupadas), mostrando
   KGS comprado/solicitado/**asignado de stock** y la cantidad de ítems con diferencia (DIF) de un
@@ -2095,13 +2096,43 @@ Mismo patrón de nav colapsable que el resto ("📐 Materiales OT ▾"):
   puede entregar más de lo recibido + asignado de stock) — un positivo marca cuánto se entregó sin
   cobertura, que suele ser justo lo que dispara el DIF. Es un dato de referencia calculado solo para
   este Excel, no reemplaza ni recalcula el Estado que ya trae Capataz.
-  Click en una tarjeta abre el detalle con sub-pestañas **Resumen** (KPIs + donut OK/DIF) y **Detalle**
-  (tabla artículo por artículo con las 7 cantidades en kg, directo del archivo — ver 13.2 —, el badge de
-  Estado y una columna **OT** al principio: cuando la tarjeta agrupa adicionales, mezcla ítems de más de
-  una OT real y esta columna muestra de cuál viene cada fila — con un badge si es de una adicional,
-  texto simple si es de la OT madre misma — pedido explícito del usuario para poder rastrear el origen
-  de cada material sin tener que desarmar la agrupación).
+  Click en una tarjeta abre el detalle con sub-pestañas **Resumen** (KPIs + donut OK/DIF + barras "KGS
+  comprados por rubro de esta OT", ver más abajo) y **Detalle** (tabla artículo por artículo con las 7
+  cantidades en kg, directo del archivo — ver 13.2 —, el badge de Estado, una columna **Rubro** y una
+  columna **OT** al principio: cuando la tarjeta agrupa adicionales, mezcla ítems de más de una OT real
+  y esta columna muestra de cuál viene cada fila — con un badge si es de una adicional, texto simple si
+  es de la OT madre misma — pedido explícito del usuario para poder rastrear el origen de cada material
+  sin tener que desarmar la agrupación). El Detalle suma un filtro de **rubro** (`mrod_f_rubro`, solo
+  lista los rubros presentes en ESTA OT, mismo criterio que `cot_f_grupo` en Cotizaciones) y el checkbox
+  **"Ocultar ítems sin movimiento"** (`mrod_f_sinmov`, tildado por defecto, ver más abajo).
 - **Agrupar OT** (`materot-grupos`) — administración de la relación OT adicional → OT madre (ver 13.3).
+
+**Revisión exhaustiva de un archivo real y "qué más se puede armar"** (pedido explícito del usuario,
+2026-10-22, con un archivo nuevo `MP.xlsx`, viendo la OT 596 con muchas columnas en cero: "me trae todo
+en 0 y no debería... revisalo exaustivamente y corregilo" + "busca qué más se puede armar para
+optimizar"): se comparó el Excel crudo (abierto con Python/openpyxl), fila por fila, contra lo que ya
+había quedado guardado en Supabase para esa misma OT/artículo — **coinciden exactamente, número por
+número** (confirmado también contra la fila real vía API) — así que **no hay ningún bug de parseo**: los
+ceros que se ven en pantalla son literalmente los que trae el export de Capataz, no un error de carga.
+
+Analizando el archivo completo (4214 filas) sí aparecieron dos cosas aprovechables:
+- **~50% de las filas de CUALQUIER archivo real tienen las 7 cantidades en KGS en cero** (confirmado:
+  2103 de 4214 filas, y 81 de 163 solo para la OT 596) — Capataz parece listar, para cada OT, todo un
+  catálogo de variantes posibles de cada rubro (ej. decenas de arandelas distintas) aunque esa obra
+  puntual no haya necesitado la mayoría. Es lo que daba la sensación de "todo en cero": la mitad de cada
+  lista es ruido de catálogo sin uso real, no datos faltantes. Se agregó `tieneMovimiento()` en
+  `js/modules/materot.js` (alguna de las 7 cantidades en kg distinta de cero) y el checkbox **"Ocultar
+  ítems sin movimiento"** de la viñeta de arriba usa ese criterio — tildado por defecto, con un contador
+  chico de cuántos quedaron ocultos.
+- **La columna `agrupacion` (el rubro — CHAPAS/PERFIL/ANGULO/BULONE/CONSUM/etc., 24 valores distintos en
+  el archivo real) ya se parseaba y guardaba desde el principio** (`compras_materot_items.agrupacion`,
+  ver 13.7) **pero ningún gráfico ni filtro la usaba todavía** — fue la respuesta más directa a "qué más
+  se puede armar" (no hacía falta ningún dato nuevo, solo aprovechar el que ya estaba). Se sumaron tres
+  usos (`kgPorRubro()`/`renderBarrasRubro()` en `js/modules/materot.js`): el gráfico "Top 10 rubros por
+  KGS comprados" en el Dashboard (todas las OT activas), el mismo gráfico pero acotado a una sola OT en
+  su pestaña Resumen, y el filtro de rubro + columna "Rubro" en la tabla Detalle de cada OT (ver viñetas
+  de arriba). En el archivo real, CHAPAS (1,6M kg) y PERFIL (1,2M kg) concentran la mayor parte de lo
+  comprado — consistente con el rubro de la empresa (estructuras metálicas/tanques).
 
 ### 13.6 Archivado de OT viejas/cerradas
 
