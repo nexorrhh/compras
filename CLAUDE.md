@@ -1956,6 +1956,31 @@ acá arruina cualquier comparación en pesos de ahí en más):
   intermedio" de todo el tablero) y devuelve la serie completa diaria desde 2011-01-03 hasta hoy
   (5773 días verificados el día de la implementación), cada fila con `{casa, compra, venta, fecha}`.
 
+**¿Es realmente el "billete" de Banco Nación y no otra cosa? Verificado el 2026-10-24** (pregunta
+explícita del usuario: "necesito que sea el billete de Banco Nación" — Banco Nación publica dos
+cotizaciones bien distintas, **Billete** (caja/efectivo) y **Divisa** (Mercado Libre de Cambios,
+transferencias — liquida "valor hoy", con un día de desfasaje y más decimales), así que no alcanzaba con
+"es del Banco Nación", hacía falta confirmar cuál de las dos). Se investigó en este orden:
+1. **La documentación pública no lo aclara**: ni ArgentinaDatos ni dolarapi.com (que, se confirmó,
+   terminan tomando el dato de Ámbito Financiero/DolarHoy) documentan si su "oficial" es billete, divisa
+   o un promedio — solo dicen "precio en bancos y casas de cambio autorizadas por el BCRA".
+2. **Se leyó directo `bna.com.ar/Personas`** (HTML server-renderizado, sin ejecutar JS) el 2026-10-24: la
+   página trae embebidas las dos tablas (`id="billetes"` e `id="divisas"`) una al lado de la otra.
+   - **Billete** (23/10/2026): Dólar U.S.A. Compra `1500,00` / Venta `1550,00`.
+   - **Divisa** (22/10/2026 — un día de desfasaje, "valor hoy"): Compra `1519,0000` / Venta `1528,0000`.
+3. **Comparado contra lo que ya traía `compras_dolar_historico`** para esa misma fecha (2026-10-23):
+   `compra: 1500, venta: 1550` — **coincide exacto, al centavo, con Billete, no con Divisa**. Mismo
+   patrón se repite en el resto de la serie (movimientos en escalones de $5, típico de la pizarra de
+   billete; Divisa cotiza con 4 decimales y no se mueve en escalones redondos).
+4. **`bna.com.ar` no tiene CORS habilitado** (sin header `access-control-allow-origin`, confirmado con
+   `curl -D -`) — aunque hiciera falta cambiar de fuente más adelante, no se puede llamar directo desde
+   el navegador sin backend propio (mismo problema ya documentado para la API de Tango, ver sección 7.0).
+
+**Conclusión: no hace falta cambiar nada** — lo que ya carga `dolar.js`/`obtenerDolarReferencia()` (ver
+12.6) es, en la práctica, el dólar **Billete** de Banco Nación, verificado contra la fuente primaria. Si
+algún día BNA y el agregador llegaran a divergir (pasó que el "oficial" de mercado no siempre coincide
+con un banco puntual), conviene volver a comparar así antes de asumir que sigue siendo lo mismo.
+
 Es una sub-vista nueva dentro de **Parametrización** (`param-dolar`, "💵 Dólar histórico",
 `js/modules/dolar.js`) — vive ahí porque es una referencia de configuración transversal al tablero, no
 un dato de compras en sí, mismo criterio que "Usuarios" (12.1-12.4) ya vivía ahí por ser configuración
