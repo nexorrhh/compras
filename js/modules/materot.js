@@ -40,7 +40,7 @@
 // los ítems de toda OT hija bajo su madre antes de mostrarlos.
 // ============================================================
 import { SB } from '../supabase-client.js';
-import { toast, norm, txt, num, fetchAll, escAttr, obtenerDolarReferencia } from '../utils.js';
+import { toast, norm, txt, num, fetchAll, escAttr, fmt, obtenerHistoricoDolarCompleto } from '../utils.js';
 
 let ITEMS = [];      // compras_materot_items, todas las filas
 let GRUPOS = [];      // compras_materot_ot_grupos — [{n_ot_hija, n_ot_madre}]
@@ -87,27 +87,34 @@ let PRECIO_POR_ARTICULO_OT = null; // `${cod_articulo}|${n_ot formateado}` -> {p
 // vez la pestaña "💰 Costo".
 let HORAS_POR_OT = null; // ot (formateado, sin ceros) -> Map(operación -> horas)
 
-// Última cotización del dólar oficial — se usa solo para PRECARGAR el
-// campo "Tipo de cambio" de la pestaña Costo (sigue siendo editable y no
-// persiste, igual que siempre). `obtenerDolarReferencia()` (en
-// js/utils.js, compartida con Cotizaciones) se completa sola con los
-// días recientes que falten antes de devolver el valor — no hace falta
-// que nadie entre a Parametrización → Dólar histórico para que esto
-// quede razonablemente al día (ver CLAUDE.md 12.6).
-let DOLAR_REF = null; // {fecha, compra, venta} | null
-async function cargarDolarReferencia() {
-  DOLAR_REF = await obtenerDolarReferencia();
-  return DOLAR_REF;
+// Histórico completo del dólar oficial — para convertir cada costo en
+// ARS al dólar del DÍA REAL en que se confirmó esa compra (no al de
+// hoy). Pedido explícito del usuario, 2026-10-24: "si se compró el 10 de
+// octubre tiene que tomar a ese día el valor dólar... no convertirlo al
+// día de hoy porque si hoy subió el dólar me va a de la nada incrementar
+// algo que no pagué". `obtenerHistoricoDolarCompleto()` (js/utils.js,
+// compartida con Cotizaciones) ya viene completándose sola con los días
+// recientes que falten — acá solo se copia a una variable local para
+// poder consultarla de forma sincrónica dentro de calcularCosto() (mismo
+// motivo que PRECIO_POR_ARTICULO/HORAS_POR_OT: se cargan async una vez,
+// se leen sync en cada render).
+let DOLAR_HISTORICO = null; // Map fecha -> {compra, venta}
+async function cargarDolarHistoricoCompleto() {
+  DOLAR_HISTORICO = await obtenerHistoricoDolarCompleto();
+  return DOLAR_HISTORICO;
 }
 
-// Precarga el input de tipo de cambio con la última cotización oficial
-// disponible, sin pisar lo que el usuario ya haya tipeado a mano.
-function prefillTipoCambio() {
-  const input = document.getElementById('mroc_tipo_cambio');
-  if (input && !input.value && DOLAR_REF) {
-    input.value = String(DOLAR_REF.venta);
-    input.title = `Precargado con el dólar oficial del ${new Date(DOLAR_REF.fecha + 'T12:00:00').toLocaleDateString('es-AR')} — se puede editar`;
-  }
+// Cotización vigente en una fecha puntual, con la misma regla de
+// "último valor disponible hacia atrás" para fines de semana/feriados
+// que ya usa obtenerDolarEnFecha() en utils.js (acá se reimplementa
+// sobre la copia local en vez de llamar a esa función async, para poder
+// usarla de forma sincrónica).
+function dolarEnFecha(fechaISO) {
+  if (!DOLAR_HISTORICO || !fechaISO) return null;
+  if (DOLAR_HISTORICO.has(fechaISO)) return { fecha: fechaISO, ...DOLAR_HISTORICO.get(fechaISO) };
+  let mejor = null;
+  for (const f of DOLAR_HISTORICO.keys()) if (f <= fechaISO && (!mejor || f > mejor)) mejor = f;
+  return mejor ? { fecha: mejor, ...DOLAR_HISTORICO.get(mejor) } : null;
 }
 
 const numFmt = (n, dec = 2) => Number(n || 0).toLocaleString('es-AR', { maximumFractionDigits: dec });
@@ -484,7 +491,7 @@ function renderTablaDesvios(tbodyId, items) {
 async function cargarPreciosCotizaciones() {
   if (PRECIO_POR_ARTICULO) return PRECIO_POR_ARTICULO;
   const [{ data: items, error: e1 }, { data: precios, error: e2 }, { data: cots, error: e3 }, { data: provs, error: e4 }] = await Promise.all([
-    fetchAll(() => SB.from('compras_cotizaciones_items').select('id,cotizacion_id,cod_articulo,umc,ganador_proveedor_id,n_ot')),
+    fetchAll(() => SB.from('compras_cotizaciones_items').select('id,cotizacion_id,cod_articulo,umc,ganador_proveedor_id,n_ot,confirmado_en')),
     fetchAll(() => SB.from('compras_cotizaciones_precios').select('item_id,proveedor_id,precio_unitario,moneda')),
     fetchAll(() => SB.from('compras_cotizaciones').select('id,created_at')),
     fetchAll(() => SB.from('compras_proveedores').select('id,nombre')),
@@ -511,12 +518,20 @@ async function cargarPreciosCotizaciones() {
     const precio = precioPorClave.get(`${it.id}|${it.ganador_proveedor_id}`);
     if (!precio || precio.precio_unitario == null) continue;
     const fecha = fechaCot.get(it.cotizacion_id) || '';
+    // Fecha a usar para convertir a dólares con el TC de ESE día (ver
+    // dolarEnFecha()): la real de cuando se confirmó la compra si existe
+    // (confirmado_en, sección 14.1), o si no — ítem todavía no
+    // confirmado, o de antes de que existiera esa columna — la fecha de
+    // creación de la solicitud como aproximación (mismo criterio de
+    // backfill que ya usa Consolidado de Compras, ver 14.1).
+    const fechaCompra = (it.confirmado_en || fecha || '').slice(0, 10) || null;
     const info = {
       precio_unitario: Number(precio.precio_unitario),
       moneda: precio.moneda,
       umc: it.umc,
       proveedor_nombre: nombreProv.get(it.ganador_proveedor_id) || '(?)',
       fecha,
+      fechaCompra,
     };
     const actual = mapa.get(it.cod_articulo);
     if (!actual || fecha > actual.fecha) mapa.set(it.cod_articulo, info);
@@ -596,10 +611,6 @@ function cantidadParaCosto(it, precioInfo) {
   return { comprado: Number(it.comprado || 0), asig: Number(it.cant_asig || 0), unidad: it.ume || '' };
 }
 
-function chipsMonto(mapa) {
-  return [...mapa.entries()].map(([m, v]) => fmtMonto(v, m)).join(' + ') || '–';
-}
-
 // Precio a usar para UN ítem puntual: primero el precio ganador que haya
 // salido de una solicitud de Cotizaciones para la MISMA OT (más reciente
 // si hubo más de una), y solo si no hay ninguno, el genérico más reciente
@@ -616,14 +627,23 @@ function precioParaItem(it) {
 }
 
 // Valoriza una lista de ítems contra Cotizaciones — "Costo realizado"
-// (Comprado × precio) y "Ahorro por stock asignado" (Asignado × precio).
-// Extraída de renderCosto() para que el Resumen la reuse sin duplicar la
-// lógica (ver renderResumenOT()). Llamar solo si PRECIO_POR_ARTICULO ya
-// está cargado.
+// (Comprado × precio) y "Ahorro por stock asignado" (Asignado × precio),
+// convertido TODO a dólares (pedido explícito del usuario, 2026-10-24:
+// "la idea es que me traiga todo en dólares porque me trae pesos más
+// dólares") — un precio en USD se usa tal cual, uno en ARS se divide por
+// el dólar oficial del DÍA en que se confirmó esa compra (`dolarEnFecha
+// (precioInfo.fechaCompra)`, nunca el de hoy: "si se compró el 10 de
+// octubre tiene que tomar a ese día el valor dólar... no convertirlo al
+// día de hoy porque si hoy subió el dólar me va a de la nada incrementar
+// algo que no pagué"). Si no hay cotización del dólar para esa fecha
+// (DOLAR_HISTORICO no cargado tan atrás todavía), el ítem queda "sin
+// tipo de cambio" en vez de inventar una conversión — mismo criterio de
+// "no inventar" de siempre. Extraída de renderCosto() para que el
+// Resumen la reuse sin duplicar la lógica (ver renderResumenOT()).
+// Llamar solo si PRECIO_POR_ARTICULO ya está cargado.
 function calcularCosto(items) {
-  const costoPorMoneda = new Map();
-  const ahorroPorMoneda = new Map();
-  let nValorizados = 0, nSinPrecio = 0;
+  let costoUSD = 0, ahorroUSD = 0;
+  let nValorizados = 0, nSinPrecio = 0, nSinTipoCambio = 0;
   const filas = items.map(it => {
     const encontrado = precioParaItem(it);
     const precioInfo = encontrado?.info || null;
@@ -632,38 +652,53 @@ function calcularCosto(items) {
       nSinPrecio++;
       return { it, precioInfo: null, motivo: precioInfo ? 'unidad distinta' : 'sin cotización' };
     }
-    nValorizados++;
     const precioEspecifico = encontrado.especifico;
     const costoComprado = cant.comprado * precioInfo.precio_unitario;
     const ahorroStock = cant.asig * precioInfo.precio_unitario;
-    costoPorMoneda.set(precioInfo.moneda, (costoPorMoneda.get(precioInfo.moneda) || 0) + costoComprado);
-    ahorroPorMoneda.set(precioInfo.moneda, (ahorroPorMoneda.get(precioInfo.moneda) || 0) + ahorroStock);
-    return { it, precioInfo, cant, costoComprado, ahorroStock, precioEspecifico };
+
+    let costoCompradoUSD, ahorroStockUSD, tcUsado = null;
+    if (precioInfo.moneda === 'USD') {
+      costoCompradoUSD = costoComprado;
+      ahorroStockUSD = ahorroStock;
+    } else {
+      tcUsado = dolarEnFecha(precioInfo.fechaCompra);
+      if (tcUsado) {
+        costoCompradoUSD = costoComprado / tcUsado.venta;
+        ahorroStockUSD = ahorroStock / tcUsado.venta;
+      }
+    }
+    if (costoCompradoUSD == null) {
+      nSinTipoCambio++;
+      return { it, precioInfo, cant, costoComprado, ahorroStock, precioEspecifico, sinTipoCambio: true };
+    }
+    nValorizados++;
+    costoUSD += costoCompradoUSD;
+    ahorroUSD += ahorroStockUSD;
+    return { it, precioInfo, cant, costoComprado, ahorroStock, precioEspecifico, costoCompradoUSD, ahorroStockUSD, tcUsado };
   });
-  return { filas, costoPorMoneda, ahorroPorMoneda, nValorizados, nSinPrecio };
+  return { filas, costoUSD, ahorroUSD, nValorizados, nSinPrecio, nSinTipoCambio };
 }
 
-// Agrupa el costo comprado (de calcularCosto().filas) por una clave a
-// elección (rubro, proveedor...), separado por moneda — mismo criterio
-// de "no mezclar ARS/USD" de siempre. Solo considera filas ya valorizadas
-// (con precioInfo), el resto no aporta costo.
+// Agrupa el costo comprado en USD (de calcularCosto().filas) por una
+// clave a elección (rubro, proveedor...). Devuelve un Map con una única
+// clave 'USD' (en vez de una por moneda, como antes de convertir todo a
+// un solo valor) para poder seguir reusando renderGrupoPorMoneda() tal
+// cual sin tocarla. Solo considera filas efectivamente convertidas.
 function agruparCostoPor(filas, keyFn) {
-  const porMoneda = new Map();
+  const mapaUSD = new Map();
   for (const f of filas) {
-    if (!f.precioInfo) continue;
+    if (f.costoCompradoUSD == null) continue;
     const key = keyFn(f);
-    const m = f.precioInfo.moneda;
-    if (!porMoneda.has(m)) porMoneda.set(m, new Map());
-    const mapa = porMoneda.get(m);
-    mapa.set(key, (mapa.get(key) || 0) + f.costoComprado);
+    mapaUSD.set(key, (mapaUSD.get(key) || 0) + f.costoCompradoUSD);
   }
-  return porMoneda;
+  return mapaUSD.size ? new Map([['USD', mapaUSD]]) : new Map();
 }
 
-// Pinta un `.chart-card` por moneda presente en `porMonedaMap` dentro de
-// `containerId` (un <div class="charts-grid"> vacío) — un solo gráfico si
-// hay una sola moneda (el caso normal), dos si el costo quedó repartido
-// en ARS y USD. Reusado para "Costo por rubro" y "Top proveedores".
+// Pinta un `.chart-card` por clave presente en `porMonedaMap` dentro de
+// `containerId` (un <div class="charts-grid"> vacío) — con todo ya
+// convertido a USD (ver agruparCostoPor()) siempre es un solo gráfico,
+// pero se mantiene genérica (ya la usaban "Costo por rubro"/"Top
+// proveedores" con una clave por moneda) para no tener que reescribirla.
 function renderGrupoPorMoneda(containerId, titulo, porMonedaMap, color, topN = 8) {
   const cont = document.getElementById(containerId);
   if (!cont) return;
@@ -1038,11 +1073,10 @@ function renderDetalle() {
   // con datos de la vieja (mismo tipo de bug que ya se corrigió una vez
   // acá, ver CLAUDE.md 13.9).
   if (OT_TAB === 'costo') renderCosto();
-  if (!PRECIO_POR_ARTICULO || !HORAS_POR_OT) {
+  if (!PRECIO_POR_ARTICULO || !HORAS_POR_OT || !DOLAR_HISTORICO) {
     const otAlAbrir = OT_ACTUAL;
-    Promise.all([cargarPreciosCotizaciones(), cargarHorasPorOT(), cargarDolarReferencia()]).then(() => {
+    Promise.all([cargarPreciosCotizaciones(), cargarHorasPorOT(), cargarDolarHistoricoCompleto()]).then(() => {
       if (OT_ACTUAL !== otAlAbrir) return;
-      prefillTipoCambio();
       renderResumenOT(agruparPorOTMadre().get(OT_ACTUAL) || [], estadisticasOT(agruparPorOTMadre().get(OT_ACTUAL) || []));
       if (OT_TAB === 'costo') renderCosto();
     });
@@ -1085,23 +1119,18 @@ function renderResumenOT(items, st) {
   renderBarrasCotizadoVsCubierto('mrod_chart_rubro', items);
   renderTablaDesvios('t-mro-desvios', items);
 
-  // -- Costo real (si ya cargaron los precios de Cotizaciones) --
-  if (PRECIO_POR_ARTICULO) {
-    const { filas, costoPorMoneda, ahorroPorMoneda, nValorizados, nSinPrecio } = calcularCosto(items);
-    setTxt('mrod_k_costo', chipsMonto(costoPorMoneda));
-    setTxt('mrod_k_ahorro', chipsMonto(ahorroPorMoneda));
-    const totalPorMoneda = new Map(costoPorMoneda);
-    for (const [m, v] of ahorroPorMoneda) totalPorMoneda.set(m, (totalPorMoneda.get(m) || 0) + v);
-    setTxt('mrod_k_costototal', chipsMonto(totalPorMoneda));
-    let costoKgTxt = '–';
-    if (costoPorMoneda.size === 1 && tot.comprado > 0) {
-      const [m, v] = [...costoPorMoneda.entries()][0];
-      costoKgTxt = `${fmtMonto(v / tot.comprado, m)}/kg`;
-    }
-    setTxt('mrod_k_costokg', costoKgTxt);
-    const totalPreciables = nValorizados + nSinPrecio;
+  // -- Costo real, todo en USD (si ya cargaron precios + histórico del dólar) --
+  if (PRECIO_POR_ARTICULO && DOLAR_HISTORICO) {
+    const { filas, costoUSD, ahorroUSD, nValorizados, nSinPrecio, nSinTipoCambio } = calcularCosto(items);
+    setTxt('mrod_k_costo', fmtMonto(costoUSD, 'USD'));
+    setTxt('mrod_k_ahorro', fmtMonto(ahorroUSD, 'USD'));
+    setTxt('mrod_k_costototal', fmtMonto(costoUSD + ahorroUSD, 'USD'));
+    setTxt('mrod_k_costokg', tot.comprado > 0 ? `${fmtMonto(costoUSD / tot.comprado, 'USD')}/kg` : '–');
+    const totalPreciables = nValorizados + nSinPrecio + nSinTipoCambio;
     setTxt('mrod_k_cobertura', totalPreciables > 0 ? `${Math.round(nValorizados / totalPreciables * 100)}%` : '–');
-    setTxt('mrod_k_cobertura_sub', totalPreciables > 0 ? `${nValorizados} de ${totalPreciables} ítems con precio` : '');
+    setTxt('mrod_k_cobertura_sub', totalPreciables > 0
+      ? `${nValorizados} de ${totalPreciables} ítems` + (nSinTipoCambio ? ` (${nSinTipoCambio} sin T.C. de su fecha)` : '')
+      : '');
     renderGrupoPorMoneda('mrod_wrap_costorubro', 'Costo comprado por rubro', agruparCostoPor(filas, f => f.it.agrupacion || '(Sin rubro)'), '#22c55e');
     renderGrupoPorMoneda('mrod_wrap_provs', 'Top proveedores (costo comprado)', agruparCostoPor(filas, f => f.precioInfo.proveedor_nombre || '(?)'), '#3b82f6');
   }
@@ -1123,23 +1152,16 @@ function renderResumenOT(items, st) {
 // se cubrió con stock existente — no es un gasto real, es la referencia
 // de cuánto NO se gastó). Pedido explícito del usuario, 2026-10-22.
 function renderCosto() {
-  if (OT_ACTUAL === null || !PRECIO_POR_ARTICULO) return;
+  if (OT_ACTUAL === null || !PRECIO_POR_ARTICULO || !DOLAR_HISTORICO) return;
   const items = agruparPorOTMadre().get(OT_ACTUAL) || [];
-  const tc = Number((document.getElementById('mroc_tipo_cambio')?.value || '').trim().replace(',', '.')) || null;
 
-  const { filas, costoPorMoneda, ahorroPorMoneda, nValorizados, nSinPrecio } = calcularCosto(items);
+  const { filas, costoUSD, ahorroUSD, nValorizados, nSinPrecio, nSinTipoCambio } = calcularCosto(items);
 
-  setTxt('mroc_k_costo', chipsMonto(costoPorMoneda));
-  setTxt('mroc_k_ahorro', chipsMonto(ahorroPorMoneda));
+  setTxt('mroc_k_costo', fmtMonto(costoUSD, 'USD'));
+  setTxt('mroc_k_ahorro', fmtMonto(ahorroUSD, 'USD'));
   setTxt('mroc_k_valorizados', nValorizados);
   setTxt('mroc_k_sinprecio', nSinPrecio);
-
-  const combDiv = id => document.getElementById(id);
-  const combinarUSD = mapa => [...mapa.entries()].reduce((acc, [m, v]) => acc + (m === 'USD' ? v * tc : v), 0);
-  const costoComb = combDiv('mroc_k_costo_comb');
-  const ahorroComb = combDiv('mroc_k_ahorro_comb');
-  if (costoComb) costoComb.textContent = (tc && costoPorMoneda.size > 1) ? `≈ ${fmtMonto(combinarUSD(costoPorMoneda), 'ARS')} combinado` : '';
-  if (ahorroComb) ahorroComb.textContent = (tc && ahorroPorMoneda.size > 1) ? `≈ ${fmtMonto(combinarUSD(ahorroPorMoneda), 'ARS')} combinado` : '';
+  setTxt('mroc_k_sintc', nSinTipoCambio);
 
   const tbody = document.getElementById('t-mro-costo');
   if (tbody) {
@@ -1159,15 +1181,29 @@ function renderCosto() {
             <td style="text-align:center;color:var(--muted)">–</td>
           </tr>`;
         }
+        if (f.sinTipoCambio) {
+          return `<tr style="opacity:.6">
+            <td>${escAttr(it.cod_articulo)}</td>
+            <td>${escAttr(it.descripcion || '')}</td>
+            <td>${escAttr(it.agrupacion || '–')}</td>
+            <td style="text-align:right">${numFmt(f.cant.comprado)} ${escAttr(f.cant.unidad)}</td>
+            <td style="text-align:right">${fmtMonto(f.precioInfo.precio_unitario, f.precioInfo.moneda)}</td>
+            <td colspan="2" style="text-align:center;color:var(--muted)" title="No hay cotización del dólar cargada para la fecha de esta compra todavía">⚠️ sin T.C. de su fecha</td>
+            <td style="text-align:center;color:var(--muted)">–</td>
+          </tr>`;
+        }
+        const tcTitle = f.precioInfo.moneda === 'ARS' && f.tcUsado
+          ? `Convertido con el dólar oficial del ${fmt(f.tcUsado.fecha)} ($${numFmt(f.tcUsado.venta)})`
+          : 'Ya estaba cotizado en dólares';
         return `<tr>
           <td>${escAttr(it.cod_articulo)}</td>
           <td>${escAttr(it.descripcion || '')}</td>
           <td>${escAttr(it.agrupacion || '–')}</td>
           <td style="text-align:right">${numFmt(f.cant.comprado)} ${escAttr(f.cant.unidad)}</td>
           <td style="text-align:right" title="Proveedor ganador: ${escAttr(f.precioInfo.proveedor_nombre)}${f.precioEspecifico ? ' — precio cotizado específicamente para esta OT' : ' — precio más reciente (de otra OT/solicitud)'}">${fmtMonto(f.precioInfo.precio_unitario, f.precioInfo.moneda)}${f.precioEspecifico ? ' <span style="color:var(--accent)">🎯</span>' : ''}</td>
-          <td style="text-align:right">${fmtMonto(f.costoComprado, f.precioInfo.moneda)}</td>
+          <td style="text-align:right" title="${tcTitle}">${fmtMonto(f.costoCompradoUSD, 'USD')}</td>
           <td style="text-align:right">${numFmt(f.cant.asig)} ${escAttr(f.cant.unidad)}</td>
-          <td style="text-align:right">${fmtMonto(f.ahorroStock, f.precioInfo.moneda)}</td>
+          <td style="text-align:right" title="${tcTitle}">${fmtMonto(f.ahorroStockUSD, 'USD')}</td>
         </tr>`;
       }).join('');
     tbody.innerHTML = filasHtml || `<tr><td colspan="8" style="text-align:center;padding:18px;color:var(--muted)">Sin ítems</td></tr>`;
@@ -1348,14 +1384,12 @@ export function init() {
     if (!btn) return;
     mostrarTabOT(btn.dataset.tab);
     if (btn.dataset.tab === 'costo') {
-      if (!PRECIO_POR_ARTICULO || !HORAS_POR_OT) await Promise.all([cargarPreciosCotizaciones(), cargarHorasPorOT(), cargarDolarReferencia()]);
-      prefillTipoCambio();
+      if (!PRECIO_POR_ARTICULO || !HORAS_POR_OT || !DOLAR_HISTORICO) await Promise.all([cargarPreciosCotizaciones(), cargarHorasPorOT(), cargarDolarHistoricoCompleto()]);
       if (OT_TAB === 'costo') renderCosto(); // repinta siempre contra la OT actual, cargue o no datos nuevos
     }
   });
   document.getElementById('mrod_f_rubro')?.addEventListener('change', renderDetalle);
   document.getElementById('mrod_f_sinmov')?.addEventListener('change', renderDetalle);
-  document.getElementById('mroc_tipo_cambio')?.addEventListener('input', () => { if (PRECIO_POR_ARTICULO) renderCosto(); });
 
   document.getElementById('mro_file')?.addEventListener('change', e => {
     const file = e.target.files[0];

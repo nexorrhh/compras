@@ -2033,17 +2033,26 @@ para que Materiales OT y Cotizaciones la puedan usar sin importarse funciones en
    hubiera en la tabla, sin romper nada.
 
 Con esto, la tabla **se mantiene al día sola** en la práctica — no hace falta volver a entrar a
-Parametrización → Dólar histórico salvo para la carga inicial o para revisar el gráfico. Dos consumidores
-hoy, los dos haciendo lo mismo (precargar un campo "Tipo de cambio" existente sin pisar lo que el usuario
-ya haya tipeado, igual criterio en los dos lugares):
-- **Materiales OT → Costo** (`mroc_tipo_cambio`, ver 13.11).
-- **Cotizaciones** — tanto en la ficha de una solicitud puntual (`cot_tipo_cambio`) como en "🌐 Pendientes
-  (todas)" (`cotp_tipo_cambio`, ver sección 9.5) — `precargarTipoCambio()` en `js/modules/cotizaciones.js`,
-  llamada al abrir cada una de las dos vistas. Antes esos dos campos eran 100% manuales (sección 9.2
-  punto 7); ahora arrancan con la cotización oficial del día y se recalcula sola la comparativa/resumen
-  en cuanto el valor llega (`renderTablaComparativa()`/`renderResumenProveedores()` o
-  `renderTablaPendientes()`/`renderResumenPendientes()` según la vista) — pero el campo sigue siendo
-  editable para cualquier caso puntual que necesite otro valor.
+Parametrización → Dólar histórico salvo para la carga inicial o para revisar el gráfico.
+
+**Dos funciones más, agregadas el mismo día en una segunda vuelta** (ver 13.12 — el pedido original solo
+hablaba de "precargar un campo con la cotización de hoy", pero Materiales OT terminó necesitando el
+histórico completo para convertir cada costo al dólar del día real en que se compró, no al de hoy):
+- `obtenerHistoricoDolarCompleto()` — trae **toda** la tabla (no solo la última fila) y la cachea en un
+  `Map` fecha→{compra,venta} para el resto de la sesión (misma sincronización de 12.6 antes de traerla).
+- `obtenerDolarEnFecha(fechaISO)` — la cotización vigente en una fecha puntual, usando ese Map; si esa
+  fecha exacta no tiene cotización propia (fin de semana/feriado), toma la última disponible **hacia
+  atrás** (nunca hacia adelante — no tendría sentido usar un dólar que todavía no existía ese día).
+
+Consumidores hoy:
+- **Cotizaciones** sigue usando solo `obtenerDolarReferencia()` (la cotización de **hoy**, sin cambios) —
+  tanto en la ficha de una solicitud puntual (`cot_tipo_cambio`) como en "🌐 Pendientes (todas)"
+  (`cotp_tipo_cambio`, ver sección 9.5) — `precargarTipoCambio()` en `js/modules/cotizaciones.js`, llamada
+  al abrir cada una de las dos vistas. Tiene sentido ahí porque se está comparando una cotización **de
+  hoy** contra el dólar **de hoy**, no reconstruyendo un costo ya pagado en el pasado.
+- **Materiales OT → Costo** pasó a usar `obtenerHistoricoDolarCompleto()`/la fecha real de cada compra en
+  vez de la cotización de hoy — ver 13.12, es un caso distinto (costo YA realizado, no una comparación en
+  vivo) y necesitaba el tipo de cambio del día real, no el de hoy.
 
 ## 13. Módulo: Materiales OT `[DETALLADO]`
 
@@ -2543,15 +2552,57 @@ tomar como referencia".
   marca con **🎯** (tooltip "precio cotizado específicamente para esta OT"); sin la marca, es el genérico.
   `cargarPreciosCotizaciones()` arma los dos mapas en la misma consulta (agregó `n_ot` al `select`, no
   hace falta una query aparte).
-- **Tipo de cambio precargado con el dólar histórico**: el campo "Tipo de cambio" de la pestaña Costo
-  (sección 13.9, puramente de referencia, nunca se guarda) ahora se **precarga solo** con la última
-  cotización del dólar oficial disponible (ver `obtenerDolarReferencia()`, sección 12.6, que de paso
-  completa sola los días recientes que falten) apenas se abre cualquier OT — sigue siendo editable, por
-  si hace falta usar otro valor puntual. `cargarDolarReferencia()` en `js/modules/materot.js` es un
-  wrapper chico sobre esa función compartida (se carga lazy junto con
-  `cargarPreciosCotizaciones()`/`cargarHorasPorOT()`, misma guarda de carrera `otAlAbrir` ya usada para
-  esas dos). Si todavía no se cargó ningún histórico (tabla vacía), el campo queda vacío como antes, sin
-  romper nada.
+- **Tipo de cambio**: ver 13.12 — dejó de ser un campo manual/precargado para pasar a ser un tipo de
+  cambio histórico automático, resuelto por ítem según la fecha real en que se confirmó esa compra.
+
+### 13.12 Costo realizado — todo convertido a dólares, con el tipo de cambio del DÍA DE COMPRA (2026-10-24)
+
+Pedido explícito del usuario, viendo que la sección 13.9/13.10 mezclaba pesos y dólares en los mismos
+KPIs ("U$S 3.793,37 + $234.754,42"): **"la idea es que me traiga todo en dólares porque me trae pesos
+más dólares"**. Pero el pedido no se quedó en "convertir a dólares" — agregó una condición económica
+clave: **"tené en cuenta que cargar el histórico es para que pases a dólares los precios en pesos, es
+decir si se compró el 10 de octubre tiene que tomar a ese día el valor dólar... no convertirlo al día de
+hoy porque si hoy subió el dólar me va a de la nada incrementar algo que no pagué"** — un costo ya
+pagado no puede cambiar de valor en dólares porque el dólar se mueva *después*; hay que usar el tipo de
+cambio del día real de la compra, no el de "hoy". Esto es exactamente para lo que se había armado el
+histórico de la sección 12.5/12.6 — hasta acá solo se usaba para precargar un campo manual de "hoy", sin
+aprovechar que ya guarda la serie completa día por día.
+
+- **De qué fecha sale el "día de compra" de cada ítem**: `compras_cotizaciones_items.confirmado_en` (el
+  timestamp real de cuando se tocó "✅ Confirmar compra" — ver sección 14.1, ya usado por Consolidado de
+  Compras) si existe; si no (ítem todavía no confirmado, o de antes de que existiera esa columna), cae a
+  la fecha de creación de la solicitud de Cotizaciones (`compras_cotizaciones.created_at`) como
+  aproximación — mismo criterio de backfill que ya usa Consolidado. `cargarPreciosCotizaciones()` suma
+  `confirmado_en` al `select` y arma `fechaCompra` (recortada a `YYYY-MM-DD`) dentro de cada `precioInfo`,
+  tanto en el mapa genérico como en el mapa por-OT de 13.11.
+- **Conversión**: en `calcularCosto()`, un precio en **USD** se usa tal cual (no hace falta convertir
+  nada — un dólar de entonces vale lo mismo que un dólar de ahora, a diferencia de un peso). Un precio en
+  **ARS** se divide por `dolarEnFecha(precioInfo.fechaCompra).venta` — el dólar oficial vigente ESE día
+  (ver `js/utils.js` 12.6: si esa fecha exacta no tiene cotización propia —fin de semana, feriado—, toma
+  la última disponible hacia atrás, nunca hacia adelante). `DOLAR_HISTORICO` (copia local del Map
+  completo de `obtenerHistoricoDolarCompleto()`) se carga lazy junto con
+  `cargarPreciosCotizaciones()`/`cargarHorasPorOT()` (misma guarda de carrera `otAlAbrir`) para poder
+  resolver la fecha de cada ítem de forma sincrónica dentro de `calcularCosto()`, sin tener que volver
+  async toda la cadena de render.
+- **Sin inventar cuando falta el dato**: si no hay ninguna cotización del dólar cargada hasta esa fecha
+  (ej. el histórico no llega tan atrás todavía), el ítem queda marcado **"⚠️ sin T.C. de su fecha"**
+  (`nSinTipoCambio`, KPI propio en la pestaña Costo) en vez de usar cualquier otro tipo de cambio a mano
+  — mismo criterio de "no inventar" de siempre, igual que "sin cotización"/"unidad distinta".
+- **Qué cambió en la UI**: el campo manual **"Tipo de cambio" se eliminó** (`mroc_tipo_cambio`, con su
+  listener y los sub-labels "≈ combinado") — ya no hace falta, el tipo de cambio se resuelve solo por
+  ítem. Las sumas que antes se mostraban como "U$S X + $Y" (chips por moneda) ahora son **un solo monto
+  en USD** en los dos lugares: el Resumen (sección 13.10 — Costo realizado, Ahorro por stock, Valor
+  total de material, Costo promedio por kg, todos con el sufijo "(USD)" en el label) y la pestaña Costo
+  (tabla línea por línea: columnas "Costo comprado (USD)"/"Ahorro stock (USD)", con un tooltip por celda
+  que dice si ya estaba en dólares o con qué fecha/cotización se convirtió). "Costo por rubro"/"Top
+  proveedores" (gráficos del Resumen) dejaron de necesitar "un gráfico por moneda" — con todo en USD
+  siempre es un único gráfico (`agruparCostoPor()` ahora agrupa directo en una sola clave `'USD'`, sin
+  tocar `renderGrupoPorMoneda()`, que se mantuvo genérica a propósito).
+- **Verificado con un caso real antes de dar por buena la cuenta**: artículo `BULO5/8X11/2Bg` (OT 596),
+  precio ganador $550,68 ARS, `confirmado_en` = 2026-10-21, comprado = 5 UNI → costo en pesos
+  $2.753,40 → dólar oficial del 21/10/2026: $1.545 (venta) → **≈ U$S 1,78** — un número chico y
+  razonable para una compra de bulones, confirmado contra la API directamente antes de dar el cálculo
+  por bueno.
 
 ## 14. Módulo: Consolidado de Compras `[DETALLADO]`
 

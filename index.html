@@ -1173,7 +1173,7 @@
     </div>
 
     <div id="mro_det_panel_resumen">
-      <div class="psub" style="margin:0 0 16px">Costo realizado de la OT con lo que ya tenemos: kilos (Cotizado por Presupuestos → Cubierto con compra/stock), costo en pesos (cruzando con el último precio ganador en Cotizaciones) y horas cargadas en Capataz (vía Tablero RRHH). Nada inventado — lo que falta precio/presupuesto queda marcado, no estimado.</div>
+      <div class="psub" style="margin:0 0 16px">Costo realizado de la OT con lo que ya tenemos: kilos (Cotizado por Presupuestos → Cubierto con compra/stock), costo todo convertido a dólares (cruzando con el último precio ganador en Cotizaciones — un precio en pesos se pasa a dólares con la cotización del día real en que se confirmó esa compra, no la de hoy) y horas cargadas en Capataz (vía Tablero RRHH). Nada inventado — lo que falta precio/tipo de cambio/presupuesto queda marcado, no estimado.</div>
 
       <div class="msec-title">📦 Avance físico (kg)</div>
       <div class="kpi-grid">
@@ -1191,10 +1191,10 @@
 
       <div class="msec-title">💰 Costo real</div>
       <div class="kpi-grid">
-        <div class="kpi"><div class="kpi-val text-green" id="mrod_k_costo">–</div><div class="kpi-lbl">Costo realizado (comprado)</div></div>
-        <div class="kpi"><div class="kpi-val text-accent" id="mrod_k_ahorro">–</div><div class="kpi-lbl">Ahorro por stock asignado</div></div>
-        <div class="kpi"><div class="kpi-val" id="mrod_k_costototal">–</div><div class="kpi-lbl">Valor total de material usado</div></div>
-        <div class="kpi"><div class="kpi-val" id="mrod_k_costokg">–</div><div class="kpi-lbl">Costo promedio por kg</div></div>
+        <div class="kpi"><div class="kpi-val text-green" id="mrod_k_costo">–</div><div class="kpi-lbl">Costo realizado (comprado, USD)</div></div>
+        <div class="kpi"><div class="kpi-val text-accent" id="mrod_k_ahorro">–</div><div class="kpi-lbl">Ahorro por stock asignado (USD)</div></div>
+        <div class="kpi"><div class="kpi-val" id="mrod_k_costototal">–</div><div class="kpi-lbl">Valor total de material usado (USD)</div></div>
+        <div class="kpi"><div class="kpi-val" id="mrod_k_costokg">–</div><div class="kpi-lbl">Costo promedio por kg (USD)</div></div>
         <div class="kpi">
           <div class="kpi-val" id="mrod_k_cobertura">–</div><div class="kpi-lbl">Cobertura de precio</div>
           <div class="mkpi-sub" id="mrod_k_cobertura_sub"></div>
@@ -1250,20 +1250,17 @@
     </div>
 
     <div id="mro_det_panel_costo" style="display:none">
-      <div class="psub" style="margin:0 0 8px">Precio = si esta OT tuvo su propia solicitud de Cotizaciones para el artículo, ese precio (🎯, puede ser distinto al de otra OT — cantidad, momento o negociación distinta); si no, el último precio ganador de cualquier OT/solicitud. Si está cotizado por KG (el caso normal en perfiles/chapas/ángulos), Comprado/Asignado se muestran y valorizan en KG aunque esta OT los mida en otra unidad (mts, m2) — es el mismo peso físico, no una conversión inventada. Solo si el precio está en otra unidad (UNI, LTS) y no coincide con la de acá, el ítem queda sin precio. Primera versión para ver cómo queda — se va a ir ajustando.</div>
+      <div class="psub" style="margin:0 0 8px">Todo convertido a dólares: un precio cotizado en pesos se divide por el dólar oficial del día en que se confirmó ESA compra (no el de hoy) — así lo que ya se pagó no cambia de valor porque el dólar se mueva después. Precio = si esta OT tuvo su propia solicitud de Cotizaciones para el artículo, ese precio (🎯, puede ser distinto al de otra OT — cantidad, momento o negociación distinta); si no, el último precio ganador de cualquier OT/solicitud. Comprado/Asignado se toman en KG cuando el precio está cotizado por KG (el caso normal en perfiles/chapas/ángulos), aunque esta OT los mida en otra unidad — es el mismo peso físico, no una conversión inventada. Primera versión para ver cómo queda — se va a ir ajustando.</div>
       <div class="kpi-grid">
-        <div class="kpi"><div class="kpi-val text-green" id="mroc_k_costo">–</div><div class="kpi-lbl">Costo realizado (comprado)</div><div class="psub" id="mroc_k_costo_comb" style="margin:2px 0 0;font-size:11px"></div></div>
-        <div class="kpi"><div class="kpi-val text-accent" id="mroc_k_ahorro">–</div><div class="kpi-lbl">Ahorro por stock asignado</div><div class="psub" id="mroc_k_ahorro_comb" style="margin:2px 0 0;font-size:11px"></div></div>
+        <div class="kpi"><div class="kpi-val text-green" id="mroc_k_costo">–</div><div class="kpi-lbl">Costo realizado (comprado, USD)</div></div>
+        <div class="kpi"><div class="kpi-val text-accent" id="mroc_k_ahorro">–</div><div class="kpi-lbl">Ahorro por stock asignado (USD)</div></div>
         <div class="kpi"><div class="kpi-val" id="mroc_k_valorizados">–</div><div class="kpi-lbl">Ítems valorizados</div></div>
         <div class="kpi"><div class="kpi-val text-yellow" id="mroc_k_sinprecio">–</div><div class="kpi-lbl">Ítems sin precio</div></div>
+        <div class="kpi"><div class="kpi-val text-yellow" id="mroc_k_sintc">–</div><div class="kpi-lbl">Ítems sin T.C. de su fecha</div></div>
         <div class="kpi"><div class="kpi-val" id="mroc_k_horas">–</div><div class="kpi-lbl">Horas cargadas (Capataz)</div></div>
       </div>
-      <div class="fg" style="max-width:220px">
-        <label>Tipo de cambio (precargado con el dólar oficial de hoy — editable, no se guarda)</label>
-        <input id="mroc_tipo_cambio" inputmode="decimal" placeholder="ej: 1450">
-      </div>
       <div class="tw"><table>
-        <thead><tr><th>Código</th><th>Descripción</th><th>Rubro</th><th>Comprado</th><th>Precio unit.</th><th>Costo comprado</th><th>Asignado</th><th>Ahorro stock</th></tr></thead>
+        <thead><tr><th>Código</th><th>Descripción</th><th>Rubro</th><th>Comprado</th><th>Precio unit.</th><th>Costo comprado (USD)</th><th>Asignado</th><th>Ahorro stock (USD)</th></tr></thead>
         <tbody id="t-mro-costo"></tbody>
       </table></div>
 

@@ -168,17 +168,52 @@ async function sincronizarDolarDiasFaltantes() {
   }
 }
 
+async function asegurarDolarSincronizado() {
+  if (dolarSincronizadoEstaCarga) return;
+  dolarSincronizadoEstaCarga = true;
+  await sincronizarDolarDiasFaltantes().catch(() => {});
+}
+
 // Última cotización del dólar oficial disponible ({fecha, compra, venta}
 // o null si todavía no hay nada cargado) — se completa sola (una vez por
 // carga de página) con los días recientes que falten antes de devolver
 // el valor. Si la sincronización falla (sin internet, API caída), se
 // sigue con lo que ya hubiera en la tabla, sin romper nada.
 export async function obtenerDolarReferencia() {
-  if (!dolarSincronizadoEstaCarga) {
-    dolarSincronizadoEstaCarga = true;
-    await sincronizarDolarDiasFaltantes().catch(() => {});
-  }
+  await asegurarDolarSincronizado();
   const { data, error } = await SB.from('compras_dolar_historico').select('fecha,compra,venta').order('fecha', { ascending: false }).limit(1);
   if (error || !data?.length) return null;
   return data[0];
+}
+
+// Histórico completo ({fecha -> {compra, venta}}) — para convertir un
+// monto en ARS al dólar del DÍA REAL en que se incurrió ese costo, no al
+// de hoy. Pedido explícito del usuario, 2026-10-24: "si se compró el 10
+// de octubre tiene que tomar a ese día el valor dólar... no convertirlo
+// al día de hoy porque si hoy subió el dólar me va a de la nada
+// incrementar algo que no pagué". Se trae una sola vez por carga de
+// página (lazy, cacheado en memoria) — la misma sincronización de días
+// recientes que obtenerDolarReferencia() corre antes de traerlo.
+let dolarHistoricoCache = null; // Map fecha('YYYY-MM-DD') -> {compra, venta}
+export async function obtenerHistoricoDolarCompleto() {
+  await asegurarDolarSincronizado();
+  if (dolarHistoricoCache) return dolarHistoricoCache;
+  const { data, error } = await fetchAll(() => SB.from('compras_dolar_historico').select('fecha,compra,venta').order('fecha', { ascending: true }));
+  dolarHistoricoCache = new Map((error ? [] : (data || [])).map(r => [r.fecha, { compra: Number(r.compra), venta: Number(r.venta) }]));
+  return dolarHistoricoCache;
+}
+
+// Cotización vigente en una fecha puntual — si esa fecha exacta no tiene
+// cotización propia (fin de semana/feriado), toma la última disponible
+// ANTERIOR (el dólar no deja de tener un valor vigente esos días; no
+// tiene sentido mirar "para adelante"). `null` si no hay ningún dato
+// cargado hasta esa fecha (ej. la fecha es anterior a 2011-01-03, el
+// arranque de la serie de ArgentinaDatos).
+export async function obtenerDolarEnFecha(fechaISO) {
+  const mapa = await obtenerHistoricoDolarCompleto();
+  if (!fechaISO || !mapa.size) return null;
+  if (mapa.has(fechaISO)) return { fecha: fechaISO, ...mapa.get(fechaISO) };
+  let mejor = null;
+  for (const f of mapa.keys()) if (f <= fechaISO && (!mejor || f > mejor)) mejor = f;
+  return mejor ? { fecha: mejor, ...mapa.get(mejor) } : null;
 }
