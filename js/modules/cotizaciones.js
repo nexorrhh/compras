@@ -11,7 +11,7 @@
 // compra respetando mínimos por proveedor.
 // ============================================================
 import { SB } from '../supabase-client.js';
-import { toast, om, cm, norm, txt, num, fetchAll, escAttr, fmt } from '../utils.js';
+import { toast, om, cm, norm, txt, num, fetchAll, escAttr, fmt, obtenerDolarReferencia } from '../utils.js';
 
 let COTIZACIONES = [];
 let ITEMS_RESUMEN = [];     // {cotizacion_id, a_comprar} de TODAS las solicitudes — solo para los contadores de la lista
@@ -481,6 +481,9 @@ async function abrirDetalle(id) {
   renderInvitados();
   renderTablaComparativa();
   renderResumenProveedores();
+  precargarTipoCambio('cot_tipo_cambio').then(cargo => {
+    if (cargo && COT_ACTUAL?.id === id) { renderTablaComparativa(); renderResumenProveedores(); }
+  });
 }
 
 function volverALista() {
@@ -638,6 +641,23 @@ function tipoCambioActual() {
   const v = (document.getElementById('cot_tipo_cambio')?.value || '').trim().replace(',', '.');
   const n = Number(v);
   return v && isFinite(n) && n > 0 ? n : null;
+}
+
+// Precarga un input de "Tipo de cambio" con el último dólar oficial
+// disponible (compartido con Materiales OT → Costo, ver
+// obtenerDolarReferencia() en js/utils.js), sin pisar lo que el usuario
+// ya haya tipeado a mano. Pedido explícito del usuario, 2026-10-24: "que
+// a la hora de cotizar... me traiga el precio del dólar... para que se
+// arme sola la comparativa". Devuelve `true` si efectivamente completó
+// el campo (para que quien llama sepa si hace falta repintar).
+async function precargarTipoCambio(inputId) {
+  const input = document.getElementById(inputId);
+  if (!input || input.value) return false;
+  const ref = await obtenerDolarReferencia();
+  if (!ref || input.value) return false; // el usuario puede haber tipeado algo mientras se consultaba
+  input.value = String(ref.venta);
+  input.title = `Precargado con el dólar oficial del ${fmt(ref.fecha)} — se puede editar`;
+  return true;
 }
 
 // Ordenada por descripción (no por código) — pedido explícito del
@@ -2657,6 +2677,9 @@ export async function render(secId) {
     renderInvitadosPendientes();
     renderTablaPendientes();
     renderResumenPendientes();
+    precargarTipoCambio('cotp_tipo_cambio').then(cargo => {
+      if (cargo) { renderTablaPendientes(); renderResumenPendientes(); }
+    });
     return;
   }
   if (secId !== 'cot-lista') return;

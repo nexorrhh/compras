@@ -40,7 +40,7 @@
 // los ítems de toda OT hija bajo su madre antes de mostrarlos.
 // ============================================================
 import { SB } from '../supabase-client.js';
-import { toast, norm, txt, num, fetchAll, escAttr } from '../utils.js';
+import { toast, norm, txt, num, fetchAll, escAttr, obtenerDolarReferencia } from '../utils.js';
 
 let ITEMS = [];      // compras_materot_items, todas las filas
 let GRUPOS = [];      // compras_materot_ot_grupos — [{n_ot_hija, n_ot_madre}]
@@ -87,22 +87,16 @@ let PRECIO_POR_ARTICULO_OT = null; // `${cod_articulo}|${n_ot formateado}` -> {p
 // vez la pestaña "💰 Costo".
 let HORAS_POR_OT = null; // ot (formateado, sin ceros) -> Map(operación -> horas)
 
-// Última cotización del dólar oficial cargada en compras_dolar_historico
-// (módulo Parametrización → Dólar histórico, ver CLAUDE.md 13.11) — se
-// usa solo para PRECARGAR el campo "Tipo de cambio" de la pestaña Costo
-// (que sigue siendo editable y no persiste, igual que siempre), así no
-// hay que tipearlo a mano cada vez que se entra a una OT. Se consulta
-// directo a la tabla (no se importa nada de js/modules/dolar.js — cada
-// módulo es independiente, se comparten datos por tabla, no por import,
-// mismo criterio de siempre). `dolarRefIntentado` evita reconsultar si
-// ya se probó una vez y no había nada cargado.
-let DOLAR_REF = null; // {fecha, venta} | null
-let dolarRefIntentado = false;
+// Última cotización del dólar oficial — se usa solo para PRECARGAR el
+// campo "Tipo de cambio" de la pestaña Costo (sigue siendo editable y no
+// persiste, igual que siempre). `obtenerDolarReferencia()` (en
+// js/utils.js, compartida con Cotizaciones) se completa sola con los
+// días recientes que falten antes de devolver el valor — no hace falta
+// que nadie entre a Parametrización → Dólar histórico para que esto
+// quede razonablemente al día (ver CLAUDE.md 12.6).
+let DOLAR_REF = null; // {fecha, compra, venta} | null
 async function cargarDolarReferencia() {
-  if (dolarRefIntentado) return DOLAR_REF;
-  dolarRefIntentado = true;
-  const { data, error } = await SB.from('compras_dolar_historico').select('fecha,venta').order('fecha', { ascending: false }).limit(1);
-  if (!error && data?.length) DOLAR_REF = data[0];
+  DOLAR_REF = await obtenerDolarReferencia();
   return DOLAR_REF;
 }
 

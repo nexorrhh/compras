@@ -19,7 +19,7 @@
 // siempre.
 // ============================================================
 import { SB } from '../supabase-client.js';
-import { toast, fetchAll, fmt, today } from '../utils.js';
+import { toast, fetchAll, fmt, today, obtenerDolarReferencia } from '../utils.js';
 
 const API_BASE = 'https://api.argentinadatos.com/v1/cotizaciones/dolares';
 const CASA = 'oficial'; // dólar oficial, Banco Nación — pedido explícito del usuario, 2026-10-24
@@ -156,6 +156,11 @@ function renderChart(filas) {
 // ------------------------------------------------------------
 export async function render(secId) {
   if (secId !== 'param-dolar') return;
+  // Antes de mostrar, aprovecha el mismo chequeo liviano que ya usan
+  // Materiales OT/Cotizaciones (ver obtenerDolarReferencia() en
+  // js/utils.js) para completar solo los días recientes que falten — así
+  // entrar acá también sirve para verlo al día, no solo los botones.
+  await obtenerDolarReferencia();
   FILAS = await cargarDesdeSupabase();
   renderVista();
 }

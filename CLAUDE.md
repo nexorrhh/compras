@@ -1106,7 +1106,12 @@ OT del modal "+ Agregar ítem para cotizar" (ver más abajo).
 7. **Comparar y elegir**: la celda más barata de cada fila se resalta en verde, y una columna "Ganador"
    sugiere automáticamente al proveedor más barato apenas hay precios cargados. Arriba de la tabla hay un
    campo opcional **"Tipo de cambio"** (`tipoCambioActual()`) — puramente de referencia, no se guarda en
-   ningún lado (se pierde al recargar la página). Sirve para mostrar, en una línea chica abajo de cada
+   ningún lado (se pierde al recargar la página), pero **se precarga solo** con la última cotización del
+   dólar oficial disponible al abrir la ficha (`precargarTipoCambio()`, ver sección 12.6 — pedido
+   explícito del usuario, 2026-10-24: "que a la hora de cotizar... me traiga el precio del dólar...
+   para que se arme sola la comparativa") sin pisar un valor que ya se haya tipeado a mano; la misma
+   precarga aplica en "🌐 Pendientes (todas)" (`cotp_tipo_cambio`, ver 9.5). Sirve para mostrar, en una
+   línea chica abajo de cada
    celda en dólares, a cuánto equivale en pesos ("≈ $X"), y en el panel "Resumen por proveedor", si un
    proveedor terminó con monto en más de una moneda, una línea extra "≈ Total combinado" con la suma de
    todo convertido a pesos.
@@ -1974,11 +1979,46 @@ del sistema y no un módulo de compras.
 (mismo criterio que el resto de `compras_*`): una sola tabla, `compras_dolar_historico` (`fecha` date
 como PK, `compra`/`venta` numeric tal cual los trae la API, sin recalcular).
 
-**Cada módulo que necesite el dato lo consulta directo a esta tabla** — no se importan funciones de
-`js/modules/dolar.js` desde otros módulos (mismo criterio de siempre: los módulos se independizan
-compartiendo por tabla, no por `import` cruzado — ver, por ejemplo, cómo el módulo OT lee
-`compras_cotizaciones_*` sin importar nada de `cotizaciones.js`). El primer consumidor es Materiales OT
-— ver 13.11.
+**Ningún módulo importa funciones de `js/modules/dolar.js`** (mismo criterio de siempre: los módulos de
+compras se independizan compartiendo por tabla, no por `import` cruzado — ver, por ejemplo, cómo el
+módulo OT lee `compras_cotizaciones_*` sin importar nada de `cotizaciones.js`) — `dolar.js` es solo la
+pantalla de administración. Lo que sí se comparte es la **lectura** del último valor, ver 12.6.
+
+### 12.6 Sincronización automática — `obtenerDolarReferencia()`
+
+Pedido explícito del usuario (2026-10-24), al ver el primer resultado de 12.5: "¿se va a actualizar solo
+o tengo que tocar algo?" + "me gustaría que a la hora de cotizar de forma automática me traiga el precio
+del dólar para que se arme sola la comparativa ya que está" — hasta acá la tabla solo se llenaba con los
+dos botones manuales de 12.5, nada la mantenía al día sola, y ningún otro módulo la usaba todavía salvo
+Materiales OT (ver 13.11, que en ese momento consultaba la tabla directo, sin sincronizar nada).
+
+`obtenerDolarReferencia()` en **`js/utils.js`** (no en `dolar.js` — es la única función de este feature
+que sí vive en el archivo compartido por todos los módulos, como `fetchAll`/`toast`/`escAttr`, precisamente
+para que Materiales OT y Cotizaciones la puedan usar sin importarse funciones entre sí) hace dos cosas:
+1. **Una sola vez por carga de página** (`dolarSincronizadoEstaCarga`, sin importar cuántos módulos la
+   pidan), completa los días recientes que falten desde la última fecha ya guardada hasta hoy — pero
+   **no** volviendo a traer la serie completa (~5700+ filas, pesado para algo tan chico), sino con el
+   endpoint **puntual** de ArgentinaDatos (`/oficial/{año}/{mes}/{día}`, confirmado con `curl`: devuelve
+   una sola cotización o 404 si ese día no tiene — fin de semana, feriado, o todavía sin publicar) una
+   fecha a la vez, con un tope de 10 días por las dudas (si el hueco es mayor, conviene el botón manual
+   "↻ Actualizar últimos 30 días" de 12.5, una sola request en vez de muchas). Si la tabla está vacía
+   todavía, no hace nada — la carga **inicial** sigue siendo 100% manual, con aviso previo (ver 12.5).
+2. Devuelve `{fecha, compra, venta}` de la fecha más reciente ya disponible (después de ese intento de
+   sincronizar). Si la sincronización falla (sin internet, API caída), se sigue devolviendo lo que ya
+   hubiera en la tabla, sin romper nada.
+
+Con esto, la tabla **se mantiene al día sola** en la práctica — no hace falta volver a entrar a
+Parametrización → Dólar histórico salvo para la carga inicial o para revisar el gráfico. Dos consumidores
+hoy, los dos haciendo lo mismo (precargar un campo "Tipo de cambio" existente sin pisar lo que el usuario
+ya haya tipeado, igual criterio en los dos lugares):
+- **Materiales OT → Costo** (`mroc_tipo_cambio`, ver 13.11).
+- **Cotizaciones** — tanto en la ficha de una solicitud puntual (`cot_tipo_cambio`) como en "🌐 Pendientes
+  (todas)" (`cotp_tipo_cambio`, ver sección 9.5) — `precargarTipoCambio()` en `js/modules/cotizaciones.js`,
+  llamada al abrir cada una de las dos vistas. Antes esos dos campos eran 100% manuales (sección 9.2
+  punto 7); ahora arrancan con la cotización oficial del día y se recalcula sola la comparativa/resumen
+  en cuanto el valor llega (`renderTablaComparativa()`/`renderResumenProveedores()` o
+  `renderTablaPendientes()`/`renderResumenPendientes()` según la vista) — pero el campo sigue siendo
+  editable para cualquier caso puntual que necesite otro valor.
 
 ## 13. Módulo: Materiales OT `[DETALLADO]`
 
@@ -2480,12 +2520,13 @@ tomar como referencia".
   hace falta una query aparte).
 - **Tipo de cambio precargado con el dólar histórico**: el campo "Tipo de cambio" de la pestaña Costo
   (sección 13.9, puramente de referencia, nunca se guarda) ahora se **precarga solo** con la última
-  cotización del dólar oficial cargada en `compras_dolar_historico` (ver 12.5) apenas se abre cualquier
-  OT — sigue siendo editable, por si hace falta usar otro valor puntual. `cargarDolarReferencia()` en
-  `js/modules/materot.js` consulta la tabla directo (sin importar nada de `js/modules/dolar.js`, mismo
-  criterio de siempre) y se carga lazy junto con `cargarPreciosCotizaciones()`/`cargarHorasPorOT()` —
-  misma guarda de carrera (`otAlAbrir`) ya usada para esas dos. Si todavía no se cargó ningún histórico
-  (tabla vacía), el campo queda vacío como antes, sin romper nada.
+  cotización del dólar oficial disponible (ver `obtenerDolarReferencia()`, sección 12.6, que de paso
+  completa sola los días recientes que falten) apenas se abre cualquier OT — sigue siendo editable, por
+  si hace falta usar otro valor puntual. `cargarDolarReferencia()` en `js/modules/materot.js` es un
+  wrapper chico sobre esa función compartida (se carga lazy junto con
+  `cargarPreciosCotizaciones()`/`cargarHorasPorOT()`, misma guarda de carrera `otAlAbrir` ya usada para
+  esas dos). Si todavía no se cargó ningún histórico (tabla vacía), el campo queda vacío como antes, sin
+  romper nada.
 
 ## 14. Módulo: Consolidado de Compras `[DETALLADO]`
 

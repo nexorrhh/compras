@@ -1,6 +1,7 @@
 // ============================================================
 // Utilidades compartidas por todos los módulos del tablero
 // ============================================================
+import { SB } from './supabase-client.js';
 
 export function toast(msg, type = 'ok') {
   const c = document.getElementById('TC');
@@ -117,4 +118,67 @@ export async function fetchAll(makeQuery, pageSize = 1000) {
     from += pageSize;
   }
   return { data: all, error: null };
+}
+
+// ------------------------------------------------------------
+// Dólar oficial — referencia compartida para convertir USD↔ARS en
+// cualquier módulo (hoy: Materiales OT → Costo, Cotizaciones). La carga
+// MASIVA del histórico completo sigue siendo 100% manual, con aviso
+// previo (Parametrización → Dólar histórico, ver CLAUDE.md 12.5/12.6) —
+// acá solo se completan los días recientes que falten, uno por uno, con
+// el endpoint puntual de ArgentinaDatos (liviano, nada que ver con traer
+// la serie entera), para que ningún módulo dependa de que alguien entre
+// a tocar un botón para ver un dato fresco. Pedido explícito del
+// usuario, 2026-10-24: "que a la hora de cotizar... me traiga el precio
+// del dólar... para que se arme sola la comparativa".
+// ------------------------------------------------------------
+const DOLAR_API_UN_DIA = 'https://api.argentinadatos.com/v1/cotizaciones/dolares/oficial';
+let dolarSincronizadoEstaCarga = false; // una sola vez por carga de página, sin importar cuántos módulos lo pidan
+
+function sumarDiasISO(fechaISO, n) {
+  const d = new Date(fechaISO + 'T12:00:00');
+  d.setDate(d.getDate() + n);
+  return d.toISOString().slice(0, 10);
+}
+
+async function fetchDolarDeUnDia(fechaISO) {
+  const [y, m, d] = fechaISO.split('-');
+  const r = await fetch(`${DOLAR_API_UN_DIA}/${y}/${m}/${d}`);
+  if (r.status === 404) return null; // sin cotización ese día (feriado/fin de semana/todavía sin publicar)
+  if (!r.ok) throw new Error(`ArgentinaDatos respondió ${r.status}`);
+  return r.json();
+}
+
+async function sincronizarDolarDiasFaltantes() {
+  const { data } = await SB.from('compras_dolar_historico').select('fecha').order('fecha', { ascending: false }).limit(1);
+  const ultima = data?.[0]?.fecha;
+  if (!ultima) return; // tabla vacía todavía — la carga inicial sigue siendo manual, con aviso (ver 12.5)
+  const hoy = today();
+  const filas = [];
+  let cursor = sumarDiasISO(ultima, 1);
+  let tope = 0;
+  while (cursor <= hoy && tope < 10) { // tope de seguridad — nunca debería hacer falta tanto si se usa seguido
+    const fila = await fetchDolarDeUnDia(cursor).catch(() => null);
+    if (fila) filas.push(fila);
+    cursor = sumarDiasISO(cursor, 1);
+    tope++;
+  }
+  if (filas.length) {
+    await SB.from('compras_dolar_historico').upsert(filas.map(f => ({ fecha: f.fecha, compra: f.compra, venta: f.venta })), { onConflict: 'fecha' });
+  }
+}
+
+// Última cotización del dólar oficial disponible ({fecha, compra, venta}
+// o null si todavía no hay nada cargado) — se completa sola (una vez por
+// carga de página) con los días recientes que falten antes de devolver
+// el valor. Si la sincronización falla (sin internet, API caída), se
+// sigue con lo que ya hubiera en la tabla, sin romper nada.
+export async function obtenerDolarReferencia() {
+  if (!dolarSincronizadoEstaCarga) {
+    dolarSincronizadoEstaCarga = true;
+    await sincronizarDolarDiasFaltantes().catch(() => {});
+  }
+  const { data, error } = await SB.from('compras_dolar_historico').select('fecha,compra,venta').order('fecha', { ascending: false }).limit(1);
+  if (error || !data?.length) return null;
+  return data[0];
 }
