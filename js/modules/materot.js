@@ -59,6 +59,16 @@ let MOSTRAR_ARCHIVADAS = false; // checkbox de "Por OT" — oculta archivadas po
 // usuario — "por ahora lo mismo local, lo que tenemos").
 let PRECIO_POR_ARTICULO = null; // cod_articulo -> {precio_unitario, moneda, umc, proveedor_nombre, fecha}
 
+// Precio ganador de Cotizaciones, pero restringido a la misma OT —
+// pedido explícito del usuario, 2026-10-24: "a veces algunos precios
+// varían según la OT" (distinta cantidad, distinto momento, distinta
+// negociación), así que si ESTA OT tuvo su propia solicitud de
+// Cotizaciones para el artículo, ese precio pesa más que el genérico
+// "más reciente de cualquier OT" de PRECIO_POR_ARTICULO. Se arma en el
+// mismo cargarPreciosCotizaciones() (misma data, no una query aparte) —
+// ver precioParaItem().
+let PRECIO_POR_ARTICULO_OT = null; // `${cod_articulo}|${n_ot formateado}` -> {precio_unitario, moneda, umc, proveedor_nombre, fecha}
+
 // Horas por OT — pedido explícito del usuario, 2026-10-22: sumar las horas
 // cargadas en Capataz (vía el Tablero RRHH, tabla horas_ot_detalle — mismo
 // proyecto Supabase que éste, sin credenciales nuevas) junto al resto del
@@ -451,13 +461,13 @@ function renderTablaDesvios(tbodyId, items) {
 async function cargarPreciosCotizaciones() {
   if (PRECIO_POR_ARTICULO) return PRECIO_POR_ARTICULO;
   const [{ data: items, error: e1 }, { data: precios, error: e2 }, { data: cots, error: e3 }, { data: provs, error: e4 }] = await Promise.all([
-    fetchAll(() => SB.from('compras_cotizaciones_items').select('id,cotizacion_id,cod_articulo,umc,ganador_proveedor_id')),
+    fetchAll(() => SB.from('compras_cotizaciones_items').select('id,cotizacion_id,cod_articulo,umc,ganador_proveedor_id,n_ot')),
     fetchAll(() => SB.from('compras_cotizaciones_precios').select('item_id,proveedor_id,precio_unitario,moneda')),
     fetchAll(() => SB.from('compras_cotizaciones').select('id,created_at')),
     fetchAll(() => SB.from('compras_proveedores').select('id,nombre')),
   ]);
   const error = e1 || e2 || e3 || e4;
-  if (error) { toast(error.message, 'er'); PRECIO_POR_ARTICULO = new Map(); return PRECIO_POR_ARTICULO; }
+  if (error) { toast(error.message, 'er'); PRECIO_POR_ARTICULO = new Map(); PRECIO_POR_ARTICULO_OT = new Map(); return PRECIO_POR_ARTICULO; }
 
   const precioPorClave = new Map((precios || []).map(p => [`${p.item_id}|${p.proveedor_id}`, p]));
   const fechaCot = new Map((cots || []).map(c => [c.id, c.created_at || '']));
@@ -467,25 +477,36 @@ async function cargarPreciosCotizaciones() {
   // solicitudes — se toma el precio de la cotización más reciente (por
   // fecha de creación de la solicitud) que tenga un ganador con precio
   // cargado, no un promedio ni el más bajo histórico (mismo criterio de
-  // "no inventar" de siempre: es el dato real más actual que hay).
+  // "no inventar" de siempre: es el dato real más actual que hay). Esto
+  // da el mapa GENÉRICO (cualquier OT); en paralelo se arma uno POR OT
+  // (mismo criterio de "más reciente"), para artículos cuyo precio varía
+  // según la OT (ver nota de PRECIO_POR_ARTICULO_OT).
   const mapa = new Map();
+  const mapaPorOT = new Map();
   for (const it of (items || [])) {
     if (!it.ganador_proveedor_id) continue;
     const precio = precioPorClave.get(`${it.id}|${it.ganador_proveedor_id}`);
     if (!precio || precio.precio_unitario == null) continue;
     const fecha = fechaCot.get(it.cotizacion_id) || '';
+    const info = {
+      precio_unitario: Number(precio.precio_unitario),
+      moneda: precio.moneda,
+      umc: it.umc,
+      proveedor_nombre: nombreProv.get(it.ganador_proveedor_id) || '(?)',
+      fecha,
+    };
     const actual = mapa.get(it.cod_articulo);
-    if (!actual || fecha > actual.fecha) {
-      mapa.set(it.cod_articulo, {
-        precio_unitario: Number(precio.precio_unitario),
-        moneda: precio.moneda,
-        umc: it.umc,
-        proveedor_nombre: nombreProv.get(it.ganador_proveedor_id) || '(?)',
-        fecha,
-      });
+    if (!actual || fecha > actual.fecha) mapa.set(it.cod_articulo, info);
+
+    const otF = formatOT((it.n_ot || '').trim());
+    if (otF) {
+      const clave = `${it.cod_articulo}|${otF}`;
+      const actualOT = mapaPorOT.get(clave);
+      if (!actualOT || fecha > actualOT.fecha) mapaPorOT.set(clave, info);
     }
   }
   PRECIO_POR_ARTICULO = mapa;
+  PRECIO_POR_ARTICULO_OT = mapaPorOT;
   return mapa;
 }
 
@@ -556,28 +577,45 @@ function chipsMonto(mapa) {
   return [...mapa.entries()].map(([m, v]) => fmtMonto(v, m)).join(' + ') || '–';
 }
 
-// Valoriza una lista de ítems contra PRECIO_POR_ARTICULO — "Costo
-// realizado" (Comprado × precio) y "Ahorro por stock asignado" (Asignado
-// × precio). Extraída de renderCosto() para que el Resumen la reuse sin
-// duplicar la lógica (ver renderResumenOT()). Llamar solo si
-// PRECIO_POR_ARTICULO ya está cargado.
+// Precio a usar para UN ítem puntual: primero el precio ganador que haya
+// salido de una solicitud de Cotizaciones para la MISMA OT (más reciente
+// si hubo más de una), y solo si no hay ninguno, el genérico más reciente
+// de cualquier OT (PRECIO_POR_ARTICULO). Ver nota de PRECIO_POR_ARTICULO_OT
+// más arriba — pedido explícito del usuario, 2026-10-24.
+function precioParaItem(it) {
+  const otF = formatOT((it.n_ot || '').trim());
+  if (otF && PRECIO_POR_ARTICULO_OT) {
+    const porOT = PRECIO_POR_ARTICULO_OT.get(`${it.cod_articulo}|${otF}`);
+    if (porOT) return { info: porOT, especifico: true };
+  }
+  const global = PRECIO_POR_ARTICULO?.get(it.cod_articulo);
+  return global ? { info: global, especifico: false } : null;
+}
+
+// Valoriza una lista de ítems contra Cotizaciones — "Costo realizado"
+// (Comprado × precio) y "Ahorro por stock asignado" (Asignado × precio).
+// Extraída de renderCosto() para que el Resumen la reuse sin duplicar la
+// lógica (ver renderResumenOT()). Llamar solo si PRECIO_POR_ARTICULO ya
+// está cargado.
 function calcularCosto(items) {
   const costoPorMoneda = new Map();
   const ahorroPorMoneda = new Map();
   let nValorizados = 0, nSinPrecio = 0;
   const filas = items.map(it => {
-    const precioInfo = PRECIO_POR_ARTICULO.get(it.cod_articulo);
+    const encontrado = precioParaItem(it);
+    const precioInfo = encontrado?.info || null;
     const cant = precioInfo ? cantidadParaCosto(it, precioInfo) : null;
     if (!precioInfo || !cant) {
       nSinPrecio++;
       return { it, precioInfo: null, motivo: precioInfo ? 'unidad distinta' : 'sin cotización' };
     }
     nValorizados++;
+    const precioEspecifico = encontrado.especifico;
     const costoComprado = cant.comprado * precioInfo.precio_unitario;
     const ahorroStock = cant.asig * precioInfo.precio_unitario;
     costoPorMoneda.set(precioInfo.moneda, (costoPorMoneda.get(precioInfo.moneda) || 0) + costoComprado);
     ahorroPorMoneda.set(precioInfo.moneda, (ahorroPorMoneda.get(precioInfo.moneda) || 0) + ahorroStock);
-    return { it, precioInfo, cant, costoComprado, ahorroStock };
+    return { it, precioInfo, cant, costoComprado, ahorroStock, precioEspecifico };
   });
   return { filas, costoPorMoneda, ahorroPorMoneda, nValorizados, nSinPrecio };
 }
@@ -1102,7 +1140,7 @@ function renderCosto() {
           <td>${escAttr(it.descripcion || '')}</td>
           <td>${escAttr(it.agrupacion || '–')}</td>
           <td style="text-align:right">${numFmt(f.cant.comprado)} ${escAttr(f.cant.unidad)}</td>
-          <td style="text-align:right" title="Proveedor ganador: ${escAttr(f.precioInfo.proveedor_nombre)}">${fmtMonto(f.precioInfo.precio_unitario, f.precioInfo.moneda)}</td>
+          <td style="text-align:right" title="Proveedor ganador: ${escAttr(f.precioInfo.proveedor_nombre)}${f.precioEspecifico ? ' — precio cotizado específicamente para esta OT' : ' — precio más reciente (de otra OT/solicitud)'}">${fmtMonto(f.precioInfo.precio_unitario, f.precioInfo.moneda)}${f.precioEspecifico ? ' <span style="color:var(--accent)">🎯</span>' : ''}</td>
           <td style="text-align:right">${fmtMonto(f.costoComprado, f.precioInfo.moneda)}</td>
           <td style="text-align:right">${numFmt(f.cant.asig)} ${escAttr(f.cant.unidad)}</td>
           <td style="text-align:right">${fmtMonto(f.ahorroStock, f.precioInfo.moneda)}</td>

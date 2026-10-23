@@ -2201,15 +2201,28 @@ las dos preguntas tenía una respuesta obvia) y el usuario confirmó: **"por aho
 tenemos, y en el caso que no tenga el precio, no se lo pongamos... para ver cómo queda"** — una primera
 versión simple, explícitamente provisoria ("después iremos ajustando").
 
-- **De dónde sale el precio**: Materiales OT no tiene precios propios — se cruza cada `cod_articulo` de
-  la OT contra `compras_cotizaciones_items`/`compras_cotizaciones_precios` (**de todas las solicitudes de
-  Cotizaciones, no solo las de esa OT**), buscando el precio del proveedor **ganador**
-  (`ganador_proveedor_id`) de la cotización donde ese artículo aparezca. Un mismo artículo puede haberse
-  cotizado varias veces en solicitudes distintas — se toma la **más reciente** (por
+- **De dónde sale el precio — primero por OT, después genérico** (ajustado 2026-10-24, pedido explícito
+  del usuario: "a veces algunos precios varían según la OT" — distinta cantidad, distinto momento,
+  distinta negociación con el proveedor). Materiales OT no tiene precios propios — se cruza cada
+  `cod_articulo` de la OT contra `compras_cotizaciones_items`/`compras_cotizaciones_precios` buscando el
+  precio del proveedor **ganador** (`ganador_proveedor_id`). `precioParaItem()` en
+  `js/modules/materot.js` prueba primero `PRECIO_POR_ARTICULO_OT` — el precio ganador más reciente de una
+  solicitud de Cotizaciones cuyo `n_ot` coincide exactamente con el `n_ot` del ítem (comparado ya sin
+  ceros a la izquierda, mismo `formatOT()` de siempre) — y solo si no hay ninguno, cae al genérico
+  `PRECIO_POR_ARTICULO` (el más reciente de **cualquier** OT/solicitud, como antes). **Caso real
+  verificado con datos reales (2026-10-24):** el artículo `CH1/4A`, cotizado en la misma solicitud al
+  mismo proveedor ganador, tiene dos ítems con `n_ot` distinto (`596` y `604`) — antes el "más reciente
+  global" podía resolver de forma ambigua entre fechas iguales (misma solicitud, mismo `created_at`);
+  ahora cada OT toma el precio de su propia fila, determinístico. El `n_ot` que se compara es siempre el
+  **del ítem individual**, nunca el de la OT "madre" que agrupa adicionales en este módulo (ver 13.3) —
+  esa agrupación es un concepto exclusivo de Materiales OT, Cotizaciones no la conoce. En la tabla de la
+  pestaña Costo, un precio que salió del cruce por-OT se marca con **🎯** (tooltip "precio cotizado
+  específicamente para esta OT"); sin la marca, es el genérico de siempre. Un mismo artículo puede
+  haberse cotizado varias veces (en la misma OT o en otras) — se toma siempre la **más reciente** (por
   `compras_cotizaciones.created_at`), no un promedio ni la más barata histórica, mismo criterio de "no
-  inventar, usar el dato real más actual" que el resto del tablero. `cargarPreciosCotizaciones()` en
-  `js/modules/materot.js` arma este mapa `cod_articulo -> precio` una sola vez (**lazy**, recién al
-  entrar por primera vez a la sub-pestaña "💰 Costo" de alguna OT, no en cada visita al módulo) y lo
+  inventar, usar el dato real más actual" que el resto del tablero. `cargarPreciosCotizaciones()` arma
+  los dos mapas en la misma consulta (no hace falta una query aparte) una sola vez (**lazy**, recién al
+  entrar por primera vez a la sub-pestaña "💰 Costo" de alguna OT, no en cada visita al módulo) y los
   cachea en memoria para el resto de la sesión.
 - **Un artículo que nunca se cotizó queda "Sin cotización", sin precio inventado** — la fila sigue
   apareciendo en la tabla (con el Comprado/Asignado reales) pero las columnas de costo quedan vacías, a
