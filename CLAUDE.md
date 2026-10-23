@@ -2242,6 +2242,22 @@ versión simple, explícitamente provisoria ("después iremos ajustando").
   (`renderCosto()`) — todavía no hay un total agregado en el Dashboard del módulo, a propósito, para
   poder revisar primero cómo da por OT antes de sumarlo todo.
 
+**Bug real corregido (2026-10-23): la pestaña Costo quedaba "pegada" a la última OT vista.** Reportado
+por el usuario con capturas reales — OT 604 ("Estructuras para cinta — Siderca SAIC") y OT 550
+("Filtros de GAC Fase Vapor — YPF", con sus adicionales) mostraban exactamente los mismos números de
+costo/ahorro/horas, a pesar de ser obras distintas. La causa: el listener de las sub-pestañas
+(`init()`) solo llamaba a `renderCosto()` la primera vez que hacía falta *cargar* los datos
+(`!PRECIO_POR_ARTICULO || !HORAS_POR_OT`) — `mostrarTabOT()` solo muestra/oculta el panel, no lo
+repinta. Como `abrirDetalle()` siempre resetea a la sub-pestaña "Resumen" al abrir una OT nueva, el
+flujo real era: abrir OT 604 → entrar a Costo (primera vez, carga datos, pinta bien) → volver a "Por
+OT" → abrir OT 550 → entrar a Costo de nuevo → como los datos ya estaban en caché, la condición daba
+falso y **nunca se volvía a llamar a `renderCosto()`** — el panel quedaba con el HTML de la OT anterior
+(604), sin ningún error visible. Afectaba tanto al costo de materiales como a las horas (sección
+siguiente) desde que existe la pestaña, no es un bug nuevo de las horas. Corregido separando las dos
+cosas: `if (!PRECIO_POR_ARTICULO || !HORAS_POR_OT) await Promise.all(...)` (carga solo si hace falta)
+y, afuera de ese if, `if (OT_TAB === 'costo') renderCosto()` **siempre** — así cada click en la
+sub-pestaña repinta contra la OT que esté activa en ese momento, haya que esperar una carga o no.
+
 **Horas por OT — cruce con el Tablero RRHH (2026-10-22):** el usuario retomó el pedido de horas que
 había quedado afuera ("por el momento creo que avanzamos solamente con los materiales") con un pedido
 explícito y más concreto: "quiero que tenga las horas... que me saques la cantidad de horas, por

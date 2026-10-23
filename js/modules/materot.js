@@ -1050,9 +1050,9 @@ export function init() {
     const btn = e.target.closest('.subtab');
     if (!btn) return;
     mostrarTabOT(btn.dataset.tab);
-    if (btn.dataset.tab === 'costo' && (!PRECIO_POR_ARTICULO || !HORAS_POR_OT)) {
-      await Promise.all([cargarPreciosCotizaciones(), cargarHorasPorOT()]);
-      if (OT_TAB === 'costo') renderCosto(); // por si cambió de tab mientras cargaba
+    if (btn.dataset.tab === 'costo') {
+      if (!PRECIO_POR_ARTICULO || !HORAS_POR_OT) await Promise.all([cargarPreciosCotizaciones(), cargarHorasPorOT()]);
+      if (OT_TAB === 'costo') renderCosto(); // repinta siempre contra la OT actual, cargue o no datos nuevos
     }
   });
   document.getElementById('mrod_f_rubro')?.addEventListener('change', renderDetalle);
