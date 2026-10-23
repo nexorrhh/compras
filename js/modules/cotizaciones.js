@@ -266,6 +266,74 @@ async function buscarDuplicadosEntreSolicitudes(items, cotizacionActual) {
   return resultado;
 }
 
+// Caso real reportado por el usuario (2026-10-25): confirmó una compra,
+// nunca llegó a emitir la Orden de Compra real en Tango (Ingeniería pidió
+// más material antes de eso) y al volver a cargar el Excel actualizado de
+// la MISMA solicitud de Capataz, el sistema no avisó nada — porque
+// buscarDuplicadosEntreSolicitudes() ignora a propósito los ítems ya
+// `confirmado = true` (se tratan como "historial cerrado", no un
+// duplicado activo). Esta función cubre ese agujero: busca el mismo
+// `nro_solicitud` pero ya CONFIRMADO en otra parte — sin filtrar por
+// `estado = 'ABIERTA'` de la solicitud vieja (a propósito: confirmar
+// compra puede cerrar sola una solicitud — ver verificarCierreAutomatico
+// — aunque nunca se haya emitido la OC real en Tango, así que el cierre
+// acá no es garantía de nada). Pedido explícito del usuario: "solo
+// avisar claro" (no un botón de resolución automática, ver renderAlerta
+// ConfirmadosOtras()) — deshacer la confirmación vieja sigue siendo
+// manual, con el ↩️ que ya existe en "Mostrar confirmados".
+async function buscarConfirmadosEnOtrasSolicitudes(items, cotizacionActualId) {
+  const resultado = new Map(); // nro_solicitud -> [{nombre, proveedor_nombre, confirmado_en}]
+  const numeros = [...new Set(items.map(i => i.nro_solicitud).filter(Boolean))];
+  if (!numeros.length) return resultado;
+  let q = SB.from('compras_cotizaciones_items')
+    .select('nro_solicitud,cotizacion_id,ganador_proveedor_id,confirmado_en,compras_cotizaciones(nombre)')
+    .in('nro_solicitud', numeros)
+    .eq('a_comprar', true)
+    .eq('confirmado', true);
+  if (cotizacionActualId) q = q.neq('cotizacion_id', cotizacionActualId);
+  const { data, error } = await q;
+  if (error || !data) return resultado;
+  const provMap = new Map(PROVEEDORES.map(p => [p.id, p.nombre]));
+  for (const row of data) {
+    const cot = row.compras_cotizaciones;
+    if (!cot) continue;
+    if (!resultado.has(row.nro_solicitud)) resultado.set(row.nro_solicitud, []);
+    resultado.get(row.nro_solicitud).push({
+      nombre: cot.nombre,
+      proveedor_nombre: provMap.get(row.ganador_proveedor_id) || '(?)',
+      confirmado_en: row.confirmado_en,
+    });
+  }
+  return resultado;
+}
+
+// Pinta (o esconde) el aviso persistente de la ficha — a diferencia del
+// cartel de "ya cargada en otra solicitud" que solo aparece una vez al
+// importar el archivo (confirm(), fácil de pasar por alto), este queda
+// visible mientras la ficha esté abierta, para que no dependa de que
+// alguien haya leído con atención ese cartel en su momento.
+function renderAlertaConfirmadosOtras(mapa) {
+  const el = document.getElementById('cot_confirmados_otras_alerta');
+  if (!el) return;
+  if (!mapa.size) { el.style.display = 'none'; el.innerHTML = ''; return; }
+  const detalle = [...mapa.entries()].map(([nro, filas]) => {
+    const porSolicitud = new Map();
+    filas.forEach(f => {
+      if (!porSolicitud.has(f.nombre)) porSolicitud.set(f.nombre, []);
+      porSolicitud.get(f.nombre).push(f);
+    });
+    const detSolic = [...porSolicitud.entries()].map(([nombreSolic, fs]) => {
+      const fechas = fs.map(f => f.confirmado_en).filter(Boolean).sort();
+      const fechaTxt = fechas.length ? fmt(fechas[0].slice(0, 10)) : null;
+      const provs = [...new Set(fs.map(f => f.proveedor_nombre))].join(', ');
+      return `"${escAttr(nombreSolic)}"${fechaTxt ? ` (confirmada el ${fechaTxt}, a ${escAttr(provs)})` : ` (a ${escAttr(provs)})`}`;
+    }).join('; ');
+    return `N° ${escAttr(formatOTExport(nro))} (${filas.length} artículo${filas.length === 1 ? '' : 's'}) — ya confirmada en: ${detSolic}`;
+  }).join('<br>');
+  el.innerHTML = `🔁 <strong>Ojo:</strong> esta solicitud trae artículos cuyo N° de solicitud de Capataz ya había sido <strong>confirmado</strong> antes en otra parte, sin que conste necesariamente una Orden de Compra real en Tango. Si esa compra vieja no se llegó a hacer, convendría deshacerla ahí ("Mostrar confirmados" → ↩️) para que no quede duplicada.<br><br>${detalle}`;
+  el.style.display = '';
+}
+
 // Junta, para cada nro_solicitud duplicado detectado, el/los ítem(s)
 // VIEJO(s) que ya tienen precios cargados — son los candidatos a migrar
 // al archivo que se está por importar (ver migrarPreciosDesdeSolicitudesViejas()).
@@ -385,7 +453,20 @@ async function onArchivoCotizacion(file) {
   // ITEMS ya cargados en otras partes del módulo.
   const itemsACotizar = filas.map(f => ({ nro_solicitud: f.nro_solicitud }));
   const duplicados = await buscarDuplicadosEntreSolicitudes(itemsACotizar, null);
+  const confirmadosOtras = await buscarConfirmadosEnOtrasSolicitudes(itemsACotizar, null);
   const { porClave: migrarPorClave } = await buscarPreciosParaMigrar(duplicados);
+  if (confirmadosOtras.size) {
+    const porNumero = new Map();
+    filas.forEach(f => { if (confirmadosOtras.has(f.nro_solicitud)) porNumero.set(f.nro_solicitud, (porNumero.get(f.nro_solicitud) || 0) + 1); });
+    const detalle = [...confirmadosOtras.entries()].slice(0, 15)
+      .map(([nro, filasConf]) => {
+        const n = porNumero.get(nro) || 0;
+        const solicitudes = [...new Set(filasConf.map(f => f.nombre))].join(', ');
+        return `- Solicitud ${nro} (${n} artículo${n === 1 ? '' : 's'}) — ya CONFIRMADA en: ${solicitudes}`;
+      }).join('\n');
+    const extra = confirmadosOtras.size > 15 ? `\n...y ${confirmadosOtras.size - 15} solicitud${confirmadosOtras.size - 15 === 1 ? '' : 'es'} más` : '';
+    msg += `\n\n🔁 ${confirmadosOtras.size} solicitud${confirmadosOtras.size === 1 ? '' : 'es'} de Capataz de este archivo ya está${confirmadosOtras.size === 1 ? '' : 'n'} CONFIRMADA${confirmadosOtras.size === 1 ? '' : 's'} en otra parte (sin que conste necesariamente una Orden de Compra real) — si esa compra vieja no se llegó a hacer, convendría deshacerla ahí antes de seguir:\n${detalle}${extra}`;
+  }
   if (duplicados.size) {
     // Cuántas filas de ESTE archivo caen bajo cada nro_solicitud duplicado, para que el mensaje diga
     // "8 artículos" en vez de solo el número de solicitud pelado.
@@ -470,6 +551,7 @@ async function abrirDetalle(id) {
 
   const itemsACotizar = ITEMS.filter(i => i.a_comprar).map(i => ({ nro_solicitud: i.nro_solicitud }));
   DUPLICADOS = await buscarDuplicadosEntreSolicitudes(itemsACotizar, { id, created_at: cot.created_at });
+  renderAlertaConfirmadosOtras(await buscarConfirmadosEnOtrasSolicitudes(itemsACotizar, id));
 
   document.getElementById('cot-vista-lista').style.display = 'none';
   document.getElementById('cot-vista-detalle').style.display = '';

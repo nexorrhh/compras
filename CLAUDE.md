@@ -1337,6 +1337,36 @@ además le pone `a_comprar = false` directo en la base al ítem equivalente (mis
 abrirlas. Si el mismo `nro_solicitud` estaba repartido en más de una solicitud vieja a la vez (ver la
 columna "COT, URG" en la captura del usuario), se descarta en todas de una.
 
+**Aviso cuando el duplicado ya estaba CONFIRMADO en otra parte** (pedido explícito del usuario,
+2026-10-25, caso real reportado tal cual pasó): "cargué una solicitud y luego le puse los precios...
+la confirmé y resulta que cuando estaba presentando la orden de compra me di cuenta que habían pedido
+más material... volví a descargar el listado... y como eso que yo tenía puse confirmar compra, no le
+hice la orden de compra, me figuró como pendiente... me volví a traer los mismos materiales de la misma
+solicitud que yo ya había en teoría confirmado". El chequeo de duplicados de más arriba
+(`buscarDuplicadosEntreSolicitudes()`) filtra a propósito `confirmado = false` — un ítem ya confirmado se
+trata como "historial cerrado", no como duplicado activo — así que este caso quedaba completamente
+invisible: "confirmado" en esta app solo significa "Compras decidió comprarle esto a este proveedor", no
+"ya existe la Orden de Compra real en Tango" (no hay ningún vínculo entre las dos cosas, ver 9.4), así
+que si la decisión se revierte en la vida real (acá, porque apareció más material antes de emitir la OC)
+el sistema no tiene forma de enterarse solo.
+
+`buscarConfirmadosEnOtrasSolicitudes()` cubre ese agujero — mismo criterio de "comparar por
+`nro_solicitud`" que el chequeo de arriba, pero mirando `confirmado = true` en vez de `false`, y **sin**
+filtrar por `estado = 'ABIERTA'` de la solicitud vieja (a propósito: confirmar una compra puede cerrar
+sola toda una solicitud si no le queda nada más pendiente — `verificarCierreAutomatico()` — aunque nunca
+se haya emitido la OC real, así que el cierre tampoco es garantía de que esté todo bien). Se le preguntó
+explícitamente al usuario cómo resolverlo una vez detectado — **"solo avisar claro"**, no un botón de
+resolución automática tipo "🔁 Quedarme con este" (de arriba) — así que corregir la confirmación vieja
+sigue siendo 100% manual, con el ↩️ que ya existía en "Mostrar confirmados". El aviso aparece en dos
+lugares:
+1. **Al cargar el archivo** (mismo `confirm()` de siempre, un párrafo aparte marcado 🔁 en vez de ⚠️,
+   listando solicitud + nombre de la vieja).
+2. **Banner persistente en la ficha** (`#cot_confirmados_otras_alerta`, `.alert-box` — mismo estilo que
+   ya usan `#app-error-msg`/`#login-error`), `renderAlertaConfirmadosOtras()`, calculado también al abrir
+   cualquier solicitud existente (`abrirDetalle()`) — a diferencia del `confirm()` (que se puede pasar
+   por alto sin leer del todo), este queda visible mientras la ficha esté abierta, para que el aviso no
+   dependa de haberlo leído con atención en el momento exacto de la carga.
+
 **"+ Agregar ítem para cotizar"** (pedido explícito del usuario, 2026-10-15): caso real — material
 estructural urgente que Ingeniería necesita pero que no pasó por el pedido formal en Capataz, así que
 nunca va a aparecer en ningún Excel importado. El botón, debajo de la tabla comparativa, abre un modal
@@ -2777,6 +2807,12 @@ Ya decidido al construir Dólar histórico + precio por OT en Materiales OT (202
   misma pregunta, mismo lugar.
 - [x] El precio de Materiales OT → Costo prueba primero un precio **específico de la misma OT** antes
   de caer al genérico de cualquier OT — ver sección 13.11.
+
+Ya decidido al corregir el aviso de duplicado "ya confirmado en otra parte" (2026-10-25):
+- [x] Cuando se detecta que un N° de solicitud de Capataz ya fue **confirmado** en otra solicitud (sin
+  que conste una OC real), el sistema **solo avisa** — no hay botón de resolución automática — la
+  decisión de deshacer esa confirmación vieja sigue siendo manual, preguntado explícitamente antes de
+  construir, ver sección 9.2.
 
 Todavía sin decidir:
 - [ ] Materiales OT: confirmar el nombre exacto de la variante del export de Capataz (el instructivo de
