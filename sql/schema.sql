@@ -451,6 +451,16 @@ create table compras_materot_ot_archivadas (
   archivado_en timestamptz not null default now()
 );
 
+-- Histórico diario del dólar oficial (Banco Nación) — ver
+-- sql/030_dolar_historico.sql y CLAUDE.md sección 13.11. Se carga desde
+-- la API pública de ArgentinaDatos, sin backend propio.
+create table compras_dolar_historico (
+  fecha date primary key,
+  compra numeric,
+  venta numeric,
+  actualizado_en timestamptz not null default now()
+);
+
 -- ------------------------------------------------------------
 -- ÍNDICES
 -- ------------------------------------------------------------

@@ -25,6 +25,7 @@ import * as ot from './modules/ot.js';
 import * as materot from './modules/materot.js';
 import * as consolidado from './modules/consolidado.js';
 import * as parametrizacion from './modules/parametrizacion.js';
+import * as dolar from './modules/dolar.js';
 
 const MODULES = {
   dash: dashboard, vcs: vehiculos, sols: solicitudes, movs: movimientos, gantt, mant: mantenimiento, vtv, doc: documentos,
@@ -38,6 +39,7 @@ const MODULES = {
   'materot-dash': materot, 'materot-cards': materot, 'materot-grupos': materot,
   'consol-dash': consolidado, 'consol-semanas': consolidado,
   'param-usuarios': parametrizacion,
+  'param-dolar': dolar,
 };
 
 function go(secId) {

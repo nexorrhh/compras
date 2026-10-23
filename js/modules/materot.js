@@ -87,6 +87,35 @@ let PRECIO_POR_ARTICULO_OT = null; // `${cod_articulo}|${n_ot formateado}` -> {p
 // vez la pestaña "💰 Costo".
 let HORAS_POR_OT = null; // ot (formateado, sin ceros) -> Map(operación -> horas)
 
+// Última cotización del dólar oficial cargada en compras_dolar_historico
+// (módulo Parametrización → Dólar histórico, ver CLAUDE.md 13.11) — se
+// usa solo para PRECARGAR el campo "Tipo de cambio" de la pestaña Costo
+// (que sigue siendo editable y no persiste, igual que siempre), así no
+// hay que tipearlo a mano cada vez que se entra a una OT. Se consulta
+// directo a la tabla (no se importa nada de js/modules/dolar.js — cada
+// módulo es independiente, se comparten datos por tabla, no por import,
+// mismo criterio de siempre). `dolarRefIntentado` evita reconsultar si
+// ya se probó una vez y no había nada cargado.
+let DOLAR_REF = null; // {fecha, venta} | null
+let dolarRefIntentado = false;
+async function cargarDolarReferencia() {
+  if (dolarRefIntentado) return DOLAR_REF;
+  dolarRefIntentado = true;
+  const { data, error } = await SB.from('compras_dolar_historico').select('fecha,venta').order('fecha', { ascending: false }).limit(1);
+  if (!error && data?.length) DOLAR_REF = data[0];
+  return DOLAR_REF;
+}
+
+// Precarga el input de tipo de cambio con la última cotización oficial
+// disponible, sin pisar lo que el usuario ya haya tipeado a mano.
+function prefillTipoCambio() {
+  const input = document.getElementById('mroc_tipo_cambio');
+  if (input && !input.value && DOLAR_REF) {
+    input.value = String(DOLAR_REF.venta);
+    input.title = `Precargado con el dólar oficial del ${new Date(DOLAR_REF.fecha + 'T12:00:00').toLocaleDateString('es-AR')} — se puede editar`;
+  }
+}
+
 const numFmt = (n, dec = 2) => Number(n || 0).toLocaleString('es-AR', { maximumFractionDigits: dec });
 const SIMBOLO = m => m === 'USD' ? 'U$S' : '$';
 const fmtMonto = (n, moneda) => SIMBOLO(moneda) + (moneda === 'USD' ? ' ' : '') + numFmt(n, 2);
@@ -1017,8 +1046,9 @@ function renderDetalle() {
   if (OT_TAB === 'costo') renderCosto();
   if (!PRECIO_POR_ARTICULO || !HORAS_POR_OT) {
     const otAlAbrir = OT_ACTUAL;
-    Promise.all([cargarPreciosCotizaciones(), cargarHorasPorOT()]).then(() => {
+    Promise.all([cargarPreciosCotizaciones(), cargarHorasPorOT(), cargarDolarReferencia()]).then(() => {
       if (OT_ACTUAL !== otAlAbrir) return;
+      prefillTipoCambio();
       renderResumenOT(agruparPorOTMadre().get(OT_ACTUAL) || [], estadisticasOT(agruparPorOTMadre().get(OT_ACTUAL) || []));
       if (OT_TAB === 'costo') renderCosto();
     });
@@ -1324,7 +1354,8 @@ export function init() {
     if (!btn) return;
     mostrarTabOT(btn.dataset.tab);
     if (btn.dataset.tab === 'costo') {
-      if (!PRECIO_POR_ARTICULO || !HORAS_POR_OT) await Promise.all([cargarPreciosCotizaciones(), cargarHorasPorOT()]);
+      if (!PRECIO_POR_ARTICULO || !HORAS_POR_OT) await Promise.all([cargarPreciosCotizaciones(), cargarHorasPorOT(), cargarDolarReferencia()]);
+      prefillTipoCambio();
       if (OT_TAB === 'costo') renderCosto(); // repinta siempre contra la OT actual, cargue o no datos nuevos
     }
   });

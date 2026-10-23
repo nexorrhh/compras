@@ -1806,7 +1806,8 @@ tablero-compras/
 │       ├── ot.js  (OT — lee y reagrupa los datos de Cotizaciones, sin tablas propias, ver sección 10)
 │       ├── materot.js  (Materiales OT — Cotizado/Planificado/Solicitado/Comprado en KGS, ver sección 13)
 │       ├── consolidado.js  (Consolidado de Compras — confirmado por proveedor y por semana, ver sección 14)
-│       └── parametrizacion.js  (Parametrización — alta de perfiles y módulos habilitados, ver sección 12)
+│       ├── parametrizacion.js  (Parametrización — alta de perfiles y módulos habilitados, ver sección 12)
+│       └── dolar.js  (Dólar histórico — sync con ArgentinaDatos, sin tablas propias de otros módulos, ver sección 12.5)
 ├── Excels/                (archivos de ejemplo de OC, Stock y NP — en .gitignore, no se suben al repo)
 ├── Cotizar.xlsx           (archivo de ejemplo de Cotizaciones — también en .gitignore, datos reales)
 ├── MatxPro.xlsx           (archivo de ejemplo de Materiales OT, formato original — en .gitignore, datos reales)
@@ -1841,7 +1842,8 @@ tablero-compras/
     ├── 026_proveedores_sync_tango.sql
     ├── 027_cotizaciones_precio_alternativo.sql
     ├── 028_cotizaciones_confirmado_en.sql
-    └── 029_notas_pedido_cerrada.sql
+    ├── 029_notas_pedido_cerrada.sql
+    └── 030_dolar_historico.sql
 ```
 
 > `porteria.html` y `solicitud.html` son entry points separados (audiencias distintas: portero de
@@ -1932,6 +1934,51 @@ propósito de la inicialización de módulos/nav (`init()`, `wireNav()`, etc.), 
 vez por carga de página — repetirla en cada login duplicaría los event listeners de toda la app. El
 header también muestra quién está logueado (`#usuario-actual`, "👤 Apellido") para que quede claro con
 qué perfil se está viendo el tablero antes de decidir cerrar sesión.
+
+### 12.5 Dólar histórico
+
+Pedido explícito del usuario (2026-10-24), en el mismo pedido que llevó a comparar precios por OT en
+Materiales OT (ver 13.11): "a las cosas en pesos lo que podríamos hacer es cargar una cotización de
+todos los días del dólar... para que puedas tomar como referencia para pasar los precios en pesos a
+dólares". Antes de construir nada se le preguntaron dos cosas explícitas (ninguna inferible — elegir mal
+acá arruina cualquier comparación en pesos de ahí en más):
+- **Qué cotización usar**: eligió **oficial / mayorista (BNA)** — se implementó con el dólar **oficial**
+  (Banco Nación). Cambiar a mayorista es solo cambiar la constante `CASA` en `js/modules/dolar.js`.
+- **De dónde sale el histórico**: eligió **API pública automática** en vez de cargarlo a mano con un
+  Excel. Se usa **ArgentinaDatos** (`api.argentinadatos.com/v1/cotizaciones/dolares/oficial`) — se
+  probó con `curl` antes de integrarla: responde `access-control-allow-origin: *` (CORS abierto, se
+  puede llamar directo desde el navegador sin backend propio, mismo criterio de "sin servidor
+  intermedio" de todo el tablero) y devuelve la serie completa diaria desde 2011-01-03 hasta hoy
+  (5773 días verificados el día de la implementación), cada fila con `{casa, compra, venta, fecha}`.
+
+Es una sub-vista nueva dentro de **Parametrización** (`param-dolar`, "💵 Dólar histórico",
+`js/modules/dolar.js`) — vive ahí porque es una referencia de configuración transversal al tablero, no
+un dato de compras en sí, mismo criterio que "Usuarios" (12.1-12.4) ya vivía ahí por ser configuración
+del sistema y no un módulo de compras.
+
+- **"🔄 Cargar/actualizar histórico completo"**: trae toda la serie de ArgentinaDatos y hace `upsert`
+  por `fecha` en tandas de 500 (mismo patrón `BATCH` que `horas-ot.js`/`notas-pedido.js`) — con un
+  `confirm()` previo mostrando cuántos días se van a cargar/actualizar, mismo criterio de "avisar antes
+  de una carga masiva" que OC/Stock/Materiales OT. Como es `upsert` por fecha, **nunca borra nada** —
+  repetirlo no tiene riesgo, sirve tanto para la carga inicial como para "repasar" todo el histórico si
+  hiciera falta.
+- **"↻ Actualizar últimos 30 días"**: mismo mecanismo pero solo con la cola de la serie — para ponerse
+  al día sin tener que re-traer los 5700+ días completos cada vez.
+- KPIs (días cargados, desde, hasta, cotización de hoy) + un gráfico de línea (`type: 'line'`, primer
+  gráfico de línea del tablero — Chart.js v4 ya lo soporta nativo, sin plugin adicional) recortado a los
+  **últimos ~2 años** (no todo el histórico — desde 2011 la hiperinflación aplastaría visualmente
+  cualquier variación reciente; el histórico completo igual queda guardado en la base, el recorte es
+  solo de presentación) + una tabla chica con los últimos 10 días para chequeo manual rápido.
+
+**Modelo de datos** — `sql/030_dolar_historico.sql` (ver `sql/schema.sql` para el estado final), sin RLS
+(mismo criterio que el resto de `compras_*`): una sola tabla, `compras_dolar_historico` (`fecha` date
+como PK, `compra`/`venta` numeric tal cual los trae la API, sin recalcular).
+
+**Cada módulo que necesite el dato lo consulta directo a esta tabla** — no se importan funciones de
+`js/modules/dolar.js` desde otros módulos (mismo criterio de siempre: los módulos se independizan
+compartiendo por tabla, no por `import` cruzado — ver, por ejemplo, cómo el módulo OT lee
+`compras_cotizaciones_*` sin importar nada de `cotizaciones.js`). El primer consumidor es Materiales OT
+— ver 13.11.
 
 ## 13. Módulo: Materiales OT `[DETALLADO]`
 
@@ -2409,6 +2456,37 @@ pestaña" — la guarda de carrera de más arriba sigue el mismo espíritu para 
   trajo al Resumen — el Resumen no mezcla monedas en ningún KPI (`Costo promedio por kg` se oculta si
   hay más de una moneda, en vez de convertir).
 
+### 13.11 Precio por OT + tipo de cambio automático (2026-10-24)
+
+Dos ajustes al cruce con Cotizaciones de la sección 13.9, pedidos juntos por el usuario: "yo tengo
+solicitudes de compra y tienen un número y también una OT... si corresponde a esa OT tendría que ser el
+precio con el que se compró para esa OT... porque sucede que a veces algunos precios varían según la
+OT" + "a las cosas en pesos... cargar una cotización de todos los días del dólar... para que puedas
+tomar como referencia".
+
+- **Precio por OT, antes de caer al genérico**: `precioParaItem()` en `js/modules/materot.js` prueba
+  primero `PRECIO_POR_ARTICULO_OT` — el precio ganador más reciente de una solicitud de Cotizaciones
+  cuyo `n_ot` coincide exactamente con el `n_ot` del ítem (sin ceros a la izquierda, mismo `formatOT()`
+  de siempre) — y solo si no hay ninguno cae al genérico `PRECIO_POR_ARTICULO` (más reciente de
+  cualquier OT, como antes). **Verificado con un caso real antes de dar por buena la lógica:** el
+  artículo `CH1/4A`, cotizado en la misma solicitud al mismo proveedor ganador, tiene dos ítems con
+  `n_ot` distinto (`596` y `604`) — antes el "más reciente global" podía resolver de forma ambigua entre
+  fechas iguales (misma solicitud, mismo `created_at`); ahora cada OT toma el precio de su propia fila,
+  determinístico. El `n_ot` que se compara es siempre el **del ítem individual**, nunca el de la OT
+  "madre" que agrupa adicionales acá (ver 13.3) — esa agrupación es exclusiva de Materiales OT,
+  Cotizaciones no la conoce. En la tabla de la pestaña Costo, un precio que salió del cruce por-OT se
+  marca con **🎯** (tooltip "precio cotizado específicamente para esta OT"); sin la marca, es el genérico.
+  `cargarPreciosCotizaciones()` arma los dos mapas en la misma consulta (agregó `n_ot` al `select`, no
+  hace falta una query aparte).
+- **Tipo de cambio precargado con el dólar histórico**: el campo "Tipo de cambio" de la pestaña Costo
+  (sección 13.9, puramente de referencia, nunca se guarda) ahora se **precarga solo** con la última
+  cotización del dólar oficial cargada en `compras_dolar_historico` (ver 12.5) apenas se abre cualquier
+  OT — sigue siendo editable, por si hace falta usar otro valor puntual. `cargarDolarReferencia()` en
+  `js/modules/materot.js` consulta la tabla directo (sin importar nada de `js/modules/dolar.js`, mismo
+  criterio de siempre) y se carga lazy junto con `cargarPreciosCotizaciones()`/`cargarHorasPorOT()` —
+  misma guarda de carrera (`otAlAbrir`) ya usada para esas dos. Si todavía no se cargó ningún histórico
+  (tabla vacía), el campo queda vacío como antes, sin romper nada.
+
 ## 14. Módulo: Consolidado de Compras `[DETALLADO]`
 
 Pedido explícito del usuario (2026-10-15), mirando a mano la hoja "Consolidado" que ya arma el informe
@@ -2575,6 +2653,14 @@ Ya decidido al construir el módulo Consolidado de Compras (2026-10-15):
 - [x] Sin desglose por OT en esta vista (ya existe en el módulo OT, sección 10) ni vínculo con Notas de
   Pedido/OC todavía — ver sección 14.5.
 
+Ya decidido al construir Dólar histórico + precio por OT en Materiales OT (2026-10-24):
+- [x] Cotización de referencia: **dólar oficial** (Banco Nación), no blue ni MEP/CCL — preguntado
+  explícitamente antes de construir, ver sección 12.5.
+- [x] Fuente del histórico: **API pública automática** (ArgentinaDatos), no carga manual por Excel —
+  misma pregunta, mismo lugar.
+- [x] El precio de Materiales OT → Costo prueba primero un precio **específico de la misma OT** antes
+  de caer al genérico de cualquier OT — ver sección 13.11.
+
 Todavía sin decidir:
 - [ ] Materiales OT: confirmar el nombre exacto de la variante del export de Capataz (el instructivo de
   carga en `js/main.js` asume el mismo menú que Cotizaciones, sin confirmar — ver sección 13.7).
@@ -2678,9 +2764,13 @@ Todavía sin decidir:
     `CERRADA` (+ `motivo_cierre`/`cerrada_en`) a `compras_notas_pedido` para poder cerrar una NP sin
     vincularla a una OC (ver sección 8.2) (**todavía falta correr en la base real** — hasta que se
     corra, el botón "🔒 Cerrar" va a fallar con un error de constraint).
-29. Probar el circuito completo: pedir vehículo (solicitud.html) → aprobar y asignar (index.html) →
+29. Correr [`sql/030_dolar_historico.sql`](sql/030_dolar_historico.sql) — crea
+    `compras_dolar_historico` para el nuevo módulo Parametrización → Dólar histórico (ver sección 12.5)
+    (**todavía falta correr en la base real** — hasta que se corra, "Cargar/actualizar histórico
+    completo" va a fallar porque la tabla no existe).
+30. Probar el circuito completo: pedir vehículo (solicitud.html) → aprobar y asignar (index.html) →
    registrar salida/retorno (porteria.html) → ver el movimiento reflejado en el dashboard.
-30. Evaluar RLS (Row Level Security) en las tablas `compras_*` — hoy cualquiera con el link de
+31. Evaluar RLS (Row Level Security) en las tablas `compras_*` — hoy cualquiera con el link de
    `solicitud.html`/`porteria.html` puede leer/escribir todas las tablas, sin ningún login de por medio.
-31. Ir completando los módulos `[TBD]` de la sección 3 a medida que los necesites, usando el módulo
+32. Ir completando los módulos `[TBD]` de la sección 3 a medida que los necesites, usando el módulo
    Flota (carpeta `js/modules/`) como plantilla.

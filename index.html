@@ -530,6 +530,7 @@
     <div class="nav-parent"><span>⚙️</span> Parametrización <span class="nav-chevron">▾</span></div>
     <div class="nav-children">
       <div class="nav-item" data-sec="param-usuarios"><span>👤</span> Usuarios</div>
+      <div class="nav-item" data-sec="param-dolar"><span>💵</span> Dólar histórico</div>
     </div>
   </div>
 
@@ -1258,7 +1259,7 @@
         <div class="kpi"><div class="kpi-val" id="mroc_k_horas">–</div><div class="kpi-lbl">Horas cargadas (Capataz)</div></div>
       </div>
       <div class="fg" style="max-width:220px">
-        <label>Tipo de cambio (referencia, no se guarda)</label>
+        <label>Tipo de cambio (precargado con el dólar oficial de hoy — editable, no se guarda)</label>
         <input id="mroc_tipo_cambio" inputmode="decimal" placeholder="ej: 1450">
       </div>
       <div class="tw"><table>
@@ -1421,6 +1422,30 @@
   <div class="tw"><table>
     <thead><tr><th>Nombre</th><th>PIN</th><th>Módulos habilitados</th><th>Estado</th><th></th></tr></thead>
     <tbody id="t-param-usuarios"></tbody>
+  </table></div>
+</div>
+
+<div class="sec" id="s-param-dolar">
+  <div class="ptitle">Parametrización — Dólar histórico</div>
+  <div class="psub">Cotización diaria del dólar oficial (Banco Nación), traída de ArgentinaDatos (API pública, sin backend propio) — sirve de referencia para convertir precios entre pesos y dólares en el resto del tablero (hoy: Materiales OT → Costo, que la toma sola para sugerir el tipo de cambio del día). Se guarda por fecha y nunca se borra — volver a cargar el histórico completo solo agrega/actualiza, no pisa nada.</div>
+  <div class="sh">
+    <div></div>
+    <div style="display:flex;gap:8px">
+      <button type="button" class="bsm" id="dol_btn_reciente">↻ Actualizar últimos 30 días</button>
+      <button type="button" class="btn p" id="dol_btn_completo">🔄 Cargar/actualizar histórico completo</button>
+    </div>
+  </div>
+  <div class="kpi-grid">
+    <div class="kpi"><div class="kpi-val" id="dol_k_dias">–</div><div class="kpi-lbl">Días cargados</div></div>
+    <div class="kpi"><div class="kpi-val" id="dol_k_desde">–</div><div class="kpi-lbl">Desde</div></div>
+    <div class="kpi"><div class="kpi-val" id="dol_k_hasta">–</div><div class="kpi-lbl">Hasta</div></div>
+    <div class="kpi"><div class="kpi-val text-green" id="dol_k_hoy">–</div><div class="kpi-lbl">Cotización (venta)</div><div class="psub" id="dol_k_hoy_sub" style="margin:2px 0 0;font-size:11px"></div></div>
+  </div>
+  <div class="chart-card"><h3>Evolución — últimos ~2 años (venta)</h3><div class="chart-wrap"><canvas id="dol_chart"></canvas></div></div>
+  <div class="psub" style="margin:18px 0 8px">Últimos días cargados</div>
+  <div class="tw"><table>
+    <thead><tr><th>Fecha</th><th style="text-align:right">Compra</th><th style="text-align:right">Venta</th></tr></thead>
+    <tbody id="t-dolar-dias"></tbody>
   </table></div>
 </div>
 
