@@ -2307,6 +2307,95 @@ costo en pesos (falta definir una tarifa $/hora, posiblemente distinta por categ
 contra presupuesto (todavía no existe esa fuente de datos en ningún tablero — habría que definir de
 dónde sale antes de construirla).
 
+### 13.10 Resumen enriquecido — tablero de costo realizado por OT
+
+Pedido explícito del usuario (2026-10-23), mirando la pestaña "Resumen" tal como había quedado (3 KPIs
+chicos + 2 gráficos): "mejoremos todo este sistema de resumen, quiero que sea súper completo... que me
+ayude a analizar la información... y que sea moderno, [...] fácil de leer, interpretar". Pidió también
+investigar qué se usa habitualmente para calcular un "costo realizado de OT" — antes de tocar código se
+revisó qué datos ya existían en el propio módulo (no se agregó ninguna tabla ni fuente nueva):
+
+- **El "presupuesto" ya existía, en kg**: `cant_cotiz`/`kg_cotiz` (sección 13.1) es literalmente "lo que
+  Presupuestos dijo que iba a hacer falta" — un presupuesto real, solo que en kilos y no en pesos. Nunca
+  se había comparado contra lo que terminó pasando. Cruzarlo contra Cubierto (Comprado + Asignado) da un
+  **desvío real vs. presupuesto** sin inventar ninguna tarifa ni esperar ningún dato nuevo — es la pieza
+  central de este rediseño y la que más directamente sirve para "mejorar la cotización" a futuro: señala
+  qué rubros/artículos Presupuestos viene subestimando o sobreestimando de manera sistemática.
+- **HH por tonelada** (horas cargadas / (kg Cubierto ÷ 1000)) es el indicador de productividad estándar
+  en un taller de estructuras metálicas/fabricación por proyecto (mano de obra por tonelada producida) —
+  se agregó cruzando los KGS que ya calcula el módulo con las horas de la sección 13.9, sin pedir ningún
+  dato adicional.
+- El resto (costo $/kg promedio, cobertura de precio, costo y proveedores por rubro) son desgloses del
+  mismo cruce con Cotizaciones que ya existía para "Costo realizado" (13.9), solo que antes solo se
+  veían en la tabla línea por línea de la pestaña Costo — acá se resumen y visualizan.
+
+**Qué cambió en la pestaña "📊 Resumen"** (antes: Ítems/OK/DIF + donut + un bar simple de KGS comprados
+por rubro) — ahora cuatro grupos de KPIs con título propio, más gráficos y una tabla de alertas:
+
+1. **📦 Avance físico (kg)** — Cotizado (Presupuestos), Cubierto (comprado+asignado), % Avance de compra
+   (Cubierto/Solicitado, con una barra de progreso chica — `.mprog`/`.mprog-fill`, CSS nuevo) y **Desvío
+   vs. Cotizado** (%, coloreado: rojo si se pasó más de 15%, verde si quedó dentro, celeste/accent si
+   quedó más de 15% por debajo — "accent" en vez de rojo para no leer "quedó bajo presupuesto" como algo
+   necesariamente malo, puede ser simplemente que falta comprar todavía).
+2. **💰 Costo real** — Costo realizado (comprado), Ahorro por stock asignado, **Valor total de material
+   usado** (comprado + ahorro, nuevo — la referencia de "cuánto vale en total el material que se usó en
+   esta OT, se haya comprado o sacado de stock"), **Costo promedio por kg** (nuevo, solo si el costo
+   quedó en una sola moneda — con dos monedas mezcladas se muestra "–" en vez de promediar monedas
+   distintas, mismo criterio de siempre) y Cobertura de precio (% de ítems con precio encontrado en
+   Cotizaciones, con el detalle "N de M ítems con precio" debajo).
+3. **👷 Mano de obra (Capataz)** — Horas cargadas, **HH por tonelada cubierta** (nuevo, ver arriba) y la
+   categoría con más horas de un vistazo (nuevo).
+4. **✅ Calidad de carga** — Ítems/OK/DIF, igual que antes.
+
+Gráficos: el donut OK/DIF se mantiene; el bar de "KGS comprados por rubro" se **reemplazó** por
+**"Cotizado vs. Cubierto por rubro"** (`renderBarrasCotizadoVsCubierto()`, grouped bar — dos series por
+rubro) porque es estrictamente más informativo en el mismo espacio y la misma dimensión (rubro) —
+muestra de un vistazo en qué rubros el desvío es mayor, no solo cuánto se compró. Se suman **"Horas por
+categoría"** (bar, de la sección 13.9) y, dinámicos según cuántas monedas tenga el costo de esta OT (uno
+o dos `.chart-card` según haga falta, mismo patrón que ya usa Cotizaciones/OT — ver 9.2 punto 7),
+**"Costo comprado por rubro"** y **"Top proveedores (costo comprado)"** — estos dos últimos agrupan
+`calcularCosto(items).filas` por `agrupacion`/`proveedor_nombre` respectivamente
+(`agruparCostoPor()`/`renderGrupoPorMoneda()` en `js/modules/materot.js`, genérico para no duplicar
+código entre los dos).
+
+**Tabla "⚠️ Mayor desvío vs. presupuesto (por artículo)"** (nueva, `topDesvios()`/`renderTablaDesvios()`):
+los 8 artículos donde `Cubierto − Cotizado` (en kg) es mayor en valor absoluto, con el kg de cada lado,
+el desvío en kg (signado, rojo si se excedió / verde si quedó por debajo) y en % — descarta antes los
+ítems "sin movimiento" (ruido de catálogo, ver 13.5) y los que no tienen ni Cotizado ni Cubierto cargado
+(nada que comparar). Es la lista concreta para revisar antes de la próxima cotización de un rubro
+parecido — "qué nos salió mal/bien en los números", en palabras del pedido original.
+
+**Refactor para no duplicar lógica**: `calcularCosto(items)` (antes lógica inline de `renderCosto()`) y
+`calcularHoras(ot)` (antes inline de `renderHorasOT()`) quedaron como funciones puras reusadas tanto por
+el Resumen como por la pestaña Costo — la pestaña Costo sigue mostrando exactamente lo mismo que antes
+(la tabla línea por línea), solo que ahora comparte el cálculo en vez de repetirlo.
+
+**El Resumen ahora necesita los mismos datos que la pestaña Costo desde el primer momento** (antes solo
+se cargaban al entrar a "💰 Costo"): `renderDetalle()` dispara `cargarPreciosCotizaciones()` +
+`cargarHorasPorOT()` apenas se abre cualquier OT (si todavía no están en caché) y repinta el Resumen
+cuando terminan — como son lazy/singleton para toda la sesión (ver 13.9), en la práctica esto es una
+sola carga extra la primera vez que se abre CUALQUIER detalle de OT en la sesión, nunca más. Lleva una
+**guarda de carrera** (`otAlAbrir`, comparado contra `OT_ACTUAL` dentro del `.then()`) para no repetir el
+bug recién corregido de la pestaña Costo (ver más abajo) si el usuario cambia de OT mientras esa carga
+todavía está en vuelo.
+
+**Bug real corregido en el mismo día, antes de este rediseño:** el usuario reportó con capturas reales
+que OT 604 y OT 550 mostraban exactamente los mismos números de costo/horas a pesar de ser obras
+distintas. Causa: el listener de las sub-pestañas solo llamaba a `renderCosto()` la primera vez que hacía
+falta *cargar* los datos — como `PRECIO_POR_ARTICULO`/`HORAS_POR_OT` ya estaban en caché de la OT
+anterior, cambiar de OT y volver a entrar a "💰 Costo" nunca disparaba un repintado, dejando el panel con
+el HTML de la OT vieja. Corregido separando "cargar si hace falta" de "repintar siempre que se entra a la
+pestaña" — la guarda de carrera de más arriba sigue el mismo espíritu para el nuevo flujo del Resumen.
+
+**Alcance de esta vuelta** — lo que se dejó explícitamente afuera:
+- Sigue sin existir un $/hora ni un presupuesto en pesos — el "Desvío vs. Cotizado" es en kg, no en
+  plata, y las horas se muestran en cantidad, no costeadas (mismo TBD que ya estaba anotado en 13.9).
+- Sin agregado al Dashboard del módulo — este resumen enriquecido vive por ahora solo en el detalle de
+  cada OT puntual, mismo criterio que 13.9 ("revisar primero cómo da por OT antes de sumarlo todo").
+- El tipo de cambio de referencia (`mroc_tipo_cambio`) sigue viviendo solo en la pestaña Costo, no se
+  trajo al Resumen — el Resumen no mezcla monedas en ningún KPI (`Costo promedio por kg` se oculta si
+  hay más de una moneda, en vez de convertir).
+
 ## 14. Módulo: Consolidado de Compras `[DETALLADO]`
 
 Pedido explícito del usuario (2026-10-15), mirando a mano la hoja "Consolidado" que ya arma el informe

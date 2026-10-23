@@ -365,6 +365,85 @@ function kgPorRubro(items, campo = 'comprado') {
   return porRubro;
 }
 
+// Cotizado vs. Cubierto (comprado+asignado) por rubro — el "presupuesto
+// en kg" de Presupuestos contra lo que realmente se terminó usando, para
+// ver de un vistazo en qué rubros la OT se desvió más. Ver CLAUDE.md
+// sección 13.10 ("Resumen enriquecido").
+function kgPorRubroMulti(items) {
+  const m = new Map();
+  for (const it of items) {
+    const rubro = it.agrupacion || '(Sin rubro)';
+    const k = kgsItem(it);
+    const cur = m.get(rubro) || { cotiz: 0, cubierto: 0 };
+    cur.cotiz += k.cotiz;
+    cur.cubierto += k.comprado + k.asig;
+    m.set(rubro, cur);
+  }
+  return m;
+}
+
+function renderBarrasCotizadoVsCubierto(canvasId, items, topN = 8) {
+  const porRubro = kgPorRubroMulti(items);
+  const datos = [...porRubro.entries()]
+    .filter(([, v]) => v.cotiz > 0 || v.cubierto > 0)
+    .sort((a, b) => (b[1].cotiz + b[1].cubierto) - (a[1].cotiz + a[1].cubierto))
+    .slice(0, topN);
+  renderChart(canvasId, canvasId, {
+    type: 'bar',
+    data: {
+      labels: datos.map(d => d[0]),
+      datasets: [
+        { label: 'Cotizado', data: datos.map(d => d[1].cotiz), backgroundColor: '#64748b', borderRadius: 4 },
+        { label: 'Cubierto', data: datos.map(d => d[1].cubierto), backgroundColor: '#6366f1', borderRadius: 4 },
+      ],
+    },
+    options: {
+      indexAxis: 'y', responsive: true, maintainAspectRatio: false,
+      plugins: { legend: { position: 'bottom' }, tooltip: { callbacks: { label: ctx => `${ctx.dataset.label}: ${numFmt(ctx.raw)} KGS` } } },
+      scales: { x: { ticks: { callback: v => numFmt(v) } } },
+    },
+  });
+}
+
+// Artículos donde Cubierto (comprado+asignado) más se aleja de lo que
+// Presupuestos cotizó en kg — pensado para afinar la próxima cotización,
+// no para "corregir" nada acá. `tieneMovimiento()` descarta el ruido de
+// catálogo (ver sección 13.5) antes de comparar.
+function topDesvios(items, topN = 8) {
+  return items
+    .filter(tieneMovimiento)
+    .map(it => {
+      const k = kgsItem(it);
+      const cubierto = k.comprado + k.asig;
+      const desvioKg = cubierto - k.cotiz;
+      const desvioPct = k.cotiz > 0 ? (desvioKg / k.cotiz * 100) : null;
+      return { it, cotiz: k.cotiz, cubierto, desvioKg, desvioPct };
+    })
+    .filter(f => f.cotiz > 0 || f.cubierto > 0)
+    .sort((a, b) => Math.abs(b.desvioKg) - Math.abs(a.desvioKg))
+    .slice(0, topN);
+}
+
+function renderTablaDesvios(tbodyId, items) {
+  const tbody = document.getElementById(tbodyId);
+  if (!tbody) return;
+  const filas = topDesvios(items);
+  tbody.innerHTML = filas.length ? filas.map(f => {
+    const color = f.desvioKg > 0.01 ? 'var(--red)' : (f.desvioKg < -0.01 ? 'var(--green)' : 'var(--muted)');
+    const signo = f.desvioKg > 0 ? '+' : '';
+    const pctTxt = f.desvioPct == null ? '–' : `${f.desvioPct > 0 ? '+' : ''}${Math.round(f.desvioPct)}%`;
+    return `<tr>
+      <td>${escAttr(f.it.cod_articulo)}</td>
+      <td>${escAttr(f.it.descripcion || '')}</td>
+      <td>${escAttr(f.it.agrupacion || '–')}</td>
+      <td style="text-align:right">${numFmt(f.cotiz)}</td>
+      <td style="text-align:right">${numFmt(f.cubierto)}</td>
+      <td style="text-align:right;color:${color};font-weight:600">${signo}${numFmt(f.desvioKg)}</td>
+      <td style="text-align:right;color:${color}">${pctTxt}</td>
+    </tr>`;
+  }).join('') : `<tr><td colspan="7" style="text-align:center;padding:18px;color:var(--muted)">Sin datos suficientes para comparar (ningún artículo con Cotizado o Cubierto cargado)</td></tr>`;
+}
+
 // ------------------------------------------------------------
 // Costo realizado — cruza por cod_articulo contra Cotizaciones. Ver
 // nota de PRECIO_POR_ARTICULO más arriba y CLAUDE.md sección 13.9.
@@ -475,6 +554,106 @@ function cantidadParaCosto(it, precioInfo) {
 
 function chipsMonto(mapa) {
   return [...mapa.entries()].map(([m, v]) => fmtMonto(v, m)).join(' + ') || '–';
+}
+
+// Valoriza una lista de ítems contra PRECIO_POR_ARTICULO — "Costo
+// realizado" (Comprado × precio) y "Ahorro por stock asignado" (Asignado
+// × precio). Extraída de renderCosto() para que el Resumen la reuse sin
+// duplicar la lógica (ver renderResumenOT()). Llamar solo si
+// PRECIO_POR_ARTICULO ya está cargado.
+function calcularCosto(items) {
+  const costoPorMoneda = new Map();
+  const ahorroPorMoneda = new Map();
+  let nValorizados = 0, nSinPrecio = 0;
+  const filas = items.map(it => {
+    const precioInfo = PRECIO_POR_ARTICULO.get(it.cod_articulo);
+    const cant = precioInfo ? cantidadParaCosto(it, precioInfo) : null;
+    if (!precioInfo || !cant) {
+      nSinPrecio++;
+      return { it, precioInfo: null, motivo: precioInfo ? 'unidad distinta' : 'sin cotización' };
+    }
+    nValorizados++;
+    const costoComprado = cant.comprado * precioInfo.precio_unitario;
+    const ahorroStock = cant.asig * precioInfo.precio_unitario;
+    costoPorMoneda.set(precioInfo.moneda, (costoPorMoneda.get(precioInfo.moneda) || 0) + costoComprado);
+    ahorroPorMoneda.set(precioInfo.moneda, (ahorroPorMoneda.get(precioInfo.moneda) || 0) + ahorroStock);
+    return { it, precioInfo, cant, costoComprado, ahorroStock };
+  });
+  return { filas, costoPorMoneda, ahorroPorMoneda, nValorizados, nSinPrecio };
+}
+
+// Agrupa el costo comprado (de calcularCosto().filas) por una clave a
+// elección (rubro, proveedor...), separado por moneda — mismo criterio
+// de "no mezclar ARS/USD" de siempre. Solo considera filas ya valorizadas
+// (con precioInfo), el resto no aporta costo.
+function agruparCostoPor(filas, keyFn) {
+  const porMoneda = new Map();
+  for (const f of filas) {
+    if (!f.precioInfo) continue;
+    const key = keyFn(f);
+    const m = f.precioInfo.moneda;
+    if (!porMoneda.has(m)) porMoneda.set(m, new Map());
+    const mapa = porMoneda.get(m);
+    mapa.set(key, (mapa.get(key) || 0) + f.costoComprado);
+  }
+  return porMoneda;
+}
+
+// Pinta un `.chart-card` por moneda presente en `porMonedaMap` dentro de
+// `containerId` (un <div class="charts-grid"> vacío) — un solo gráfico si
+// hay una sola moneda (el caso normal), dos si el costo quedó repartido
+// en ARS y USD. Reusado para "Costo por rubro" y "Top proveedores".
+function renderGrupoPorMoneda(containerId, titulo, porMonedaMap, color, topN = 8) {
+  const cont = document.getElementById(containerId);
+  if (!cont) return;
+  const monedas = [...porMonedaMap.keys()];
+  // Si la OT anterior tenía más monedas que esta (ej. ARS+USD -> solo ARS),
+  // el canvas de la moneda que ya no aparece se va a borrar del DOM al
+  // reemplazar innerHTML — hay que destruir su Chart.js acá, si no queda
+  // una instancia huérfana en CHARTS apuntando a un canvas ya removido.
+  for (const key of Object.keys(CHARTS)) {
+    if (key.startsWith(`${containerId}_`) && !monedas.includes(key.slice(containerId.length + 1))) {
+      CHARTS[key].destroy();
+      delete CHARTS[key];
+    }
+  }
+  if (!monedas.length) { cont.innerHTML = ''; return; }
+  cont.innerHTML = monedas.map(m => `<div class="chart-card"><h3>${escAttr(titulo)} (${escAttr(m)})</h3><div class="chart-wrap"><canvas id="${containerId}_${m}"></canvas></div></div>`).join('');
+  for (const m of monedas) {
+    const datos = [...porMonedaMap.get(m).entries()].sort((a, b) => b[1] - a[1]).slice(0, topN);
+    renderChart(`${containerId}_${m}`, `${containerId}_${m}`, {
+      type: 'bar',
+      data: { labels: datos.map(d => d[0]), datasets: [{ data: datos.map(d => d[1]), backgroundColor: color, borderRadius: 4 }] },
+      options: {
+        indexAxis: 'y', responsive: true, maintainAspectRatio: false,
+        plugins: { legend: { display: false }, tooltip: { callbacks: { label: ctx => fmtMonto(ctx.raw, m) } } },
+        scales: { x: { ticks: { callback: v => numFmt(v) } } },
+      },
+    });
+  }
+}
+
+// Horas cargadas para una OT, por categoría — extraída de renderHorasOT()
+// para que el Resumen la reuse. Llamar solo si HORAS_POR_OT ya está
+// cargado.
+function calcularHoras(ot) {
+  const porCategoria = HORAS_POR_OT.get(formatOT(ot)) || new Map();
+  const filas = [...porCategoria.entries()].sort((a, b) => b[1] - a[1]);
+  const total = filas.reduce((s, [, h]) => s + h, 0);
+  return { porCategoria, filas, total };
+}
+
+function renderBarrasHoras(canvasId, horasData, topN = 8) {
+  const datos = horasData.filas.slice(0, topN);
+  renderChart(canvasId, canvasId, {
+    type: 'bar',
+    data: { labels: datos.map(d => d[0]), datasets: [{ data: datos.map(d => d[1]), backgroundColor: '#f59e0b', borderRadius: 4 }] },
+    options: {
+      indexAxis: 'y', responsive: true, maintainAspectRatio: false,
+      plugins: { legend: { display: false }, tooltip: { callbacks: { label: ctx => `${numFmt(ctx.raw, 1)}h` } } },
+      scales: { x: { ticks: { callback: v => numFmt(v) } } },
+    },
+  });
 }
 
 function estadisticasOT(items) {
@@ -749,12 +928,7 @@ function renderDetalle() {
   const btnToggle = document.getElementById('mro_det_toggle_archivo');
   if (btnToggle) btnToggle.textContent = archivada ? '♻️ Reactivar esta OT' : '📦 Archivar esta OT';
 
-  setTxt('mrod_k_items', st.nItems);
-  setTxt('mrod_k_ok', st.nOK);
-  setTxt('mrod_k_dif', st.nDIF);
-
-  renderDonutOKDIF('mrod_chart_okdif', st.nOK, st.nDIF);
-  renderBarrasRubro('mrod_chart_rubro', items);
+  renderResumenOT(items, st);
 
   poblarFiltroRubroDetalle(items);
   const rubroF = document.getElementById('mrod_f_rubro')?.value || '';
@@ -794,11 +968,91 @@ function renderDetalle() {
   }
 
   mostrarTabOT(OT_TAB);
-  // Si ya se había entrado a "Costo" antes (en esta misma OT o en otra)
-  // los precios ya están en caché — alcanza con repintar la tabla. Si
-  // todavía no se cargaron ni una vez, el click en la sub-pestaña (ver
-  // init()) es el que dispara cargarPreciosCotizaciones().
-  if (OT_TAB === 'costo' && PRECIO_POR_ARTICULO) renderCosto();
+  // Si ya se había entrado a "Costo"/Resumen antes (en esta misma OT o en
+  // otra) los precios/horas ya están en caché — alcanza con repintar. Si
+  // todavía no se cargaron ni una vez, se dispara acá (el Resumen ahora
+  // los necesita de entrada, no solo la pestaña Costo, ver 13.10) — con
+  // guarda de carrera (`otAlAbrir`) por si el usuario cambia de OT
+  // mientras la carga todavía está en vuelo, para no pisar la OT nueva
+  // con datos de la vieja (mismo tipo de bug que ya se corrigió una vez
+  // acá, ver CLAUDE.md 13.9).
+  if (OT_TAB === 'costo') renderCosto();
+  if (!PRECIO_POR_ARTICULO || !HORAS_POR_OT) {
+    const otAlAbrir = OT_ACTUAL;
+    Promise.all([cargarPreciosCotizaciones(), cargarHorasPorOT()]).then(() => {
+      if (OT_ACTUAL !== otAlAbrir) return;
+      renderResumenOT(agruparPorOTMadre().get(OT_ACTUAL) || [], estadisticasOT(agruparPorOTMadre().get(OT_ACTUAL) || []));
+      if (OT_TAB === 'costo') renderCosto();
+    });
+  }
+}
+
+// Pinta TODO el panel Resumen: avance físico en kg (Cotizado/Cubierto,
+// con el "presupuesto en kg" de Presupuestos como referencia), costo real
+// en pesos (si PRECIO_POR_ARTICULO ya cargó), horas de Capataz (si
+// HORAS_POR_OT ya cargó), calidad de carga (OK/DIF) y los gráficos/tabla
+// de desvío. Las partes de costo/horas se repintan solas cuando terminan
+// de cargar (ver renderDetalle()) — mientras tanto quedan en "–", mismo
+// criterio que el resto del tablero. Pedido explícito del usuario,
+// 2026-10-23 ("mejoremos todo este sistema de resumen... que tenga el
+// mayor lujo de detalle"), ver CLAUDE.md sección 13.10.
+function renderResumenOT(items, st) {
+  const tot = st.tot;
+  const cubierto = tot.comprado + tot.asig;
+
+  // -- Avance físico (kg) --
+  setTxt('mrod_k_cotiz', `${numFmt(tot.cotiz)} kg`);
+  setTxt('mrod_k_cubierto', `${numFmt(cubierto)} kg`);
+  const avancePct = tot.solic > 0 ? Math.round(cubierto / tot.solic * 100) : null;
+  setTxt('mrod_k_avance', avancePct == null ? '–' : `${avancePct}%`);
+  const avanceBar = document.getElementById('mrod_k_avance_bar');
+  if (avanceBar) avanceBar.style.width = `${Math.max(0, Math.min(100, avancePct || 0))}%`;
+  const desvioPct = tot.cotiz > 0 ? Math.round((cubierto - tot.cotiz) / tot.cotiz * 100) : null;
+  const desvioEl = document.getElementById('mrod_k_desvio');
+  if (desvioEl) {
+    desvioEl.textContent = desvioPct == null ? '–' : `${desvioPct > 0 ? '+' : ''}${desvioPct}%`;
+    desvioEl.style.color = desvioPct == null ? '' : (desvioPct > 15 ? 'var(--red)' : (desvioPct < -15 ? 'var(--accent)' : 'var(--green)'));
+  }
+  setTxt('mrod_k_desvio_sub', desvioPct == null ? 'sin Cotizado cargado para esta OT' : (desvioPct > 0 ? 'por encima de lo cotizado' : 'dentro de lo cotizado'));
+
+  // -- Calidad de carga --
+  setTxt('mrod_k_items', st.nItems);
+  setTxt('mrod_k_ok', st.nOK);
+  setTxt('mrod_k_dif', st.nDIF);
+  renderDonutOKDIF('mrod_chart_okdif', st.nOK, st.nDIF);
+  renderBarrasCotizadoVsCubierto('mrod_chart_rubro', items);
+  renderTablaDesvios('t-mro-desvios', items);
+
+  // -- Costo real (si ya cargaron los precios de Cotizaciones) --
+  if (PRECIO_POR_ARTICULO) {
+    const { filas, costoPorMoneda, ahorroPorMoneda, nValorizados, nSinPrecio } = calcularCosto(items);
+    setTxt('mrod_k_costo', chipsMonto(costoPorMoneda));
+    setTxt('mrod_k_ahorro', chipsMonto(ahorroPorMoneda));
+    const totalPorMoneda = new Map(costoPorMoneda);
+    for (const [m, v] of ahorroPorMoneda) totalPorMoneda.set(m, (totalPorMoneda.get(m) || 0) + v);
+    setTxt('mrod_k_costototal', chipsMonto(totalPorMoneda));
+    let costoKgTxt = '–';
+    if (costoPorMoneda.size === 1 && tot.comprado > 0) {
+      const [m, v] = [...costoPorMoneda.entries()][0];
+      costoKgTxt = `${fmtMonto(v / tot.comprado, m)}/kg`;
+    }
+    setTxt('mrod_k_costokg', costoKgTxt);
+    const totalPreciables = nValorizados + nSinPrecio;
+    setTxt('mrod_k_cobertura', totalPreciables > 0 ? `${Math.round(nValorizados / totalPreciables * 100)}%` : '–');
+    setTxt('mrod_k_cobertura_sub', totalPreciables > 0 ? `${nValorizados} de ${totalPreciables} ítems con precio` : '');
+    renderGrupoPorMoneda('mrod_wrap_costorubro', 'Costo comprado por rubro', agruparCostoPor(filas, f => f.it.agrupacion || '(Sin rubro)'), '#22c55e');
+    renderGrupoPorMoneda('mrod_wrap_provs', 'Top proveedores (costo comprado)', agruparCostoPor(filas, f => f.precioInfo.proveedor_nombre || '(?)'), '#3b82f6');
+  }
+
+  // -- Mano de obra (si ya cargaron las horas de Capataz) --
+  if (HORAS_POR_OT) {
+    const horasData = calcularHoras(OT_ACTUAL);
+    setTxt('mrod_k_horas', `${numFmt(horasData.total, 1)}h`);
+    const toneladas = cubierto / 1000;
+    setTxt('mrod_k_hhton', toneladas > 0 && horasData.total > 0 ? `${numFmt(horasData.total / toneladas, 1)} HH/t` : '–');
+    setTxt('mrod_k_topcat', horasData.filas[0] ? `${horasData.filas[0][0]} (${numFmt(horasData.filas[0][1], 1)}h)` : '–');
+    renderBarrasHoras('mrod_chart_horas', horasData);
+  }
 }
 
 // Valoriza los ítems de la OT actual contra PRECIO_POR_ARTICULO —
@@ -811,24 +1065,7 @@ function renderCosto() {
   const items = agruparPorOTMadre().get(OT_ACTUAL) || [];
   const tc = Number((document.getElementById('mroc_tipo_cambio')?.value || '').trim().replace(',', '.')) || null;
 
-  const costoPorMoneda = new Map();
-  const ahorroPorMoneda = new Map();
-  let nValorizados = 0, nSinPrecio = 0;
-
-  const filas = items.map(it => {
-    const precioInfo = PRECIO_POR_ARTICULO.get(it.cod_articulo);
-    const cant = precioInfo ? cantidadParaCosto(it, precioInfo) : null;
-    if (!precioInfo || !cant) {
-      nSinPrecio++;
-      return { it, precioInfo: null, motivo: precioInfo ? 'unidad distinta' : 'sin cotización' };
-    }
-    nValorizados++;
-    const costoComprado = cant.comprado * precioInfo.precio_unitario;
-    const ahorroStock = cant.asig * precioInfo.precio_unitario;
-    costoPorMoneda.set(precioInfo.moneda, (costoPorMoneda.get(precioInfo.moneda) || 0) + costoComprado);
-    ahorroPorMoneda.set(precioInfo.moneda, (ahorroPorMoneda.get(precioInfo.moneda) || 0) + ahorroStock);
-    return { it, precioInfo, cant, costoComprado, ahorroStock };
-  });
+  const { filas, costoPorMoneda, ahorroPorMoneda, nValorizados, nSinPrecio } = calcularCosto(items);
 
   setTxt('mroc_k_costo', chipsMonto(costoPorMoneda));
   setTxt('mroc_k_ahorro', chipsMonto(ahorroPorMoneda));
@@ -887,9 +1124,7 @@ function renderHorasOT() {
   if (!tbody) return;
   if (!HORAS_POR_OT) { setTxt('mroc_k_horas', '–'); return; }
 
-  const porCategoria = HORAS_POR_OT.get(formatOT(OT_ACTUAL)) || new Map();
-  const filas = [...porCategoria.entries()].sort((a, b) => b[1] - a[1]);
-  const total = filas.reduce((s, [, h]) => s + h, 0);
+  const { filas, total } = calcularHoras(OT_ACTUAL);
 
   setTxt('mroc_k_horas', `${numFmt(total, 1)}h`);
   tbody.innerHTML = filas.length

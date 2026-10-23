@@ -1172,15 +1172,63 @@
     </div>
 
     <div id="mro_det_panel_resumen">
+      <div class="psub" style="margin:0 0 16px">Costo realizado de la OT con lo que ya tenemos: kilos (Cotizado por Presupuestos → Cubierto con compra/stock), costo en pesos (cruzando con el último precio ganador en Cotizaciones) y horas cargadas en Capataz (vía Tablero RRHH). Nada inventado — lo que falta precio/presupuesto queda marcado, no estimado.</div>
+
+      <div class="msec-title">📦 Avance físico (kg)</div>
+      <div class="kpi-grid">
+        <div class="kpi"><div class="kpi-val" id="mrod_k_cotiz">–</div><div class="kpi-lbl">Cotizado (Presupuestos)</div></div>
+        <div class="kpi"><div class="kpi-val text-accent" id="mrod_k_cubierto">–</div><div class="kpi-lbl">Cubierto (comprado + asignado)</div></div>
+        <div class="kpi">
+          <div class="kpi-val" id="mrod_k_avance">–</div><div class="kpi-lbl">Avance de compra</div>
+          <div class="mprog"><div class="mprog-fill" id="mrod_k_avance_bar" style="width:0%;background:var(--accent)"></div></div>
+        </div>
+        <div class="kpi">
+          <div class="kpi-val" id="mrod_k_desvio">–</div><div class="kpi-lbl">Desvío vs. Cotizado</div>
+          <div class="mkpi-sub" id="mrod_k_desvio_sub"></div>
+        </div>
+      </div>
+
+      <div class="msec-title">💰 Costo real</div>
+      <div class="kpi-grid">
+        <div class="kpi"><div class="kpi-val text-green" id="mrod_k_costo">–</div><div class="kpi-lbl">Costo realizado (comprado)</div></div>
+        <div class="kpi"><div class="kpi-val text-accent" id="mrod_k_ahorro">–</div><div class="kpi-lbl">Ahorro por stock asignado</div></div>
+        <div class="kpi"><div class="kpi-val" id="mrod_k_costototal">–</div><div class="kpi-lbl">Valor total de material usado</div></div>
+        <div class="kpi"><div class="kpi-val" id="mrod_k_costokg">–</div><div class="kpi-lbl">Costo promedio por kg</div></div>
+        <div class="kpi">
+          <div class="kpi-val" id="mrod_k_cobertura">–</div><div class="kpi-lbl">Cobertura de precio</div>
+          <div class="mkpi-sub" id="mrod_k_cobertura_sub"></div>
+        </div>
+      </div>
+
+      <div class="msec-title">👷 Mano de obra (Capataz)</div>
+      <div class="kpi-grid">
+        <div class="kpi"><div class="kpi-val text-yellow" id="mrod_k_horas">–</div><div class="kpi-lbl">Horas cargadas</div></div>
+        <div class="kpi"><div class="kpi-val" id="mrod_k_hhton">–</div><div class="kpi-lbl">HH por tonelada cubierta</div></div>
+        <div class="kpi"><div class="kpi-val" id="mrod_k_topcat" style="font-size:16px">–</div><div class="kpi-lbl">Categoría con más horas</div></div>
+      </div>
+
+      <div class="msec-title">✅ Calidad de carga</div>
       <div class="kpi-grid">
         <div class="kpi"><div class="kpi-val" id="mrod_k_items">–</div><div class="kpi-lbl">Ítems</div></div>
         <div class="kpi"><div class="kpi-val text-green" id="mrod_k_ok">–</div><div class="kpi-lbl">OK</div></div>
         <div class="kpi"><div class="kpi-val text-red" id="mrod_k_dif">–</div><div class="kpi-lbl">DIF</div></div>
       </div>
+
       <div class="charts-grid">
         <div class="chart-card"><h3>Ítems OK vs. DIF</h3><div class="chart-wrap"><canvas id="mrod_chart_okdif"></canvas></div></div>
-        <div class="chart-card"><h3>KGS comprados por rubro</h3><div class="chart-wrap"><canvas id="mrod_chart_rubro"></canvas></div></div>
+        <div class="chart-card"><h3>Cotizado vs. Cubierto por rubro (kg)</h3><div class="chart-wrap"><canvas id="mrod_chart_rubro"></canvas></div></div>
+        <div class="chart-card"><h3>Horas por categoría</h3><div class="chart-wrap"><canvas id="mrod_chart_horas"></canvas></div></div>
       </div>
+
+      <div class="charts-grid" id="mrod_wrap_costorubro"></div>
+      <div class="charts-grid" id="mrod_wrap_provs"></div>
+
+      <div class="msec-title">⚠️ Mayor desvío vs. presupuesto (por artículo)</div>
+      <div class="psub" style="margin:0 0 8px">Cubierto (comprado + asignado) comparado contra lo que Presupuestos cotizó en kg para ese artículo — los que más se alejan son los candidatos a revisar para afinar la próxima cotización.</div>
+      <div class="tw"><table>
+        <thead><tr><th>Código</th><th>Descripción</th><th>Rubro</th><th style="text-align:right">Cotizado (kg)</th><th style="text-align:right">Cubierto (kg)</th><th style="text-align:right">Desvío (kg)</th><th style="text-align:right">Desvío (%)</th></tr></thead>
+        <tbody id="t-mro-desvios"></tbody>
+      </table></div>
     </div>
 
     <div id="mro_det_panel_detalle" style="display:none">
