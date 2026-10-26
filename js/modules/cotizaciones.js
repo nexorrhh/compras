@@ -34,6 +34,7 @@ let COL_MONEDA = {};        // proveedor_id -> 'ARS'|'USD' — moneda con la que
 let PROV_MODAL_ID = null;   // proveedor_id que se está cargando en el modal mCOTPROV
 let BLOQUE_TAB = '';        // bloque actualmente seleccionado ('' = General) — reemplaza al viejo <select>, ver poblarTabsBloque()
 let DUPLICADOS = new Map(); // cod_articulo -> [{id, nombre}] de OTRAS solicitudes abiertas que también lo tienen a comprar (ver buscarDuplicadosEntreSolicitudes)
+let HISTORIAL_COMPARAR = new Map(); // cod_articulo -> [{fecha, proveedor_id, proveedor_nombre, precioUSD}] desc por fecha — ver cargarHistorialParaComparar()
 
 // ------------------------------------------------------------
 // Historial de precios por artículo (vista "📈 Historial de precios",
@@ -560,6 +561,7 @@ async function abrirDetalle(id) {
   const itemsACotizar = ITEMS.filter(i => i.a_comprar).map(i => ({ nro_solicitud: i.nro_solicitud }));
   DUPLICADOS = await buscarDuplicadosEntreSolicitudes(itemsACotizar, { id, created_at: cot.created_at });
   renderAlertaConfirmadosOtras(await buscarConfirmadosEnOtrasSolicitudes(itemsACotizar, id));
+  await cargarHistorialParaComparar(id, ITEMS.map(i => i.cod_articulo));
 
   document.getElementById('cot-vista-lista').style.display = 'none';
   document.getElementById('cot-vista-detalle').style.display = '';
@@ -1277,6 +1279,93 @@ function renderInvitados() {
 // pesos". El precio/moneda que se devuelve siguen siendo los realmente
 // cargados (nunca se guarda ni se muestra un precio "convertido" como si
 // fuera el real) — `convertido` solo avisa que la comparación usó el tc.
+// ------------------------------------------------------------
+// Aviso de variación de precio vs. historial — pedido explícito del
+// usuario, mismo día que el Historial de precios por artículo (ver 9.6):
+// "cuando cargue los precios quisiera que busque entre el historial y me
+// diga cuando haya variaciones... antes valía esto y ahora vale esto,
+// aumentó/bajó un tanto %". En vez de un toast (pedido explícito: "donde
+// pongo el precio se pinte de naranja o algún color llamativo"), la
+// celda misma se resalta — naranja si subió, verde si bajó — con una
+// notita debajo mostrando la fecha y el precio anterior.
+//
+// Se precarga UNA sola vez al abrir la solicitud (no una consulta por
+// cada precio tipeado): el precio histórico más reciente de cada
+// artículo de ITEMS, de CUALQUIER OTRA solicitud (se excluye la propia).
+// Al comparar un precio, se prefiere el más reciente del MISMO proveedor
+// para ese artículo (la comparación más justa: "¿este proveedor
+// subió?"); si ese proveedor nunca lo cotizó antes, se cae al más
+// reciente de cualquier otro (marcado aparte en la notita). Todo se
+// compara en USD (mismo criterio que 9.6/13.12) — un precio en ARS de
+// hoy se convierte con el mismo "Tipo de cambio" ya cargado arriba de la
+// tabla (`tipoCambioActual()`, precargado solo con el dólar de hoy, ver
+// precargarTipoCambio()); sin ese campo cargado no hay con qué comparar
+// una celda en pesos, no se inventa una conversión.
+// ------------------------------------------------------------
+async function cargarHistorialParaComparar(cotizacionId, codigos) {
+  HISTORIAL_COMPARAR = new Map();
+  const unicos = [...new Set(codigos)].filter(Boolean);
+  if (!unicos.length) return;
+
+  // Mismo criterio de trocear un .in() con muchos valores en tandas de
+  // 100 que ya usa el resto del tablero (ver CLAUDE.md sección 11) — una
+  // solicitud grande puede tener cientos de artículos distintos.
+  let items = [];
+  for (let i = 0; i < unicos.length; i += 100) {
+    const { data, error } = await fetchAll(() =>
+      SB.from('compras_cotizaciones_items')
+        .select('id,cod_articulo,compras_cotizaciones(created_at)')
+        .in('cod_articulo', unicos.slice(i, i + 100))
+        .neq('cotizacion_id', cotizacionId)
+    );
+    if (error) { toast(error.message, 'er'); return; }
+    items = items.concat(data || []);
+  }
+  if (!items.length) return;
+
+  const itemIds = items.map(i => i.id);
+  let precios = [];
+  for (let i = 0; i < itemIds.length; i += 300) {
+    const { data, error } = await fetchAll(() => SB.from('compras_cotizaciones_precios').select('item_id,proveedor_id,precio_unitario,moneda').in('item_id', itemIds.slice(i, i + 300)));
+    if (error) { toast(error.message, 'er'); return; }
+    precios = precios.concat(data || []);
+  }
+  if (!precios.length) return;
+
+  const itemMap = new Map(items.map(i => [i.id, i]));
+  const provMap = new Map(PROVEEDORES.map(p => [p.id, p.nombre]));
+  const filas = [];
+  for (const p of precios) {
+    const item = itemMap.get(p.item_id);
+    const fecha = (item?.compras_cotizaciones?.created_at || '').slice(0, 10);
+    if (!item || !fecha || p.precio_unitario == null) continue;
+    let precioUSD;
+    if (p.moneda === 'USD') precioUSD = Number(p.precio_unitario);
+    else {
+      const tc = await obtenerDolarEnFecha(fecha); // secuencial a propósito: la primera llamada cachea todo el histórico, las siguientes resuelven solas
+      precioUSD = tc ? Number(p.precio_unitario) / tc.venta : null;
+    }
+    if (precioUSD == null) continue;
+    filas.push({ cod_articulo: item.cod_articulo, fecha, proveedor_id: p.proveedor_id, proveedor_nombre: provMap.get(p.proveedor_id) || '(?)', precioUSD });
+  }
+  filas.sort((a, b) => b.fecha.localeCompare(a.fecha)); // más reciente primero, para que find() en historialParaComparar() dé el último
+  for (const f of filas) {
+    if (!HISTORIAL_COMPARAR.has(f.cod_articulo)) HISTORIAL_COMPARAR.set(f.cod_articulo, []);
+    HISTORIAL_COMPARAR.get(f.cod_articulo).push(f);
+  }
+}
+
+// Precio histórico contra el que comparar uno nuevo — ver comentario de
+// arriba (preferentemente del mismo proveedor, si no el más reciente de
+// cualquier otro). `null` si nunca se cotizó este artículo antes en
+// ninguna otra solicitud.
+function historialParaComparar(codArticulo, proveedorId) {
+  const lista = HISTORIAL_COMPARAR.get(codArticulo);
+  if (!lista?.length) return null;
+  const delMismo = lista.find(f => f.proveedor_id === proveedorId);
+  return delMismo ? { ...delMismo, mismoProveedor: true } : { ...lista[0], mismoProveedor: false };
+}
+
 function cheapestForItem(itemId, tc = null) {
   const preciosItem = PRECIOS.filter(p => p.item_id === itemId && p.precio_unitario != null);
   if (!preciosItem.length) return null;
@@ -1681,9 +1770,30 @@ function renderTablaComparativa() {
         : '';
       const notaAlternativo = (esAlternativo && p.nota_alternativo)
         ? `<div style="font-size:10px;color:var(--yellow)">🔀 ${escAttr(p.nota_alternativo)}</div>` : '';
+      // Variación vs. historial (ver cargarHistorialParaComparar() más
+      // arriba) — en USD, convirtiendo una celda en ARS con el mismo
+      // "Tipo de cambio" de hoy que ya usa el resto de la tabla (`tc`,
+      // tipoCambioActual()); sin ese campo cargado, una celda en ARS no
+      // se puede comparar (no se inventa una conversión). ±0,05% es solo
+      // para no resaltar ruido de redondeo del tipo de cambio, no un
+      // umbral de "variación relevante" — cualquier variación real se
+      // muestra, suba o baje.
+      let claseVariacion = '', notaVariacion = '';
+      if (p && p.precio_unitario != null) {
+        const precioUSD = p.moneda === 'USD' ? Number(p.precio_unitario) : (tc ? Number(p.precio_unitario) / tc : null);
+        const comp = historialParaComparar(item.cod_articulo, inv.proveedor_id);
+        if (precioUSD != null && comp && comp.precioUSD > 0) {
+          const pct = ((precioUSD - comp.precioUSD) / comp.precioUSD) * 100;
+          if (Math.abs(pct) > 0.05) {
+            claseVariacion = pct > 0 ? 'cot-precio-subio' : 'cot-precio-bajo';
+            const otroProv = comp.mismoProveedor ? '' : ', otro proveedor';
+            notaVariacion = `<div style="font-size:10px;color:${pct > 0 ? 'var(--orange)' : 'var(--green)'}" title="Antes U$S ${numFmt(comp.precioUSD, 3)} el ${fmt(comp.fecha)}${otroProv}">${pct > 0 ? '▲' : '▼'} ${pct > 0 ? '+' : ''}${numFmt(pct, 1)}% vs ${fmt(comp.fecha)}</div>`;
+          }
+        }
+      }
       return `<td class="${esMejor ? 'cot-precio-min' : ''}" style="white-space:nowrap${esAlternativo ? ';border-left:3px solid var(--yellow)' : ''}">
-        ${simbolo}<input type="text" inputmode="decimal" class="cot-precio-input" data-item="${item.id}" data-prov="${inv.proveedor_id}"
-          value="${p && p.precio_unitario != null ? p.precio_unitario : ''}" placeholder="—">${btnAlternativo}${equivalencia}${notaAlternativo}
+        ${simbolo}<input type="text" inputmode="decimal" class="cot-precio-input ${claseVariacion}" data-item="${item.id}" data-prov="${inv.proveedor_id}"
+          value="${p && p.precio_unitario != null ? p.precio_unitario : ''}" placeholder="—">${btnAlternativo}${equivalencia}${notaAlternativo}${notaVariacion}
       </td>`;
     }).join('');
 
@@ -2027,14 +2137,33 @@ function renderModalProveedorItems() {
           title="${esAlternativo ? `Cotización alternativa${p.nota_alternativo ? ': ' + escAttr(p.nota_alternativo) : ''} — click para quitar la marca` : 'Marcar como cotización alternativa (otra medida/spec) — igual sirve para comparar'}"
           style="padding:1px 4px;font-size:10px;margin-left:3px;vertical-align:middle">🔀</button>`
       : '';
+    // Mismo aviso de variación vs. historial que la comparativa (ver
+    // cargarHistorialParaComparar() más arriba) — acá el proveedor es
+    // siempre PROV_MODAL_ID (una sola columna), así que la comparación es
+    // directamente contra la última vez que ESE proveedor cotizó este
+    // artículo (o, si nunca lo hizo, contra cualquier otro).
+    let claseVariacion = '', notaVariacion = '';
+    if (p && p.precio_unitario != null) {
+      const tc = tipoCambioActual();
+      const precioUSD = p.moneda === 'USD' ? Number(p.precio_unitario) : (tc ? Number(p.precio_unitario) / tc : null);
+      const comp = historialParaComparar(item.cod_articulo, PROV_MODAL_ID);
+      if (precioUSD != null && comp && comp.precioUSD > 0) {
+        const pct = ((precioUSD - comp.precioUSD) / comp.precioUSD) * 100;
+        if (Math.abs(pct) > 0.05) {
+          claseVariacion = pct > 0 ? 'cot-precio-subio' : 'cot-precio-bajo';
+          const otroProv = comp.mismoProveedor ? '' : ', otro proveedor';
+          notaVariacion = `<div style="font-size:10px;color:${pct > 0 ? 'var(--orange)' : 'var(--green)'}" title="Antes U$S ${numFmt(comp.precioUSD, 3)} el ${fmt(comp.fecha)}${otroProv}">${pct > 0 ? '▲' : '▼'} ${pct > 0 ? '+' : ''}${numFmt(pct, 1)}% vs ${fmt(comp.fecha)}</div>`;
+        }
+      }
+    }
     return `<tr${esAlternativo ? ' style="background:rgba(245,158,11,.06)"' : ''}>
       <td>${escAttr(item.cod_articulo)}</td>
       <td>${escAttr(item.descripcion || '')}${item.desc_adicional ? `<div style="font-size:11px;color:var(--muted)">${escAttr(item.desc_adicional)}</div>` : ''}</td>
       <td style="text-align:right;white-space:nowrap">${item.cant_umc != null ? numFmt(item.cant_umc) : '–'} ${escAttr(item.umc || '')}</td>
       <td style="white-space:nowrap">
-        <input type="text" inputmode="decimal" class="cotprov-precio-input" data-item="${item.id}"
+        <input type="text" inputmode="decimal" class="cotprov-precio-input ${claseVariacion}" data-item="${item.id}"
           value="${p && p.precio_unitario != null ? p.precio_unitario : ''}" placeholder="—" style="width:90px;text-align:right">${btnAlternativo}
-        ${esAlternativo && p.nota_alternativo ? `<div style="font-size:10px;color:var(--yellow)">🔀 ${escAttr(p.nota_alternativo)}</div>` : ''}
+        ${esAlternativo && p.nota_alternativo ? `<div style="font-size:10px;color:var(--yellow)">🔀 ${escAttr(p.nota_alternativo)}</div>` : ''}${notaVariacion}
       </td>
       <td class="cotprov-subtotal" data-item="${item.id}" style="text-align:right">–</td>
     </tr>`;

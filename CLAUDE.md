@@ -1667,6 +1667,43 @@ Un precio marcado **alternativo** (otra medida/spec, ver 9.2) se sigue mostrando
 gráfico — no se excluye, mismo criterio que el resto del tablero ("no inventar, mostrar todo real, avisar
 sin ocultar") — solo se distingue con el badge 🔀 y su nota.
 
+### 9.7 Aviso de variación vs. historial al cargar un precio (en la comparativa)
+
+Pedido explícito del usuario, mismo día que 9.6: "cuando cargue los precios quisiera que busque entre el
+historial y me diga cuando haya variaciones... cotizo un perfil de una medida y resulta que varía en 0.10
+USD, quisiera que me diga antes valía esto y ahora vale esto, aumentó un tanto %". Se le preguntó si
+quería esto también en "Pendientes (todas)" (eligió que no, **solo en la ficha de una solicitud** — tanto
+en la comparativa normal como en el modal de carga enfocada por proveedor, `mCOTPROV`) y cómo mostrarlo:
+en vez de un toast con un umbral mínimo, pidió explícitamente que la celda donde se tipea el precio se
+pinte de un color llamativo — **naranja si subió, verde si bajó** — contra una cotización anterior, con
+el detalle de cuándo y cuánto valía.
+
+**Carga única al abrir la ficha** (`cargarHistorialParaComparar()` en `js/modules/cotizaciones.js`,
+llamada desde `abrirDetalle()`): trae, para todos los `cod_articulo` de la solicitud, el precio más
+reciente cargado en **cualquier OTRA** solicitud (se excluye la propia) — mismas tablas que el Historial
+de precios (9.6), sin tabla propia. Se cachea en memoria (`HISTORIAL_COMPARAR`, `cod_articulo` →
+precios ordenados por fecha descendente) para no consultar de nuevo con cada tecla tipeada.
+
+**Contra qué se compara un precio nuevo** (`historialParaComparar()`): preferentemente el más reciente
+del **mismo proveedor** para ese artículo — es la comparación más justa ("¿este proveedor subió?"); si
+ese proveedor nunca lo cotizó antes, se cae al más reciente de **cualquier otro** (la notita aclara
+"otro proveedor" en ese caso, para no confundir "subió este proveedor" con "cambié de proveedor y salió
+más caro").
+
+**Todo en USD** (mismo criterio que 9.6/13.12): un precio en USD se usa tal cual; uno en ARS se convierte
+con el mismo campo **"Tipo de cambio"** que ya está arriba de la tabla (`tipoCambioActual()`, precargado
+solo con el dólar oficial de hoy, ver `precargarTipoCambio()`) — sin ese campo cargado, una celda en
+pesos no tiene con qué compararse (no se inventa una conversión), simplemente no muestra nada.
+
+**Dónde se ve**: la celda de precio (`<input class="cot-precio-input">`/`<input class="cotprov-precio-input">`)
+se pinta con `.cot-precio-subio` (borde/fondo naranja) o `.cot-precio-bajo` (borde/fondo verde) — clases
+separadas de `.cot-precio-min` (la celda más barata de la fila, que sigue siendo su propio resaltado
+verde independiente a nivel `<td>`, no del input: las dos cosas pueden coincidir o no en la misma celda
+sin pisarse). Debajo del input, una línea chica muestra "▲ +10,6% vs 23/09/2026" (o "▼" si bajó), con un
+tooltip con el precio y la fecha exactos. El umbral de ±0,05% es solo para no resaltar ruido de redondeo
+del tipo de cambio — no un piso de "variación relevante": cualquier variación real se muestra, suba o
+baje, sin umbral de negocio (pedido explícito del usuario).
+
 ## 10. Módulo: OT `[DETALLADO]`
 
 Módulo de nav propio (grupo colapsable "🏷️ OT", como Flota/OC/Stock/Proveedores), pedido explícito del
@@ -2878,6 +2915,13 @@ Ya decidido al construir el Historial de precios por artículo (2026-10-26):
   no), no solo las ganadoras/confirmadas — misma pregunta, mismo lugar.
 - [x] Todo se normaliza a dólares con el oficial del día de CADA cotización (mismo mecanismo que
   Materiales OT 13.12) — misma pregunta, mismo lugar.
+
+Ya decidido al construir el aviso de variación de precio al cargar (2026-10-26):
+- [x] Solo en la ficha de una solicitud (comparativa + modal por proveedor), no en "Pendientes (todas)"
+  — preguntado explícitamente antes de construir, ver sección 9.7.
+- [x] En vez de un toast con un umbral mínimo, la celda del precio se pinta (naranja si subió, verde si
+  bajó) con una notita de fecha/precio anterior debajo — pedido explícito del usuario, sin umbral de
+  negocio (cualquier variación real se muestra).
 
 Todavía sin decidir:
 - [ ] Materiales OT: confirmar el nombre exacto de la variante del export de Capataz (el instructivo de
