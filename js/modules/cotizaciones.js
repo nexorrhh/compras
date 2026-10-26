@@ -11,7 +11,7 @@
 // compra respetando mínimos por proveedor.
 // ============================================================
 import { SB } from '../supabase-client.js';
-import { toast, om, cm, norm, txt, num, fetchAll, escAttr, fmt, obtenerDolarReferencia } from '../utils.js';
+import { toast, om, cm, norm, txt, num, fetchAll, escAttr, fmt, obtenerDolarReferencia, obtenerDolarEnFecha } from '../utils.js';
 
 let COTIZACIONES = [];
 let ITEMS_RESUMEN = [];     // {cotizacion_id, a_comprar} de TODAS las solicitudes — solo para los contadores de la lista
@@ -34,6 +34,14 @@ let COL_MONEDA = {};        // proveedor_id -> 'ARS'|'USD' — moneda con la que
 let PROV_MODAL_ID = null;   // proveedor_id que se está cargando en el modal mCOTPROV
 let BLOQUE_TAB = '';        // bloque actualmente seleccionado ('' = General) — reemplaza al viejo <select>, ver poblarTabsBloque()
 let DUPLICADOS = new Map(); // cod_articulo -> [{id, nombre}] de OTRAS solicitudes abiertas que también lo tienen a comprar (ver buscarDuplicadosEntreSolicitudes)
+
+// ------------------------------------------------------------
+// Historial de precios por artículo (vista "📈 Historial de precios",
+// prefijo HIST_/coth_). Ver sección "Historial de precios" más abajo.
+// ------------------------------------------------------------
+let HIST_COD = null;
+let HIST_FILAS = [];
+let HIST_CHART = null;
 
 // ------------------------------------------------------------
 // Vista "Pendientes (todas las solicitudes)" — junta lo que todavía no
@@ -2764,6 +2772,10 @@ export async function render(secId) {
     });
     return;
   }
+  if (secId === 'cot-historial') {
+    await cargarCatalogoArticulos(); // habilita el autocomplete del buscador
+    return; // sin artículo elegido todavía no hay nada más que pintar — ver seleccionarArticuloHistorial()
+  }
   if (secId !== 'cot-lista') return;
   if (COT_ACTUAL) return; // se navegó de vuelta con el detalle todavía abierto — se deja como estaba
   renderLista();
@@ -2996,6 +3008,239 @@ async function borrarItemManual(itemId) {
   renderResumenProveedores();
 }
 
+// ------------------------------------------------------------
+// Historial de precios por artículo — sub-vista "📈 Historial de
+// precios" (pedido explícito del usuario, 2026-10-26): "un historial de
+// precios de un artículo, cuántas veces me lo cotizaron, en qué fecha y
+// cuánto valían, para comparar y ver cuándo varían". Sin tablas propias
+// — mismo criterio que "Pendientes (todas)"/OT/Consolidado: se arma
+// leyendo compras_cotizaciones_items + compras_cotizaciones_precios +
+// compras_cotizaciones por cod_articulo. Muestra TODAS las cotizaciones
+// cargadas para ese artículo (de cualquier proveedor invitado, haya
+// ganado o no — pedido explícito del usuario, "todas las cargadas"),
+// no solo las ganadoras/confirmadas: el objetivo es ver el panorama
+// completo de qué ofreció cada uno, no solo lo que terminó comprándose.
+//
+// La fecha de cada precio es la de creación de la SOLICITUD
+// (`compras_cotizaciones.created_at`) — es cuándo se cargó/tipeó esa
+// cotización, no cuándo se terminó confirmando la compra (eso es un
+// caso de uso distinto, ya resuelto en Materiales OT → Costo con
+// `confirmado_en`, ver CLAUDE.md 13.12) — y está disponible para
+// CUALQUIER precio cargado, no solo los confirmados.
+//
+// Cada precio en ARS se convierte a dólares con el oficial del DÍA de
+// esa cotización (mismo mecanismo que Materiales OT, `obtenerDolarEnFecha`
+// en utils.js) — pedido explícito del usuario, para poder comparar la
+// variación real sin que la inflación en pesos la tape. Un precio en USD
+// se usa tal cual. Sin tipo de cambio para esa fecha, el precio queda
+// "sin T.C." en vez de inventar una conversión.
+// ------------------------------------------------------------
+async function buscarHistorialPrecios(codArticulo) {
+  const { data: items, error: e1 } = await fetchAll(() =>
+    SB.from('compras_cotizaciones_items')
+      .select('id,cotizacion_id,ganador_proveedor_id,confirmado,compras_cotizaciones(nombre,created_at)')
+      .eq('cod_articulo', codArticulo)
+  );
+  if (e1) { toast(e1.message, 'er'); return []; }
+  if (!items?.length) return [];
+
+  const itemIds = items.map(i => i.id);
+  const { data: precios, error: e2 } = await fetchAll(() =>
+    SB.from('compras_cotizaciones_precios').select('*').in('item_id', itemIds)
+  );
+  if (e2) { toast(e2.message, 'er'); return []; }
+
+  const provMap = new Map(PROVEEDORES.map(p => [p.id, p.nombre]));
+  const itemMap = new Map(items.map(i => [i.id, i]));
+  const filas = (precios || []).map(p => {
+    const item = itemMap.get(p.item_id);
+    const cot = item?.compras_cotizaciones;
+    return {
+      fecha: (cot?.created_at || '').slice(0, 10),
+      solicitud_nombre: cot?.nombre || '(?)',
+      proveedor_nombre: provMap.get(p.proveedor_id) || '(?)',
+      precio_unitario: Number(p.precio_unitario),
+      moneda: p.moneda,
+      es_ganador: !!item && item.ganador_proveedor_id === p.proveedor_id,
+      confirmado: !!item?.confirmado && item.ganador_proveedor_id === p.proveedor_id,
+      alternativo: !!p.alternativo,
+      nota_alternativo: p.nota_alternativo || null,
+    };
+  }).filter(f => f.fecha); // sin fecha de creación de la solicitud no hay forma de ubicarlo en el tiempo (no debería pasar)
+
+  // Secuencial a propósito: la primera llamada carga y cachea todo el
+  // histórico del dólar (obtenerDolarEnFecha → obtenerHistoricoDolarCompleto,
+  // ver utils.js), las siguientes resuelven solas desde ese caché.
+  for (const f of filas) {
+    if (f.moneda === 'USD') { f.precioUSD = f.precio_unitario; continue; }
+    const tc = await obtenerDolarEnFecha(f.fecha);
+    f.precioUSD = tc ? f.precio_unitario / tc.venta : null;
+  }
+  filas.sort((a, b) => a.fecha.localeCompare(b.fecha));
+  return filas;
+}
+
+async function seleccionarArticuloHistorial(cod, descripcion) {
+  HIST_COD = cod;
+  const vacio = document.getElementById('coth_vacio');
+  if (vacio) vacio.style.display = 'none';
+  const wrap = document.getElementById('coth_resultado');
+  if (wrap) wrap.style.display = '';
+  const titulo = document.getElementById('coth_titulo');
+  if (titulo) titulo.textContent = `${cod} — ${descripcion || 'sin descripción'}`;
+  const tb = document.getElementById('t-coth-historial');
+  if (tb) tb.innerHTML = '<tr><td colspan="6" style="text-align:center;padding:18px;color:var(--muted)">Cargando…</td></tr>';
+
+  HIST_FILAS = await buscarHistorialPrecios(cod);
+  if (HIST_COD !== cod) return; // el usuario ya buscó otro artículo mientras esto cargaba
+  renderHistorialPrecios();
+}
+
+function renderHistorialPrecios() {
+  const filas = HIST_FILAS;
+  const conUSD = filas.filter(f => f.precioUSD != null);
+
+  const kCant = document.getElementById('coth_k_cant');
+  if (kCant) kCant.textContent = String(filas.length);
+
+  const ultimo = conUSD[conUSD.length - 1];
+  const kUlt = document.getElementById('coth_k_ultimo');
+  if (kUlt) kUlt.textContent = ultimo ? `U$S ${numFmt(ultimo.precioUSD, 3)}` : '–';
+  const kUltSub = document.getElementById('coth_k_ultimo_sub');
+  if (kUltSub) kUltSub.textContent = ultimo ? `${fmt(ultimo.fecha)} · ${ultimo.proveedor_nombre}` : '';
+
+  const previo = conUSD[conUSD.length - 2];
+  const kVar = document.getElementById('coth_k_variacion');
+  if (kVar) {
+    if (ultimo && previo && previo.precioUSD > 0) {
+      const pct = ((ultimo.precioUSD - previo.precioUSD) / previo.precioUSD) * 100;
+      kVar.textContent = `${pct >= 0 ? '+' : ''}${numFmt(pct, 1)}%`;
+      kVar.className = 'kpi-val ' + (pct > 0 ? 'text-red' : pct < 0 ? 'text-green' : '');
+    } else {
+      kVar.textContent = '–';
+      kVar.className = 'kpi-val';
+    }
+  }
+
+  const kMinMax = document.getElementById('coth_k_minmax');
+  if (kMinMax) {
+    if (conUSD.length) {
+      const vals = conUSD.map(f => f.precioUSD);
+      kMinMax.textContent = `U$S ${numFmt(Math.min(...vals), 3)} – U$S ${numFmt(Math.max(...vals), 3)}`;
+    } else kMinMax.textContent = '–';
+  }
+
+  const kSinTc = document.getElementById('coth_k_sintc');
+  if (kSinTc) kSinTc.textContent = String(filas.filter(f => f.moneda !== 'USD' && f.precioUSD == null).length);
+
+  renderChartHistorial(conUSD);
+  renderTablaHistorial(filas);
+}
+
+const PALETA_HISTORIAL = ['#22c55e', '#6366f1', '#3b82f6', '#f59e0b', '#ef4444', '#a855f7', '#14b8a6', '#64748b', '#ec4899', '#84cc16'];
+
+function renderChartHistorial(conUSD) {
+  const canvas = document.getElementById('coth_chart');
+  const empty = document.getElementById('coth_chart_empty');
+  if (!canvas) return;
+  if (HIST_CHART) { HIST_CHART.destroy(); HIST_CHART = null; }
+  if (!conUSD.length || typeof Chart === 'undefined') {
+    canvas.style.display = 'none';
+    if (empty) empty.style.display = '';
+    return;
+  }
+  canvas.style.display = '';
+  if (empty) empty.style.display = 'none';
+
+  const fechas = [...new Set(conUSD.map(f => f.fecha))].sort();
+  const proveedores = [...new Set(conUSD.map(f => f.proveedor_nombre))];
+  const cssVars = getComputedStyle(document.documentElement);
+  Chart.defaults.color = cssVars.getPropertyValue('--muted').trim();
+  Chart.defaults.borderColor = cssVars.getPropertyValue('--border').trim();
+
+  const datasets = proveedores.map((prov, idx) => {
+    const color = PALETA_HISTORIAL[idx % PALETA_HISTORIAL.length];
+    const porFecha = new Map();
+    conUSD.filter(f => f.proveedor_nombre === prov).forEach(f => porFecha.set(f.fecha, f.precioUSD));
+    return {
+      label: prov,
+      data: fechas.map(fch => porFecha.has(fch) ? porFecha.get(fch) : null),
+      borderColor: color, backgroundColor: color, spanGaps: true,
+      pointRadius: 4, pointHoverRadius: 6, borderWidth: 2, tension: .15,
+    };
+  });
+
+  HIST_CHART = new Chart(canvas.getContext('2d'), {
+    type: 'line',
+    data: { labels: fechas.map(fmt), datasets },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      plugins: {
+        legend: { display: proveedores.length > 1, position: 'bottom' },
+        tooltip: { callbacks: { label: ctx => `${ctx.dataset.label}: U$S ${numFmt(ctx.raw, 3)}` } },
+      },
+      scales: { y: { ticks: { callback: v => 'U$S ' + numFmt(v, 2) } } },
+    },
+  });
+}
+
+function renderTablaHistorial(filas) {
+  const tb = document.getElementById('t-coth-historial');
+  if (!tb) return;
+  if (!filas.length) { tb.innerHTML = '<tr><td colspan="6" style="text-align:center;padding:18px;color:var(--muted)">Sin cotizaciones registradas para este artículo</td></tr>'; return; }
+  const ordenadas = filas.slice().sort((a, b) => b.fecha.localeCompare(a.fecha)); // más reciente primero
+  tb.innerHTML = ordenadas.map(f => {
+    const precioOriginal = fmtMonto(f.precio_unitario, f.moneda);
+    const precioUSD = f.precioUSD != null ? `U$S ${numFmt(f.precioUSD, 3)}` : '<span class="text-yellow">⚠️ sin T.C.</span>';
+    const badges = [
+      f.es_ganador ? '<span class="badge vigente">Ganador</span>' : '',
+      f.confirmado ? '<span class="badge comp">Confirmado</span>' : '',
+      f.alternativo ? `<span class="badge prov-alternativo" title="${escAttr(f.nota_alternativo || 'Cotización en otra medida/spec')}">🔀 Alternativo</span>` : '',
+    ].filter(Boolean).join(' ');
+    return `<tr>
+      <td>${fmt(f.fecha)}</td>
+      <td>${escAttr(f.solicitud_nombre)}</td>
+      <td>${escAttr(f.proveedor_nombre)}</td>
+      <td style="text-align:right">${precioOriginal}</td>
+      <td style="text-align:right">${precioUSD}</td>
+      <td>${badges || '–'}</td>
+    </tr>`;
+  }).join('');
+}
+
+function filtrarSugerenciasHistorial() {
+  const input = document.getElementById('coth_buscar');
+  const box = document.getElementById('coth_sug');
+  if (!input || !box || !CATALOGO_ARTICULOS) return;
+  const q = norm(input.value.trim());
+  if (!q) { box.style.display = 'none'; box.innerHTML = ''; return; }
+  const coincidencias = [...CATALOGO_ARTICULOS.values()]
+    .filter(a => norm(a.descripcion).includes(q) || norm(a.cod_articulo).includes(q))
+    .slice(0, 20);
+  if (!coincidencias.length) { box.style.display = 'none'; box.innerHTML = ''; return; }
+  box.innerHTML = coincidencias.map(a => `<div class="ac-item" data-cod="${escAttr(a.cod_articulo)}" data-desc="${escAttr(a.descripcion)}">
+    <strong>${escAttr(a.cod_articulo)}</strong> — ${escAttr(a.descripcion)}
+  </div>`).join('');
+  box.style.display = '';
+}
+
+function initAutocompleteHistorial() {
+  const input = document.getElementById('coth_buscar');
+  const box = document.getElementById('coth_sug');
+  if (!input || !box) return;
+  input.addEventListener('input', filtrarSugerenciasHistorial);
+  input.addEventListener('focus', filtrarSugerenciasHistorial);
+  box.addEventListener('mousedown', e => {
+    const item = e.target.closest('.ac-item');
+    if (!item) return;
+    e.preventDefault();
+    input.value = `${item.dataset.cod} — ${item.dataset.desc}`;
+    box.style.display = 'none';
+    seleccionarArticuloHistorial(item.dataset.cod, item.dataset.desc);
+  });
+  input.addEventListener('blur', () => setTimeout(() => { box.style.display = 'none'; }, 120));
+}
+
 export function init() {
   document.getElementById('cot_invitar_preferidos')?.addEventListener('click', invitarPreferidosActual);
   document.getElementById('cot_sumar_grupo')?.addEventListener('click', abrirSelectorGrupoCotizacion);
@@ -3049,6 +3294,7 @@ export function init() {
   initModalProveedor();
   initAutocompleteInvitarGlobal();
   initDelegacionPendientes();
+  initAutocompleteHistorial();
 
   window.cotizaciones = { abrirDetalle };
 }

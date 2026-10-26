@@ -498,6 +498,7 @@
     <div class="nav-children">
       <div class="nav-item" data-sec="cot-lista"><span>📋</span> Solicitudes</div>
       <div class="nav-item" data-sec="cot-pendientes"><span>🌐</span> Pendientes (todas)</div>
+      <div class="nav-item" data-sec="cot-historial"><span>📈</span> Historial de precios</div>
     </div>
   </div>
 
@@ -1046,6 +1047,47 @@
 
   <div class="psub" style="margin:18px 0 8px">Resumen por proveedor</div>
   <div id="cotp_resumen_proveedores" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:10px"></div>
+</div>
+
+<!-- ============ COTIZACIONES — HISTORIAL DE PRECIOS POR ARTÍCULO ============ -->
+<div class="sec" id="s-cot-historial">
+  <div class="ptitle">Historial de precios por artículo</div>
+  <div class="psub">Todas las cotizaciones cargadas para un artículo, de cualquier proveedor invitado — convertidas a dólares con el oficial del día de cada cotización, para comparar la variación real sin que la inflación en pesos la tape</div>
+
+  <div class="fg" style="position:relative;max-width:420px;margin-top:14px">
+    <input id="coth_buscar" autocomplete="off" placeholder="Buscar artículo por código o descripción...">
+    <div class="ac-box" id="coth_sug" style="display:none"></div>
+  </div>
+
+  <div id="coth_vacio" class="psub" style="margin-top:24px">Buscá un artículo arriba para ver su historial de precios.</div>
+
+  <div id="coth_resultado" style="display:none;margin-top:18px">
+    <div class="sh"><h2 id="coth_titulo">–</h2></div>
+    <div class="kpi-grid">
+      <div class="kpi"><div class="kpi-val text-accent" id="coth_k_cant">–</div><div class="kpi-lbl">Veces cotizado</div></div>
+      <div class="kpi"><div class="kpi-val" id="coth_k_ultimo">–</div><div class="kpi-lbl">Última cotización</div><div class="psub" style="margin:4px 0 0;font-size:11px" id="coth_k_ultimo_sub"></div></div>
+      <div class="kpi"><div class="kpi-val" id="coth_k_variacion">–</div><div class="kpi-lbl">Variación vs. anterior</div></div>
+      <div class="kpi"><div class="kpi-val" id="coth_k_minmax">–</div><div class="kpi-lbl">Mín. – máx. (USD)</div></div>
+      <div class="kpi"><div class="kpi-val text-yellow" id="coth_k_sintc">–</div><div class="kpi-lbl">Sin T.C. de su fecha</div></div>
+    </div>
+
+    <div class="charts-grid">
+      <div class="chart-card">
+        <h3>Evolución del precio (USD) por proveedor</h3>
+        <div class="chart-wrap">
+          <canvas id="coth_chart"></canvas>
+          <div class="chart-empty" id="coth_chart_empty" style="display:none">Sin precios convertibles a USD para graficar</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="tw">
+      <table>
+        <thead><tr><th>Fecha</th><th>Solicitud</th><th>Proveedor</th><th style="text-align:right">Precio</th><th style="text-align:right">≈ USD</th><th>Estado</th></tr></thead>
+        <tbody id="t-coth-historial"></tbody>
+      </table>
+    </div>
+  </div>
 </div>
 
 <!-- ============ OT — DASHBOARD ============ -->

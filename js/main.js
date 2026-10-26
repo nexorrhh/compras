@@ -35,6 +35,7 @@ const MODULES = {
   'np-lista': notasPedido,
   'cot-lista': cotizaciones,
   'cot-pendientes': cotizaciones,
+  'cot-historial': cotizaciones,
   'ot-dash': ot, 'ot-cards': ot,
   'materot-dash': materot, 'materot-cards': materot, 'materot-grupos': materot,
   'consol-dash': consolidado, 'consol-semanas': consolidado,

@@ -1611,6 +1611,62 @@ artículo agrupado entre varias solicitudes, así que **N° Sol.** y **OT** junt
 origen separados por coma (puede haber más de uno) y Cantidad/Equivalencia son el total pendiente
 sumado, no el de una ficha puntual.
 
+### 9.6 Historial de precios por artículo
+
+Pedido explícito del usuario (2026-10-26): "algo que me ayude a comparar los precios históricos y ver
+cuándo varían... un historial de precios de un artículo, cuántas veces me lo cotizaron, en qué fecha y
+cuánto valían". Antes de construir nada se verificó con datos reales que no hacía falta ninguna tabla
+nueva: el artículo `CH1/4A`, por ejemplo, ya tenía 8 cotizaciones cargadas entre 6 solicitudes distintas
+(27/08 a 24/09/2026), con precios de U$S 1,13 → 1,002 → 1,04 → 1,11 según proveedor y fecha — toda esa
+historia ya vive en `compras_cotizaciones_items` + `compras_cotizaciones_precios` + `compras_cotizaciones`
+(precio, moneda, proveedor, fecha de creación de la solicitud), solo que hasta ahora nunca se había
+mirado agrupada por `cod_articulo` en vez de por solicitud.
+
+**Dónde vive** (preguntado explícitamente al usuario, tres puntos, las tres respondidas con la opción
+recomendada): es una tercera sub-vista dentro del grupo de nav **Cotizaciones** ("📈 Historial de
+precios", `cot-historial`, junto a "Solicitudes" y "Pendientes (todas)"), no un módulo de nav propio —
+a diferencia de OT/Consolidado (paneles de panorama, pensados para "trabajarlos desde ahí" todo el día,
+por eso sí se promovieron a su propio grupo), esto es una herramienta de **consulta puntual de un solo
+artículo a la vez**, más parecida a "Pendientes (todas)" (9.5): otra forma de mirar los mismos datos de
+Cotizaciones. Sin tablas propias — mismo criterio que OT/Materiales OT/Consolidado.
+
+### Cómo se usa
+
+Un buscador (`coth_buscar`, mismo `.ac-box`/`.ac-item` y mismo catálogo que ya arma
+`cargarCatalogoArticulos()` para "+ Agregar ítem para cotizar", ver 9.2) por código o descripción. Al
+elegir un artículo, `buscarHistorialPrecios()` trae **todas** las filas de
+`compras_cotizaciones_precios` para ese `cod_articulo` (de cualquier proveedor invitado, haya ganado o
+no, esté o no confirmada la compra — pedido explícito del usuario, "todas las cargadas") y arma:
+
+- **KPIs**: veces cotizado, última cotización (precio + fecha + proveedor), variación % vs. la cotización
+  anterior (rojo si subió, verde si bajó), mín.–máx. en USD, cantidad de precios "sin T.C. de su fecha".
+- **Gráfico de línea** (Chart.js) — precio en USD a lo largo del tiempo, **un color por proveedor**
+  (primer gráfico multi-serie del tablero por entidad — hasta ahora todos los charts eran de una sola
+  serie; paleta fija de 10 colores cíclica, `PALETA_HISTORIAL`), para poder ver de un vistazo si un
+  proveedor puntual viene subiendo o si la variación es solo por cambiar de proveedor.
+- **Tabla** (más reciente primero): Fecha / Solicitud / Proveedor / Precio (en su moneda original) / ≈ USD
+  / Estado (badges "Ganador"/"Confirmado"/"🔀 Alternativo", reusando los mismos criterios que ya existen
+  en la comparativa — ver 9.2).
+
+**La fecha de cada precio es la de creación de la SOLICITUD** (`compras_cotizaciones.created_at`), no la
+de confirmación de compra — a propósito: acá importa "cuándo me cotizaron esto", no "cuándo se terminó
+comprando" (eso es un caso de uso distinto, ya resuelto en Materiales OT → Costo con `confirmado_en`, ver
+13.12) — y está disponible para **cualquier** precio cargado, no solo los confirmados, que es justo lo
+que hacía falta para "todas las cargadas".
+
+**Conversión a USD con el dólar del día de CADA cotización** (tercer punto preguntado al usuario, mismo
+mecanismo que Materiales OT 13.12, `obtenerDolarEnFecha()` en `js/utils.js`): un precio en ARS se divide
+por el dólar oficial vigente esa fecha exacta (o la más cercana hacia atrás si cae en fin de semana/
+feriado); uno en USD se usa tal cual. Pedido explícito del usuario — "para que puedas tomar como
+referencia" la variación real sin que la inflación en pesos la tape. Sin tipo de cambio para esa fecha
+(ej. anterior a 2011, el arranque de la serie), el precio queda marcado **"⚠️ sin T.C."** en la tabla y
+se excluye de los KPIs/gráfico (que solo promedian/grafican lo convertible) — no se inventa una
+conversión.
+
+Un precio marcado **alternativo** (otra medida/spec, ver 9.2) se sigue mostrando en la tabla y en el
+gráfico — no se excluye, mismo criterio que el resto del tablero ("no inventar, mostrar todo real, avisar
+sin ocultar") — solo se distingue con el badge 🔀 y su nota.
+
 ## 10. Módulo: OT `[DETALLADO]`
 
 Módulo de nav propio (grupo colapsable "🏷️ OT", como Flota/OC/Stock/Proveedores), pedido explícito del
@@ -2813,6 +2869,15 @@ Ya decidido al corregir el aviso de duplicado "ya confirmado en otra parte" (202
   que conste una OC real), el sistema **solo avisa** — no hay botón de resolución automática — la
   decisión de deshacer esa confirmación vieja sigue siendo manual, preguntado explícitamente antes de
   construir, ver sección 9.2.
+
+Ya decidido al construir el Historial de precios por artículo (2026-10-26):
+- [x] Vive como sub-vista dentro del grupo de nav **Cotizaciones** ("📈 Historial de precios"), no como
+  módulo de nav propio — es una herramienta de consulta de un solo artículo, no un panorama tipo OT/
+  Consolidado — preguntado explícitamente antes de construir, ver sección 9.6.
+- [x] Muestra **todas** las cotizaciones cargadas para el artículo (cualquier proveedor invitado, gane o
+  no), no solo las ganadoras/confirmadas — misma pregunta, mismo lugar.
+- [x] Todo se normaliza a dólares con el oficial del día de CADA cotización (mismo mecanismo que
+  Materiales OT 13.12) — misma pregunta, mismo lugar.
 
 Todavía sin decidir:
 - [ ] Materiales OT: confirmar el nombre exacto de la variante del export de Capataz (el instructivo de
