@@ -451,16 +451,22 @@ imaginaba el vínculo: "cuando cotizo tengo un número de solicitud, luego desca
 — una vez tengo la OC, nace de esa cotización, por lo que esto debería matchear la cotización confirmada
 con la OC que se le parezca por fecha y precio" — no es un vínculo manual tipo "elegí de una lista" (como
 sí es Notas de Pedido ↔ OC, ver 8.2), es una coincidencia automática que el sistema tiene que encontrar
-solo.
+solo. Ajustado el mismo día: el primer diseño mostraba el nombre de la solicitud como un botón que
+navegaba a su ficha en Cotizaciones — el usuario aclaró que eso no le interesa ("a mi no me interesa
+ingresar a la cotizacion me interesa que me diga el numero de solicitud que tiene el articulo de la OC
+nada mas"), así que se simplificó a solo texto informativo con el **N° de solicitud (Capataz)**, sin
+click ni navegación.
 
 **Sin tabla propia ni vínculo que se guarde** (`js/modules/oc.js`, `construirIndiceCotizaciones()`/
 `calcularMatchesPorLinea()`) — se cruza en vivo cada vez que se abre el módulo, por **artículo +
 proveedor** (mismo `cod_tango` que ya usa Proveedores, ver 7.1) contra los ítems ya **confirmados** de
-Cotizaciones (`confirmado = true`, su ganador y precio real). Por qué no se persiste un vínculo:
-`compras_oc_lineas` se **reemplaza entera** para las órdenes del rango de fechas de cada archivo que se
-vuelve a subir (ver 5.2) — cualquier vínculo guardado contra esas filas se perdería solo en la próxima
-carga. Cruzar en vivo por clave de negocio (artículo/proveedor) evita ese problema de raíz: no depende
-de ninguna fila que pueda desaparecer.
+Cotizaciones (`confirmado = true`, su ganador y precio real) que además tengan **N° de solicitud**
+(`nro_solicitud`, el de Capataz — ver 9.1) — un ítem agregado a mano en Cotizaciones (sin `nro_solicitud`,
+ver 9.2 "+ Agregar ítem para cotizar") no tiene ningún número que mostrar, así que directamente no entra
+al índice de matching. Por qué no se persiste un vínculo: `compras_oc_lineas` se **reemplaza entera**
+para las órdenes del rango de fechas de cada archivo que se vuelve a subir (ver 5.2) — cualquier vínculo
+guardado contra esas filas se perdería solo en la próxima carga. Cruzar en vivo por clave de negocio
+(artículo/proveedor) evita ese problema de raíz: no depende de ninguna fila que pueda desaparecer.
 
 **Cómo se decide "se parece"**: para cada línea de OC, se buscan ítems confirmados con el mismo artículo
 y el mismo proveedor (vía `cod_tango`), y entre esos candidatos se elige el más parecido en precio —
@@ -474,15 +480,15 @@ por bueno**: la OC `0000100008872` (ORTIZ FISCHER SA, `GRILLEREC18tn`, 19/10/202
 exactamente contra una cotización confirmada el mismo día a U$S 115,41 — convertida con el dólar oficial
 de esa fecha ($1.535 venta) da U$S 113,75, una diferencia de apenas ~1,4%.
 
-**Dónde se ve**: si **todas** las líneas de una OC con match apuntan a la **misma** solicitud (y esa
+**Dónde se ve**: si **todas** las líneas de una OC con match apuntan al **mismo** N° de solicitud (y esa
 cobertura no es anecdótica — al menos la mitad de las líneas), se muestra un único aviso a nivel de la
-OC completa, junto al número de orden: **"🔗 {nombre de la solicitud}"**, con el % de diferencia de
-precio y la fecha de confirmación en el tooltip. Si las líneas matchean contra solicitudes distintas (o
-solo algunas), el mismo aviso aparece **por línea**, en el detalle desplegable, al lado del badge de
-estado de esa línea — para no inventar un origen único para toda la OC cuando en realidad vino de
-cotizaciones separadas. Click en el aviso navega a Cotizaciones y abre esa solicitud directo
-(`verSolicitudCotizacion()`, reutiliza `window.cotizaciones.abrirDetalle()` — con una espera corta por si
-es la primera vez que se visita Cotizaciones en la sesión y sus datos todavía no cargaron).
+OC completa, junto al número de orden: **"📋 N° Sol. (Capataz): {número}"** (sin los ceros a la
+izquierda, `formatNroSolicitud()` en `oc.js` — mismo criterio que `formatOTExport()` en
+`cotizaciones.js`, duplicada a propósito entre módulos), con el % de diferencia de precio y la fecha de
+confirmación en el tooltip. Si las líneas matchean contra solicitudes distintas (o solo algunas), el
+mismo aviso aparece **por línea**, en el detalle desplegable, al lado del badge de estado de esa línea —
+para no inventar un origen único para toda la OC cuando en realidad vino de cotizaciones separadas. Es
+solo texto informativo — **no navega a Cotizaciones**, pedido explícito del usuario (ver más arriba).
 
 **Alcance de esta primera versión** (preguntado explícitamente antes de construir): el vínculo **solo se
 muestra del lado de Órdenes de Compra** — no hay ningún aviso recíproco en la ficha de la solicitud de

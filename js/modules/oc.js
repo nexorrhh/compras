@@ -63,16 +63,25 @@ let DESC_ADIC = new Map();
 // carga. Cruzar en vivo por artículo/proveedor/precio evita ese
 // problema de raíz: no hay nada que se pueda desincronizar.
 // ------------------------------------------------------------
-let MATCH_INDEX = new Map(); // `${proveedor_id}|${cod_articulo}` -> [{precioUSD, fecha, cotizacion_id, cotizacion_nombre}]
+let MATCH_INDEX = new Map(); // `${proveedor_id}|${cod_articulo}` -> [{precioUSD, fecha, nro_solicitud}]
 let PROV_COD_TANGO = new Map(); // cod_tango -> proveedor_id (compras_proveedores)
-let MATCH_POR_LINEA = new WeakMap(); // línea de compras_oc_lineas (objeto) -> {cotizacion_id, cotizacion_nombre, fecha, diffPct} | ausente
+let MATCH_POR_LINEA = new WeakMap(); // línea de compras_oc_lineas (objeto) -> {nro_solicitud, fecha, diffPct} | ausente
+
+// Mismo criterio que formatOTExport() en cotizaciones.js (duplicada a
+// propósito entre módulos, ver CLAUDE.md) — le saca los ceros a la
+// izquierda que trae Capataz a un N° puramente numérico.
+function formatNroSolicitud(nro) {
+  const t = (nro || '').trim();
+  if (!t) return '';
+  return /^\d+$/.test(t) ? String(parseInt(t, 10)) : t;
+}
 
 async function construirIndiceCotizaciones() {
   MATCH_INDEX = new Map();
   PROV_COD_TANGO = new Map();
   const [{ data: items, error: e1 }, { data: provs, error: e2 }] = await Promise.all([
     fetchAll(() => SB.from('compras_cotizaciones_items')
-      .select('id,cod_articulo,ganador_proveedor_id,confirmado_en,cotizacion_id,compras_cotizaciones(nombre,created_at)')
+      .select('id,cod_articulo,ganador_proveedor_id,confirmado_en,nro_solicitud,compras_cotizaciones(created_at)')
       .eq('confirmado', true)),
     fetchAll(() => SB.from('compras_proveedores').select('id,cod_tango')),
   ]);
@@ -89,7 +98,7 @@ async function construirIndiceCotizaciones() {
   for (const p of (precios || [])) precioGanador.set(`${p.item_id}|${p.proveedor_id}`, p);
 
   for (const item of items) {
-    if (!item.ganador_proveedor_id) continue;
+    if (!item.ganador_proveedor_id || !item.nro_solicitud) continue; // sin N° de solicitud no hay nada útil que mostrar
     const precio = precioGanador.get(`${item.id}|${item.ganador_proveedor_id}`);
     if (!precio || precio.precio_unitario == null) continue;
     const fecha = (item.confirmado_en || item.compras_cotizaciones?.created_at || '').slice(0, 10);
@@ -103,7 +112,7 @@ async function construirIndiceCotizaciones() {
     if (precioUSD == null) continue;
     const key = `${item.ganador_proveedor_id}|${item.cod_articulo}`;
     if (!MATCH_INDEX.has(key)) MATCH_INDEX.set(key, []);
-    MATCH_INDEX.get(key).push({ precioUSD, fecha, cotizacion_id: item.cotizacion_id, cotizacion_nombre: item.compras_cotizaciones?.nombre || '(?)' });
+    MATCH_INDEX.get(key).push({ precioUSD, fecha, nro_solicitud: item.nro_solicitud });
   }
 }
 
@@ -136,30 +145,16 @@ async function calcularMatchesPorLinea(lineas) {
   }
 }
 
-// Si TODAS las líneas de la orden que tienen match apuntan a la MISMA
-// solicitud, y esa cobertura no es anecdótica (al menos la mitad de las
-// líneas), se muestra un único aviso a nivel de la OC completa en vez
-// de repetirlo línea por línea — "esta OC entera parece venir de ahí".
+// Si TODAS las líneas de la orden que tienen match apuntan al MISMO N°
+// de solicitud, y esa cobertura no es anecdótica (al menos la mitad de
+// las líneas), se muestra un único aviso a nivel de la OC completa en
+// vez de repetirlo línea por línea — "esta OC entera parece venir de ahí".
 function matchUnificadoDeOrden(g) {
   const matches = g.lineas.map(l => MATCH_POR_LINEA.get(l)).filter(Boolean);
   if (!matches.length) return null;
-  if (new Set(matches.map(m => m.cotizacion_id)).size !== 1) return null;
+  if (new Set(matches.map(m => m.nro_solicitud)).size !== 1) return null;
   if (matches.length < g.lineas.length / 2) return null;
   return matches[0];
-}
-
-function verSolicitudCotizacion(cotizacionId) {
-  document.querySelector('.nav-item[data-sec="cot-lista"]')?.click();
-  (async () => {
-    // Primera vez que se visita Cotizaciones en la sesión: cargarListado()
-    // es async y todavía puede no haber terminado cuando se dispara este
-    // click — se espera (con tope) a que la solicitud ya esté disponible
-    // antes de abrir su detalle.
-    for (let i = 0; i < 20 && !window.cotizaciones?.tieneCotizacion?.(cotizacionId); i++) {
-      await new Promise(r => setTimeout(r, 150));
-    }
-    window.cotizaciones?.abrirDetalle(cotizacionId);
-  })();
 }
 
 function construirFactoresKg(items) {
@@ -503,19 +498,20 @@ function renderTabla(tbodyId, grupos) {
     const est = estadoOC(g);
     // Posible origen en Cotizaciones (ver construirIndiceCotizaciones()/
     // calcularMatchesPorLinea() más arriba) — si todas las líneas con
-    // match coinciden en la misma solicitud, se muestra un único aviso
-    // acá, a nivel de la OC completa, y se omite el chip por línea (ver
-    // más abajo) para no repetirlo.
+    // match coinciden en el mismo N° de solicitud, se muestra un único
+    // aviso acá, a nivel de la OC completa, y se omite el chip por línea
+    // (ver más abajo) para no repetirlo. Solo texto informativo (el N°
+    // de solicitud), sin navegación a la cotización — no hace falta.
     const matchOrden = matchUnificadoDeOrden(g);
     const origenOrden = matchOrden
-      ? `<div style="font-size:11px;margin-top:3px"><button type="button" class="bsm oc-ver-cotiz" data-cot="${escAttr(matchOrden.cotizacion_id)}" title="Mismo artículo, proveedor y precio (±${Math.abs(matchOrden.diffPct).toFixed(0)}%) que una cotización confirmada el ${fmt(matchOrden.fecha)} — click para verla">🔗 ${escAttr(matchOrden.cotizacion_nombre)}</button></div>`
+      ? `<div style="font-size:11px;margin-top:3px;color:var(--accent)" title="Mismo artículo, proveedor y precio (±${Math.abs(matchOrden.diffPct).toFixed(0)}%) que una cotización confirmada el ${fmt(matchOrden.fecha)}">📋 N° Sol. (Capataz): ${escAttr(formatNroSolicitud(matchOrden.nro_solicitud))}</div>`
       : '';
     const lineasOrdenadas = [...g.lineas].sort((a, b) => (a.articulo_desc || a.articulo_cod).localeCompare(b.articulo_desc || b.articulo_cod));
     const detalle = lineasOrdenadas.map(l => {
       const estL = estadoLinea(l);
       const matchLinea = !matchOrden ? MATCH_POR_LINEA.get(l) : null;
       const origenLinea = matchLinea
-        ? ` <button type="button" class="bsm oc-ver-cotiz" data-cot="${escAttr(matchLinea.cotizacion_id)}" title="Mismo artículo, proveedor y precio (±${Math.abs(matchLinea.diffPct).toFixed(0)}%) que una cotización confirmada el ${fmt(matchLinea.fecha)} — click para verla">🔗 ${escAttr(matchLinea.cotizacion_nombre)}</button>`
+        ? ` <span style="font-size:11px;color:var(--accent)" title="Mismo artículo, proveedor y precio (±${Math.abs(matchLinea.diffPct).toFixed(0)}%) que una cotización confirmada el ${fmt(matchLinea.fecha)}">📋 N° Sol. ${escAttr(formatNroSolicitud(matchLinea.nro_solicitud))}</span>`
         : '';
       const unidad = UNIDADES.get(l.articulo_cod) || '';
       const descripcion = descripcionCompleta(l.articulo_desc, l.articulo_cod) || l.articulo_cod;
@@ -560,8 +556,6 @@ function renderTabla(tbodyId, grupos) {
 
 function initExpandCollapse(tbodyId) {
   document.getElementById(tbodyId)?.addEventListener('click', e => {
-    const verCotiz = e.target.closest('.oc-ver-cotiz');
-    if (verCotiz) { verSolicitudCotizacion(verCotiz.dataset.cot); return; }
     if (e.target.closest('.oc-del')) return;
     const row = e.target.closest('.oc-row');
     if (!row) return;
