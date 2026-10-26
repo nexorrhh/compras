@@ -16,7 +16,7 @@
 // figura en el último archivo donde apareció.
 // ============================================================
 import { SB } from '../supabase-client.js';
-import { toast, fmt, norm, fechaISO, txt, num, fetchAll } from '../utils.js';
+import { toast, fmt, norm, fechaISO, txt, num, fetchAll, escAttr, obtenerDolarEnFecha } from '../utils.js';
 
 let LINEAS = [];
 // Tango (el export de OC) no trae ninguna columna de unidad de medida —
@@ -42,6 +42,125 @@ let KG_POR_UNIDAD = new Map();
 // solo para mostrar (igual criterio que UNIDADES) — no se guarda en
 // compras_oc_lineas ni se inventa nada para un artículo sin esa fila.
 let DESC_ADIC = new Map();
+
+// ------------------------------------------------------------
+// Posible origen en Cotizaciones — pedido explícito del usuario
+// (2026-10-26): "cuando cotizo tengo un número de solicitud, luego
+// descargo el Excel y hago la OC... esto debería matchear la
+// cotización confirmada con la OC que se le parezca por fecha y
+// precio". Se calcula en vivo, sin tabla propia ni vínculo manual que
+// guardar: cada vez que se carga el módulo, se cruza por artículo +
+// proveedor (mismo `cod_tango` de siempre, ver CLAUDE.md 7.1) contra
+// los ítems ya CONFIRMADOS de Cotizaciones, comparando precio
+// (convertido a USD con el dólar oficial de la fecha real de cada uno,
+// mismo criterio que 9.6/13.12) y cercanía de fecha — la cotización se
+// confirma y DESPUÉS nace la OC real en Tango, nunca al revés.
+//
+// Por qué no se guarda un vínculo: `compras_oc_lineas` se reemplaza
+// ENTERA para las órdenes de un rango de fechas cada vez que se vuelve
+// a subir el Excel de Tango (ver cargarArchivo() más abajo) — cualquier
+// vínculo guardado contra esas filas se perdería solo en la próxima
+// carga. Cruzar en vivo por artículo/proveedor/precio evita ese
+// problema de raíz: no hay nada que se pueda desincronizar.
+// ------------------------------------------------------------
+let MATCH_INDEX = new Map(); // `${proveedor_id}|${cod_articulo}` -> [{precioUSD, fecha, cotizacion_id, cotizacion_nombre}]
+let PROV_COD_TANGO = new Map(); // cod_tango -> proveedor_id (compras_proveedores)
+let MATCH_POR_LINEA = new WeakMap(); // línea de compras_oc_lineas (objeto) -> {cotizacion_id, cotizacion_nombre, fecha, diffPct} | ausente
+
+async function construirIndiceCotizaciones() {
+  MATCH_INDEX = new Map();
+  PROV_COD_TANGO = new Map();
+  const [{ data: items, error: e1 }, { data: provs, error: e2 }] = await Promise.all([
+    fetchAll(() => SB.from('compras_cotizaciones_items')
+      .select('id,cod_articulo,ganador_proveedor_id,confirmado_en,cotizacion_id,compras_cotizaciones(nombre,created_at)')
+      .eq('confirmado', true)),
+    fetchAll(() => SB.from('compras_proveedores').select('id,cod_tango')),
+  ]);
+  if (e2) return;
+  PROV_COD_TANGO = new Map((provs || []).filter(p => p.cod_tango).map(p => [p.cod_tango, p.id]));
+  if (e1 || !items?.length) return;
+
+  const itemIds = items.map(i => i.id);
+  const { data: precios, error: e3 } = await fetchAll(() => SB.from('compras_cotizaciones_precios').select('item_id,proveedor_id,precio_unitario,moneda').in('item_id', itemIds));
+  if (e3) return;
+  // Solo interesa el precio del GANADOR de cada ítem — el resto de lo
+  // cotizado no es lo que terminó comprándose.
+  const precioGanador = new Map(); // `${item_id}|${proveedor_id}` -> precio
+  for (const p of (precios || [])) precioGanador.set(`${p.item_id}|${p.proveedor_id}`, p);
+
+  for (const item of items) {
+    if (!item.ganador_proveedor_id) continue;
+    const precio = precioGanador.get(`${item.id}|${item.ganador_proveedor_id}`);
+    if (!precio || precio.precio_unitario == null) continue;
+    const fecha = (item.confirmado_en || item.compras_cotizaciones?.created_at || '').slice(0, 10);
+    if (!fecha) continue;
+    let precioUSD;
+    if (precio.moneda === 'USD') precioUSD = Number(precio.precio_unitario);
+    else {
+      const tc = await obtenerDolarEnFecha(fecha); // secuencial a propósito: la primera llamada cachea todo el histórico, las siguientes resuelven solas
+      precioUSD = tc ? Number(precio.precio_unitario) / tc.venta : null;
+    }
+    if (precioUSD == null) continue;
+    const key = `${item.ganador_proveedor_id}|${item.cod_articulo}`;
+    if (!MATCH_INDEX.has(key)) MATCH_INDEX.set(key, []);
+    MATCH_INDEX.get(key).push({ precioUSD, fecha, cotizacion_id: item.cotizacion_id, cotizacion_nombre: item.compras_cotizaciones?.nombre || '(?)' });
+  }
+}
+
+// Para cada línea de OC con un posible origen, elige el candidato más
+// parecido (menor diferencia de precio, entre los que caen en una
+// ventana de fechas causalmente razonable: la cotización se confirma
+// un poco antes o el mismo día que nace la OC — nunca mucho después).
+// Candidatos con más de 50% de diferencia de precio no se muestran —
+// prefiere no decir nada antes que sugerir un origen poco creíble.
+async function calcularMatchesPorLinea(lineas) {
+  MATCH_POR_LINEA = new WeakMap();
+  for (const l of lineas) {
+    const proveedorId = PROV_COD_TANGO.get(l.proveedor_cod);
+    if (!proveedorId || !l.articulo_cod || !l.fecha || l.precio_unitario == null) continue;
+    const candidatos = MATCH_INDEX.get(`${proveedorId}|${l.articulo_cod}`);
+    if (!candidatos?.length) continue;
+    const tc = await obtenerDolarEnFecha(l.fecha);
+    if (!tc) continue;
+    const precioOcUSD = Number(l.precio_unitario) / tc.venta;
+    let mejor = null;
+    for (const c of candidatos) {
+      const diasGap = Math.round((new Date(l.fecha) - new Date(c.fecha)) / 86400000);
+      if (diasGap < -10 || diasGap > 120) continue;
+      if (!(c.precioUSD > 0)) continue;
+      const diffPct = ((precioOcUSD - c.precioUSD) / c.precioUSD) * 100;
+      if (Math.abs(diffPct) > 50) continue;
+      if (!mejor || Math.abs(diffPct) < Math.abs(mejor.diffPct)) mejor = { ...c, diffPct, diasGap };
+    }
+    if (mejor) MATCH_POR_LINEA.set(l, mejor);
+  }
+}
+
+// Si TODAS las líneas de la orden que tienen match apuntan a la MISMA
+// solicitud, y esa cobertura no es anecdótica (al menos la mitad de las
+// líneas), se muestra un único aviso a nivel de la OC completa en vez
+// de repetirlo línea por línea — "esta OC entera parece venir de ahí".
+function matchUnificadoDeOrden(g) {
+  const matches = g.lineas.map(l => MATCH_POR_LINEA.get(l)).filter(Boolean);
+  if (!matches.length) return null;
+  if (new Set(matches.map(m => m.cotizacion_id)).size !== 1) return null;
+  if (matches.length < g.lineas.length / 2) return null;
+  return matches[0];
+}
+
+function verSolicitudCotizacion(cotizacionId) {
+  document.querySelector('.nav-item[data-sec="cot-lista"]')?.click();
+  (async () => {
+    // Primera vez que se visita Cotizaciones en la sesión: cargarListado()
+    // es async y todavía puede no haber terminado cuando se dispara este
+    // click — se espera (con tope) a que la solicitud ya esté disponible
+    // antes de abrir su detalle.
+    for (let i = 0; i < 20 && !window.cotizaciones?.tieneCotizacion?.(cotizacionId); i++) {
+      await new Promise(r => setTimeout(r, 150));
+    }
+    window.cotizaciones?.abrirDetalle(cotizacionId);
+  })();
+}
 
 function construirFactoresKg(items) {
   const acumulados = new Map();
@@ -382,9 +501,22 @@ function renderTabla(tbodyId, grupos) {
   if (!ordenadas.length) { tb.innerHTML = '<tr><td colspan="8" style="text-align:center;padding:18px;color:var(--muted)">Sin órdenes</td></tr>'; return; }
   tb.innerHTML = ordenadas.map(g => {
     const est = estadoOC(g);
+    // Posible origen en Cotizaciones (ver construirIndiceCotizaciones()/
+    // calcularMatchesPorLinea() más arriba) — si todas las líneas con
+    // match coinciden en la misma solicitud, se muestra un único aviso
+    // acá, a nivel de la OC completa, y se omite el chip por línea (ver
+    // más abajo) para no repetirlo.
+    const matchOrden = matchUnificadoDeOrden(g);
+    const origenOrden = matchOrden
+      ? `<div style="font-size:11px;margin-top:3px"><button type="button" class="bsm oc-ver-cotiz" data-cot="${escAttr(matchOrden.cotizacion_id)}" title="Mismo artículo, proveedor y precio (±${Math.abs(matchOrden.diffPct).toFixed(0)}%) que una cotización confirmada el ${fmt(matchOrden.fecha)} — click para verla">🔗 ${escAttr(matchOrden.cotizacion_nombre)}</button></div>`
+      : '';
     const lineasOrdenadas = [...g.lineas].sort((a, b) => (a.articulo_desc || a.articulo_cod).localeCompare(b.articulo_desc || b.articulo_cod));
     const detalle = lineasOrdenadas.map(l => {
       const estL = estadoLinea(l);
+      const matchLinea = !matchOrden ? MATCH_POR_LINEA.get(l) : null;
+      const origenLinea = matchLinea
+        ? ` <button type="button" class="bsm oc-ver-cotiz" data-cot="${escAttr(matchLinea.cotizacion_id)}" title="Mismo artículo, proveedor y precio (±${Math.abs(matchLinea.diffPct).toFixed(0)}%) que una cotización confirmada el ${fmt(matchLinea.fecha)} — click para verla">🔗 ${escAttr(matchLinea.cotizacion_nombre)}</button>`
+        : '';
       const unidad = UNIDADES.get(l.articulo_cod) || '';
       const descripcion = descripcionCompleta(l.articulo_desc, l.articulo_cod) || l.articulo_cod;
       // "Cerrada sin recibir" en rojo (no amarillo/verde) porque es el
@@ -409,11 +541,11 @@ function renderTabla(tbodyId, grupos) {
         <div>Pendiente: <strong>${cantidadConKg(l.cant_pendiente, unidad, l.articulo_cod)}</strong></div>
         <div>Precio unit.: <strong>${fmtPesos(l.precio_unitario)}</strong></div>
         <div>Importe: <strong>${fmtPesos(l.importe)}</strong></div>
-        <div><span class="badge ${badge.cls}"${tituloBadge}>${badge.txt}</span></div>
+        <div><span class="badge ${badge.cls}"${tituloBadge}>${badge.txt}</span>${origenLinea}</div>
       </div>`;
     }).join('');
     return `<tr class="oc-row">
-      <td><span class="oc-chevron">▸</span> ${g.orden_compra}</td>
+      <td><span class="oc-chevron">▸</span> ${g.orden_compra}${origenOrden}</td>
       <td>${fmt(g.fecha)}</td>
       <td>${g.proveedor_nombre || '–'}</td>
       <td>${g.comprador_nombre || '–'}</td>
@@ -428,6 +560,8 @@ function renderTabla(tbodyId, grupos) {
 
 function initExpandCollapse(tbodyId) {
   document.getElementById(tbodyId)?.addEventListener('click', e => {
+    const verCotiz = e.target.closest('.oc-ver-cotiz');
+    if (verCotiz) { verSolicitudCotizacion(verCotiz.dataset.cot); return; }
     if (e.target.closest('.oc-del')) return;
     const row = e.target.closest('.oc-row');
     if (!row) return;
@@ -692,6 +826,8 @@ export async function render(secId) {
     ...(eKg ? [] : (materialesKg || []).filter(m => m.desc_adicional).map(m => [m.cod_articulo, m.desc_adicional])),
     ...(eSaldos ? [] : (saldos || []).filter(s => s.desc_adicional).map(s => [s.cod_articulo, s.desc_adicional])),
   ]);
+  await construirIndiceCotizaciones();
+  await calcularMatchesPorLinea(LINEAS);
 
   if (secId === 'oc-abiertas') { renderAbiertas(); return; }
   const seccion = SECCIONES_ESTADO.find(s => s.tbodyId === tbodyId);

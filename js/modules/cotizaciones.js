@@ -3425,5 +3425,5 @@ export function init() {
   initDelegacionPendientes();
   initAutocompleteHistorial();
 
-  window.cotizaciones = { abrirDetalle };
+  window.cotizaciones = { abrirDetalle, tieneCotizacion: id => COTIZACIONES.some(c => c.id === id) };
 }

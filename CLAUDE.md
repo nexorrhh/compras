@@ -443,6 +443,52 @@ Los 3 archivos que pasó el usuario (`Excels/Julio OC.xlsx`, `Excels/Agosto OC.x
 de este tablero es **público** en GitHub — por eso `Excels/` está en `.gitignore`, no se sube. Quedan
 solo en la máquina local para poder probar el parseo.
 
+### 5.6 Posible origen en Cotizaciones
+
+Pedido explícito del usuario (2026-10-26): "agregar en las OC para matchear las OC con las Solicitudes
+de compra en el caso que se haya cotizado por acá". Aclaró el mecanismo exacto al preguntarle cómo
+imaginaba el vínculo: "cuando cotizo tengo un número de solicitud, luego descargo el Excel y hago la OC
+— una vez tengo la OC, nace de esa cotización, por lo que esto debería matchear la cotización confirmada
+con la OC que se le parezca por fecha y precio" — no es un vínculo manual tipo "elegí de una lista" (como
+sí es Notas de Pedido ↔ OC, ver 8.2), es una coincidencia automática que el sistema tiene que encontrar
+solo.
+
+**Sin tabla propia ni vínculo que se guarde** (`js/modules/oc.js`, `construirIndiceCotizaciones()`/
+`calcularMatchesPorLinea()`) — se cruza en vivo cada vez que se abre el módulo, por **artículo +
+proveedor** (mismo `cod_tango` que ya usa Proveedores, ver 7.1) contra los ítems ya **confirmados** de
+Cotizaciones (`confirmado = true`, su ganador y precio real). Por qué no se persiste un vínculo:
+`compras_oc_lineas` se **reemplaza entera** para las órdenes del rango de fechas de cada archivo que se
+vuelve a subir (ver 5.2) — cualquier vínculo guardado contra esas filas se perdería solo en la próxima
+carga. Cruzar en vivo por clave de negocio (artículo/proveedor) evita ese problema de raíz: no depende
+de ninguna fila que pueda desaparecer.
+
+**Cómo se decide "se parece"**: para cada línea de OC, se buscan ítems confirmados con el mismo artículo
+y el mismo proveedor (vía `cod_tango`), y entre esos candidatos se elige el más parecido en precio —
+ambos convertidos a USD con el dólar oficial de su propia fecha real (mismo mecanismo que 9.6/13.12,
+`obtenerDolarEnFecha()`), para poder comparar un precio en pesos (Tango, siempre ARS) contra uno
+cotizado en dólares sin que la diferencia de moneda lo tape. Se descartan candidatos fuera de una
+ventana de fechas causal (la cotización se confirma un poco antes o el mismo día que nace la OC real en
+Tango — nunca mucho después: tolerancia de -10 a +120 días) y los que difieren en más de 50% en precio —
+mejor no sugerir nada que sugerir un origen poco creíble. **Verificado con un caso real antes de darlo
+por bueno**: la OC `0000100008872` (ORTIZ FISCHER SA, `GRILLEREC18tn`, 19/10/2026, $174.615,33) matcheó
+exactamente contra una cotización confirmada el mismo día a U$S 115,41 — convertida con el dólar oficial
+de esa fecha ($1.535 venta) da U$S 113,75, una diferencia de apenas ~1,4%.
+
+**Dónde se ve**: si **todas** las líneas de una OC con match apuntan a la **misma** solicitud (y esa
+cobertura no es anecdótica — al menos la mitad de las líneas), se muestra un único aviso a nivel de la
+OC completa, junto al número de orden: **"🔗 {nombre de la solicitud}"**, con el % de diferencia de
+precio y la fecha de confirmación en el tooltip. Si las líneas matchean contra solicitudes distintas (o
+solo algunas), el mismo aviso aparece **por línea**, en el detalle desplegable, al lado del badge de
+estado de esa línea — para no inventar un origen único para toda la OC cuando en realidad vino de
+cotizaciones separadas. Click en el aviso navega a Cotizaciones y abre esa solicitud directo
+(`verSolicitudCotizacion()`, reutiliza `window.cotizaciones.abrirDetalle()` — con una espera corta por si
+es la primera vez que se visita Cotizaciones en la sesión y sus datos todavía no cargaron).
+
+**Alcance de esta primera versión** (preguntado explícitamente antes de construir): el vínculo **solo se
+muestra del lado de Órdenes de Compra** — no hay ningún aviso recíproco en la ficha de la solicitud de
+Cotizaciones ("esto terminó en la OC X"). Se puede sumar más adelante si hace falta, pero no se pidió
+para esta vuelta.
+
 ---
 
 ## 6. Módulo: Stock `[DETALLADO]`
@@ -2922,6 +2968,16 @@ Ya decidido al construir el aviso de variación de precio al cargar (2026-10-26)
 - [x] En vez de un toast con un umbral mínimo, la celda del precio se pinta (naranja si subió, verde si
   bajó) con una notita de fecha/precio anterior debajo — pedido explícito del usuario, sin umbral de
   negocio (cualquier variación real se muestra).
+
+Ya decidido al construir "Posible origen en Cotizaciones" en Órdenes de Compra (2026-10-26):
+- [x] Es un cruce automático en vivo (artículo + proveedor + precio + fecha), no un vínculo manual tipo
+  Notas de Pedido ↔ OC — el usuario aclaró explícitamente el mecanismo que quería antes de construir,
+  ver sección 5.6.
+- [x] Sin tabla propia ni vínculo persistido — se recalcula cada vez, a propósito, porque
+  `compras_oc_lineas` se reemplaza entera en cada re-carga del Excel y cualquier vínculo guardado contra
+  esas filas se perdería solo.
+- [x] Por ahora el aviso solo se ve del lado de Órdenes de Compra, sin nada recíproco en Cotizaciones —
+  preguntado explícitamente antes de construir, misma sección.
 
 Todavía sin decidir:
 - [ ] Materiales OT: confirmar el nombre exacto de la variante del export de Capataz (el instructivo de
