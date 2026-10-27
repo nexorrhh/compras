@@ -787,6 +787,52 @@ function renderAbiertas() {
   renderTabla('t-oc-abiertas', grupos);
 }
 
+// ------------------------------------------------------------
+// Exportar pendientes (Abiertas) a Excel — pedido explícito del
+// usuario (2026-10-27): poder reclamarle a un proveedor por mail lo
+// que todavía no entregó, sin armar la lista a mano. Respeta los
+// mismos filtros de proveedor/comprador/mes que se estén viendo en
+// pantalla (mismo criterio que "📥 Exportar (.xlsx)" de Stock → A
+// comprar, sección 6.3) y solo incluye líneas con saldo pendiente
+// real (cant_pendiente > 0 — una línea "Cerrada sin recibir" ya tiene
+// pendiente = 0, no hay nada que reclamar ahí, ver estadoLinea()).
+// ------------------------------------------------------------
+function exportarPendientesAbiertas() {
+  const prov = document.getElementById('oca_f_prov')?.value || '';
+  const comp = document.getElementById('oca_f_comp')?.value || '';
+  const mes = document.getElementById('oca_f_mes')?.value || '';
+
+  let lineas = LINEAS;
+  if (prov) lineas = lineas.filter(l => l.proveedor_nombre === prov);
+  if (comp) lineas = lineas.filter(l => l.comprador_nombre === comp);
+  if (mes) lineas = lineas.filter(l => l.fecha?.slice(0, 7) === mes);
+
+  const pendientes = lineas.filter(l => (l.cant_pendiente || 0) > 0);
+  if (!pendientes.length) { toast('No hay artículos pendientes de recibir con estos filtros', 'er'); return; }
+
+  pendientes.sort((a, b) => (a.proveedor_nombre || '').localeCompare(b.proveedor_nombre || '')
+    || (a.orden_compra || '').localeCompare(b.orden_compra || '')
+    || (a.articulo_desc || a.articulo_cod || '').localeCompare(b.articulo_desc || b.articulo_cod || ''));
+
+  const datos = pendientes.map(l => ({
+    'Proveedor': l.proveedor_nombre || '',
+    'N° OC': (l.orden_compra || '').trim(),
+    'Fecha OC': fmt(l.fecha),
+    'Código': l.articulo_cod,
+    'Descripción': descripcionCompleta(l.articulo_desc, l.articulo_cod) || l.articulo_cod,
+    'Unidad': UNIDADES.get(l.articulo_cod) || '',
+    'Cant. pedida': l.cant_pedida || 0,
+    'Cant. recibida': l.cant_recibida || 0,
+    'Cant. pendiente': l.cant_pendiente || 0,
+    'Importe pendiente': Math.round((l.cant_pendiente || 0) * (l.precio_unitario || 0)),
+  }));
+  const ws = XLSX.utils.json_to_sheet(datos);
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, 'Pendientes');
+  const fecha = new Date().toISOString().slice(0, 10);
+  XLSX.writeFile(wb, `oc-pendientes_${fecha}.xlsx`);
+}
+
 // Completadas: mismo componente (filtros + resumen chico + tabla
 // agrupada) que Abiertas, pero con el estado fijo en COMPLETADA.
 function renderSeccionEstado(prefix, tbodyId, estadoFijo) {
@@ -860,6 +906,7 @@ export function init() {
 
   ['prov', 'comp', 'mes'].forEach(k => document.getElementById(`oca_f_${k}`)?.addEventListener('change', renderAbiertas));
   initExpandCollapse('t-oc-abiertas');
+  document.getElementById('oca_export')?.addEventListener('click', exportarPendientesAbiertas);
 
   SECCIONES_ESTADO.forEach(({ prefix, tbodyId, estado }) => {
     ['prov', 'comp', 'mes'].forEach(k => document.getElementById(`${prefix}_f_${k}`)?.addEventListener('change', () => renderSeccionEstado(prefix, tbodyId, estado)));

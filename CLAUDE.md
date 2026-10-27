@@ -342,7 +342,14 @@ Dashboard inicial (con gráficos) y sub-vistas de solo lectura, en vez de una so
   una orden con algo por recibir es "abierta", no importa si ya llegó una parte o nada). Filtros de
   proveedor/comprador/mes + resumen chico (cantidad de pendientes, parciales, saldos a revisar e importe
   total) + la tabla agrupada de siempre. La distinción entre los estados se sigue viendo en el badge de
-  cada fila.
+  cada fila. Botón **"📥 Exportar pendientes (.xlsx)"** (`exportarPendientesAbiertas()` en
+  `js/modules/oc.js`, pedido explícito del usuario, 2026-10-27: poder reclamarle a un proveedor por mail
+  lo que todavía no entregó sin armar la lista a mano) — baja, respetando los mismos filtros de
+  proveedor/comprador/mes que se estén viendo, una fila por **línea** (no por OC, a diferencia de la
+  tabla en pantalla) con Proveedor/N° OC/Fecha OC/Código/Descripción/Unidad/Cant. pedida/recibida/
+  pendiente/Importe pendiente, ordenada por proveedor → OC → descripción. Solo incluye líneas con saldo
+  pendiente real (`cant_pendiente > 0`) — una línea "⚠️ Cerrada sin recibir" (ver más abajo) ya tiene
+  `cant_pendiente = 0`, no hay nada que reclamarle ahí.
 - **Completadas** (`oc-comp`) — misma tabla agrupada, pre-filtrada a estado COMPLETADA (no hay
   selector de estado acá, es implícito por la sección); filtros propios de proveedor/comprador/mes y
   un resumen chico (cantidad de OC + importe total).

@@ -694,10 +694,13 @@
 <div class="sec" id="s-oc-abiertas">
   <div class="ptitle">Órdenes de Compra — Abiertas</div>
   <div class="psub">Órdenes con algo todavía por recibir — pendientes, parciales y saldos mínimos para revisar</div>
-  <div class="filters">
-    <select id="oca_f_prov"><option value="">Todos los proveedores</option></select>
-    <select id="oca_f_comp"><option value="">Todos los compradores</option></select>
-    <select id="oca_f_mes"><option value="">Todos los meses</option></select>
+  <div class="sh">
+    <div class="filters">
+      <select id="oca_f_prov"><option value="">Todos los proveedores</option></select>
+      <select id="oca_f_comp"><option value="">Todos los compradores</option></select>
+      <select id="oca_f_mes"><option value="">Todos los meses</option></select>
+    </div>
+    <button class="btn p" id="oca_export" title="Baja un Excel con artículo + N° de OC de todo lo pendiente de recibir (según los filtros de arriba), para reclamarle al proveedor">📥 Exportar pendientes (.xlsx)</button>
   </div>
   <div class="kpi-grid" style="grid-template-columns:repeat(4,minmax(140px,1fr));max-width:820px">
     <div class="kpi"><div class="kpi-val text-red" id="oca_k_pendientes">–</div><div class="kpi-lbl">Pendientes</div></div>
