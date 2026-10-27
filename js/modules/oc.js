@@ -81,7 +81,7 @@ async function construirIndiceCotizaciones() {
   PROV_COD_TANGO = new Map();
   const [{ data: items, error: e1 }, { data: provs, error: e2 }] = await Promise.all([
     fetchAll(() => SB.from('compras_cotizaciones_items')
-      .select('id,cod_articulo,ganador_proveedor_id,confirmado_en,nro_solicitud,compras_cotizaciones(created_at)')
+      .select('id,cod_articulo,umc,ganador_proveedor_id,confirmado_en,nro_solicitud,compras_cotizaciones(created_at)')
       .eq('confirmado', true)),
     fetchAll(() => SB.from('compras_proveedores').select('id,cod_tango')),
   ]);
@@ -112,7 +112,7 @@ async function construirIndiceCotizaciones() {
     if (precioUSD == null) continue;
     const key = `${item.ganador_proveedor_id}|${item.cod_articulo}`;
     if (!MATCH_INDEX.has(key)) MATCH_INDEX.set(key, []);
-    MATCH_INDEX.get(key).push({ precioUSD, fecha, nro_solicitud: item.nro_solicitud });
+    MATCH_INDEX.get(key).push({ precioUSD, fecha, nro_solicitud: item.nro_solicitud, umc: (item.umc || '').toUpperCase() });
   }
 }
 
@@ -122,6 +122,19 @@ async function construirIndiceCotizaciones() {
 // un poco antes o el mismo día que nace la OC — nunca mucho después).
 // Candidatos con más de 50% de diferencia de precio no se muestran —
 // prefiere no decir nada antes que sugerir un origen poco creíble.
+//
+// Tango factura perfiles/chapas en su unidad nativa (MTS/MT2, ver
+// UNIDADES más arriba) pero Cotizaciones los cotiza por KG (ver CLAUDE.md
+// 9.1) — comparar el precio tal cual, sin esto, comparaba "$/metro"
+// contra "$/kg" y descartaba el match por una diferencia de precio falsa
+// (caso real detectado: PERUPN300, $87.964,81/metro en la OC vs.
+// $1.900,04/kg cotizado — al dividir por el factor kg/metro de ese
+// artículo quedan $1.903,6/kg, a menos de 0,2% del precio cotizado). Si
+// la unidad de la OC coincide con la del candidato (`umc`), se compara
+// directo como siempre; si el candidato está en KGS y la OC en otra
+// unidad con factor conocido (`KG_POR_UNIDAD`, ver 5.4), se pasa el
+// precio de la OC a $/kg antes de comparar. Sin esa conversión posible,
+// no se compara a ciegas — mismo criterio de "mejor no decir nada".
 async function calcularMatchesPorLinea(lineas) {
   MATCH_POR_LINEA = new WeakMap();
   for (const l of lineas) {
@@ -131,12 +144,18 @@ async function calcularMatchesPorLinea(lineas) {
     if (!candidatos?.length) continue;
     const tc = await obtenerDolarEnFecha(l.fecha);
     if (!tc) continue;
-    const precioOcUSD = Number(l.precio_unitario) / tc.venta;
+    const unidadOc = (UNIDADES.get(l.articulo_cod) || '').toUpperCase();
+    const factorKg = KG_POR_UNIDAD.get(l.articulo_cod);
+    const precioOcUSDNativo = Number(l.precio_unitario) / tc.venta; // USD por unidad nativa de Tango
     let mejor = null;
     for (const c of candidatos) {
       const diasGap = Math.round((new Date(l.fecha) - new Date(c.fecha)) / 86400000);
       if (diasGap < -10 || diasGap > 120) continue;
       if (!(c.precioUSD > 0)) continue;
+      let precioOcUSD;
+      if (c.umc === unidadOc || (!c.umc && !unidadOc)) precioOcUSD = precioOcUSDNativo;
+      else if (c.umc === 'KGS' && unidadOc !== 'KGS' && factorKg > 0) precioOcUSD = precioOcUSDNativo / factorKg;
+      else continue; // unidades distintas sin conversión conocida
       const diffPct = ((precioOcUSD - c.precioUSD) / c.precioUSD) * 100;
       if (Math.abs(diffPct) > 50) continue;
       if (!mejor || Math.abs(diffPct) < Math.abs(mejor.diffPct)) mejor = { ...c, diffPct, diasGap };

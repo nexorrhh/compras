@@ -495,6 +495,21 @@ muestra del lado de Órdenes de Compra** — no hay ningún aviso recíproco en 
 Cotizaciones ("esto terminó en la OC X"). Se puede sumar más adelante si hace falta, pero no se pidió
 para esta vuelta.
 
+**Comparar precio por KG cuando Tango factura en otra unidad** (corregido 2026-10-27, pedido del usuario
+tras ver que el aviso aparecía en muy pocas OC): Tango factura perfiles/chapas en su unidad nativa
+(MTS/MT2 — `UNIDADES`, ver 5.4) pero Cotizaciones los cotiza por **KG** (ver 9.1), así que comparar
+`precio_unitario` tal cual comparaba "$/metro" contra "$/kg" — una diferencia de precio enorme y falsa
+que el filtro de 50% descartaba siempre, aunque el precio real fuera casi idéntico. **Caso real
+verificado**: la OC `0000100008867` (JUAN NAVARRO S.A., `PERUPN300`, 15/10/2026) a $87.964,81/metro no
+matcheaba contra una cotización confirmada el mismo día al mismo proveedor a $1.900,04/kg — con el
+factor kg/metro real de ese artículo (46,296 kg/m, aprendido de `compras_materot_items`, igual fuente que
+ya usa `KG_POR_UNIDAD` en 5.4) el precio de la OC pasa a ≈$1.903,6/kg, a menos de 0,2% del precio
+cotizado. Ahora `calcularMatchesPorLinea()` compara en la **misma unidad**: si la unidad de la OC
+coincide con la del candidato (`umc` de Cotizaciones) se compara directo como siempre; si el candidato
+está en KGS y la OC en otra unidad con factor conocido, se pasa el precio de la OC a $/kg antes de
+comparar. Sin esa conversión posible (unidades distintas sin factor aprendido), no se compara a ciegas —
+mismo criterio de "mejor no decir nada" que el resto del feature.
+
 ---
 
 ## 6. Módulo: Stock `[DETALLADO]`
