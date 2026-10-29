@@ -1178,12 +1178,15 @@ OT del modal "+ Agregar ítem para cotizar" (ver más abajo).
    vistas comparten el mismo `PRECIOS`/`guardarPrecio()` así que lo que se carga en el modal ya aparece
    en la comparativa al cerrarlo (botón "Listo, comparar"). **Devolución de precios al proveedor**
    (pedido explícito del usuario, 2026-10-29: "tengo al de Aceros Comercial que me pide una devolución
-   de la cotización que me armaron y quiero darle una devolución de los precios que conseguí"): junto al
-   selector de moneda de cada columna hay un botón **"📄"** (`generarDevolucionProveedor()` en
-   `js/modules/cotizaciones.js`) que arma un PDF (jsPDF + jspdf-autotable, mismo criterio que Notas de
-   Pedido, ver 8.3) con, para cada ítem que ESE proveedor cotizó, su precio contra el **mejor precio
-   conseguido** (mismo criterio de `cheapestForItem()` que ya resalta la celda más barata en la
-   comparativa) y la diferencia %. Preguntado explícitamente al usuario antes de construirlo:
+   de la cotización que me armaron y quiero darle una devolución de los precios que conseguí"): un botón
+   **"📄"** (`generarDevolucionProveedor()` en `js/modules/cotizaciones.js`) junto al selector de moneda
+   de cada columna de la comparativa, repetido como **"📄 Devolución"** al pie del modal `mCOTPROV`
+   (la primera versión solo lo tenía en la comparativa; el usuario pidió sumarlo acá también porque es
+   donde ya está mirando los ítems de un proveedor puntual, sin tener que ubicar su columna) — arma un
+   PDF (jsPDF + jspdf-autotable, mismo criterio que Notas de Pedido, ver 8.3) con, para cada ítem que ESE
+   proveedor cotizó, su precio contra el **mejor precio conseguido** (mismo criterio de
+   `cheapestForItem()` que ya resalta la celda más barata en la comparativa) y la diferencia %.
+   Preguntado explícitamente al usuario antes de construirlo:
    - **Siempre se anonimiza**: el PDF nunca dice a qué otro proveedor corresponde el mejor precio, solo
      el número — es un documento que sale de la empresa, no tiene sentido exponer la cotización de un
      tercero. Una nota al pie del PDF lo aclara.
@@ -1191,9 +1194,17 @@ OT del modal "+ Agregar ítem para cotizar" (ver más abajo).
      conseguí", palabras del usuario) — recorre `PRECIOS`/`ITEMS` directo (`itemsCotizadosPor()`), sin
      pasar por `itemsVisibles()`/`invitadosVisibles()`, así que no depende del bloque/rubro/filtros que
      se estén viendo en pantalla en ese momento: es sobre su cotización puntual, no sobre la vista actual.
-   Para comparar precios en monedas distintas reusa el mismo campo **"Tipo de cambio"** de arriba de la
-   tabla (ver punto 7) — sin ese campo cargado, un ítem con monedas mezcladas queda con "Mejor precio
-   conseguido: –" en vez de inventar una conversión, mismo criterio que `cheapestForItem()`.
+   **Siempre en dólares** (ajustado el mismo día, pedido explícito del usuario tras ver la primera
+   versión: "me lo podés dolarizar porque me complica la vida si no toma el TC del día" — la columna
+   "Mejor precio conseguido" salía en la moneda nativa de quien lo cotizó, mezclando pesos y dólares en
+   el mismo PDF, inútil para comparar de un vistazo si el proveedor que recibe el documento cotiza en
+   dólares). `txtDolarizado()`/`aUSD()` convierten **las dos columnas de precio** (no solo la de
+   comparación) con el mismo campo **"Tipo de cambio"** de arriba de la tabla (ver punto 7, reusado tal
+   cual) — un precio ya en USD se muestra tal cual, uno en ARS se divide por ese tipo de cambio. Sin ese
+   campo cargado y el precio real en pesos, la celda queda con el monto en pesos tal cual +
+   "(sin T.C.)" en vez de inventar una conversión (mismo criterio de "no inventar" de siempre) — al
+   generar el PDF sin ese campo cargado, un `toast` de error avisa antes de igual generarlo. Una nota al
+   pie aclara con qué tipo de cambio se convirtió todo.
 7. **Comparar y elegir**: la celda más barata de cada fila se resalta en verde, y una columna "Ganador"
    sugiere automáticamente al proveedor más barato apenas hay precios cargados. Arriba de la tabla hay un
    campo opcional **"Tipo de cambio"** (`tipoCambioActual()`) — puramente de referencia, no se guarda en

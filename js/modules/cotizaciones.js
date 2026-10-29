@@ -1406,6 +1406,29 @@ function itemsCotizadosPor(proveedorId) {
   return ITEMS.filter(it => porItem.has(it.id)).map(it => ({ item: it, precio: porItem.get(it.id) }));
 }
 
+// Convierte un monto a USD con el mismo "Tipo de cambio" de referencia de
+// arriba de la tabla — un monto ya en USD se usa tal cual, uno en ARS sin
+// ese campo cargado no se puede convertir (no se inventa una cotización).
+function aUSD(monto, moneda, tc) {
+  if (monto == null) return null;
+  return moneda === 'USD' ? Number(monto) : (tc ? Number(monto) / tc : null);
+}
+
+// Pedido explícito del usuario (2026-10-29), al ver la primera versión
+// del PDF: "Mejor precio conseguido" salía en la moneda nativa de quien
+// lo cotizó — si ese otro proveedor cotizó en pesos, al de acá (que
+// cotiza en dólares) le quedaba un comparativo mezclado, inútil para
+// comparar de un vistazo. Ahora las dos columnas de precio se dolarizan
+// siempre con el mismo Tipo de cambio — si para algún ítem no hay ese
+// campo cargado y el precio real está en pesos, esa celda queda con el
+// monto en pesos tal cual + "(sin T.C.)" en vez de inventar una
+// conversión.
+function txtDolarizado(monto, moneda, tc) {
+  const usd = aUSD(monto, moneda, tc);
+  if (usd != null) return `U$S ${numFmt(usd, 2)}`;
+  return monto == null ? '–' : `${fmtMonto(monto, moneda)} (sin T.C.)`;
+}
+
 function generarDevolucionProveedor(proveedorId) {
   const inv = INVITADOS.find(i => i.proveedor_id === proveedorId);
   if (!inv) return;
@@ -1413,6 +1436,7 @@ function generarDevolucionProveedor(proveedorId) {
   if (!filas.length) { toast('Este proveedor todavía no tiene ningún precio cargado', 'er'); return; }
 
   const tc = tipoCambioActual();
+  if (!tc) toast('No hay Tipo de cambio cargado arriba de la tabla — los precios en pesos no se van a poder dolarizar en el PDF', 'er');
   const { jsPDF } = window.jspdf;
   const doc = new jsPDF({ unit: 'mm', format: 'a4' });
   const marginX = 15, pageW = 210;
@@ -1428,22 +1452,19 @@ function generarDevolucionProveedor(proveedorId) {
 
   const body = filas.map(({ item, precio }) => {
     const mejor = cheapestForItem(item.id, tc);
-    let mejorTxt = '–', difTxt = '–';
-    if (mejor) {
-      mejorTxt = fmtMonto(mejor.precio, mejor.moneda);
-      const propioUSD = precio.moneda === 'USD' ? Number(precio.precio_unitario) : (tc ? Number(precio.precio_unitario) / tc : null);
-      const mejorUSD = mejor.moneda === 'USD' ? mejor.precio : (tc ? mejor.precio / tc : null);
-      if (propioUSD != null && mejorUSD != null && mejorUSD > 0) {
-        const pct = ((propioUSD - mejorUSD) / mejorUSD) * 100;
-        difTxt = (pct > 0 ? '+' : '') + numFmt(pct, 1) + '%';
-      }
+    const propioUSD = aUSD(precio.precio_unitario, precio.moneda, tc);
+    const mejorUSD = mejor ? aUSD(mejor.precio, mejor.moneda, tc) : null;
+    let difTxt = '–';
+    if (propioUSD != null && mejorUSD != null && mejorUSD > 0) {
+      const pct = ((propioUSD - mejorUSD) / mejorUSD) * 100;
+      difTxt = (pct > 0 ? '+' : '') + numFmt(pct, 1) + '%';
     }
     return [
       item.cod_articulo,
       item.descripcion || '',
       `${numFmt(item.cant_umc)} ${item.umc || ''}`,
-      fmtMonto(precio.precio_unitario, precio.moneda),
-      mejorTxt,
+      txtDolarizado(precio.precio_unitario, precio.moneda, tc),
+      mejor ? txtDolarizado(mejor.precio, mejor.moneda, tc) : '–',
       difTxt,
     ];
   });
@@ -1451,7 +1472,7 @@ function generarDevolucionProveedor(proveedorId) {
   doc.autoTable({
     startY: y,
     margin: { left: marginX, right: marginX },
-    head: [['Código', 'Descripción', 'Cantidad', 'Tu precio', 'Mejor precio conseguido', 'Diferencia']],
+    head: [['Código', 'Descripción', 'Cantidad', 'Tu precio (U$S)', 'Mejor precio conseguido (U$S)', 'Diferencia']],
     body,
     styles: { fontSize: 9, cellPadding: 2.5 },
     headStyles: { fillColor: [30, 41, 59] },
@@ -1460,7 +1481,8 @@ function generarDevolucionProveedor(proveedorId) {
 
   y = doc.lastAutoTable.finalY + 10;
   doc.setFont('helvetica', 'italic'); doc.setFontSize(8); doc.setTextColor(120);
-  doc.text(doc.splitTextToSize('"Mejor precio conseguido" corresponde al precio más conveniente recibido entre los proveedores invitados a cotizar, sin identificar a cuál corresponde.', pageW - marginX * 2), marginX, y);
+  const notaTC = tc ? ` Todos los precios se muestran en dólares, convertidos con el tipo de cambio de referencia ($${numFmt(tc, 2)}).` : '';
+  doc.text(doc.splitTextToSize(`"Mejor precio conseguido" corresponde al precio más conveniente recibido entre los proveedores invitados a cotizar, sin identificar a cuál corresponde.${notaTC}`, pageW - marginX * 2), marginX, y);
 
   doc.save(`comparativa_${(inv.nombre || 'proveedor').replace(/[^a-z0-9]+/gi, '_')}.pdf`);
 }
@@ -2427,6 +2449,9 @@ function initModalProveedor() {
     const sel = document.getElementById('cotprov_moneda');
     if (PROV_MODAL_ID && sel) await cambiarMonedaColumna(PROV_MODAL_ID, sel.value, true);
     renderModalProveedorItems();
+  });
+  document.getElementById('cotprov_devolucion')?.addEventListener('click', () => {
+    if (PROV_MODAL_ID) generarDevolucionProveedor(PROV_MODAL_ID);
   });
 }
 
