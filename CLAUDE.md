@@ -1176,7 +1176,24 @@ OT del modal "+ Agregar ítem para cotizar" (ver más abajo).
    esperar el guardado) usando la moneda elegida en el modal para todas las filas por igual — el guardado
    real en Supabase sigue pasando en el evento `change` (blur), igual que en la comparativa, y ambas
    vistas comparten el mismo `PRECIOS`/`guardarPrecio()` así que lo que se carga en el modal ya aparece
-   en la comparativa al cerrarlo (botón "Listo, comparar").
+   en la comparativa al cerrarlo (botón "Listo, comparar"). **Devolución de precios al proveedor**
+   (pedido explícito del usuario, 2026-10-29: "tengo al de Aceros Comercial que me pide una devolución
+   de la cotización que me armaron y quiero darle una devolución de los precios que conseguí"): junto al
+   selector de moneda de cada columna hay un botón **"📄"** (`generarDevolucionProveedor()` en
+   `js/modules/cotizaciones.js`) que arma un PDF (jsPDF + jspdf-autotable, mismo criterio que Notas de
+   Pedido, ver 8.3) con, para cada ítem que ESE proveedor cotizó, su precio contra el **mejor precio
+   conseguido** (mismo criterio de `cheapestForItem()` que ya resalta la celda más barata en la
+   comparativa) y la diferencia %. Preguntado explícitamente al usuario antes de construirlo:
+   - **Siempre se anonimiza**: el PDF nunca dice a qué otro proveedor corresponde el mejor precio, solo
+     el número — es un documento que sale de la empresa, no tiene sentido exponer la cotización de un
+     tercero. Una nota al pie del PDF lo aclara.
+   - **Alcance: solo lo que ESE proveedor cotizó** ("el precio que cotizó él y el mejor precio que
+     conseguí", palabras del usuario) — recorre `PRECIOS`/`ITEMS` directo (`itemsCotizadosPor()`), sin
+     pasar por `itemsVisibles()`/`invitadosVisibles()`, así que no depende del bloque/rubro/filtros que
+     se estén viendo en pantalla en ese momento: es sobre su cotización puntual, no sobre la vista actual.
+   Para comparar precios en monedas distintas reusa el mismo campo **"Tipo de cambio"** de arriba de la
+   tabla (ver punto 7) — sin ese campo cargado, un ítem con monedas mezcladas queda con "Mejor precio
+   conseguido: –" en vez de inventar una conversión, mismo criterio que `cheapestForItem()`.
 7. **Comparar y elegir**: la celda más barata de cada fila se resalta en verde, y una columna "Ganador"
    sugiere automáticamente al proveedor más barato apenas hay precios cargados. Arriba de la tabla hay un
    campo opcional **"Tipo de cambio"** (`tipoCambioActual()`) — puramente de referencia, no se guarda en

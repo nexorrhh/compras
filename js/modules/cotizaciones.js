@@ -1381,6 +1381,90 @@ function cheapestForItem(itemId, tc = null) {
   return { proveedorId: mejor.proveedor_id, precio: Number(mejor.precio_unitario), moneda: mejor.moneda, convertido: convertir };
 }
 
+// ------------------------------------------------------------
+// Devolución de precios para un proveedor — pedido explícito del usuario
+// (2026-10-29): un proveedor pidió feedback de por qué no ganó, y hace
+// falta poder pasarle un PDF con SU precio contra el mejor conseguido.
+// Dos decisiones tomadas con el usuario antes de construir esto:
+//   - Se ANONIMIZA siempre: nunca se revela a qué otro proveedor
+//     corresponde el mejor precio, solo el número — es un documento que
+//     sale de la empresa, no tiene sentido exponer la cotización de un
+//     tercero.
+//   - Alcance: solo los ítems donde ESE proveedor cargó un precio (su
+//     propia cotización), sin importar bloque/rubro/filtros activos en
+//     pantalla en ese momento — recorre PRECIOS/ITEMS directo, no
+//     itemsVisibles()/invitadosVisibles().
+// Reusa cheapestForItem() (mismo criterio de "mejor precio" que ya
+// resalta en la comparativa) y el mismo "Tipo de cambio" de referencia
+// de arriba de la tabla para poder comparar precios en monedas distintas
+// — sin ese campo cargado, una fila con monedas mezcladas queda sin
+// "mejor precio" (no se inventa una conversión), mismo criterio que
+// cheapestForItem.
+// ------------------------------------------------------------
+function itemsCotizadosPor(proveedorId) {
+  const porItem = new Map(PRECIOS.filter(p => p.proveedor_id === proveedorId && p.precio_unitario != null).map(p => [p.item_id, p]));
+  return ITEMS.filter(it => porItem.has(it.id)).map(it => ({ item: it, precio: porItem.get(it.id) }));
+}
+
+function generarDevolucionProveedor(proveedorId) {
+  const inv = INVITADOS.find(i => i.proveedor_id === proveedorId);
+  if (!inv) return;
+  const filas = itemsCotizadosPor(proveedorId);
+  if (!filas.length) { toast('Este proveedor todavía no tiene ningún precio cargado', 'er'); return; }
+
+  const tc = tipoCambioActual();
+  const { jsPDF } = window.jspdf;
+  const doc = new jsPDF({ unit: 'mm', format: 'a4' });
+  const marginX = 15, pageW = 210;
+  let y = 20;
+
+  doc.setFont('helvetica', 'bold'); doc.setFontSize(14); doc.setTextColor(0);
+  doc.text('Devolución de cotización', marginX, y);
+  y += 8;
+  doc.setFont('helvetica', 'normal'); doc.setFontSize(10); doc.setTextColor(80);
+  doc.text(`Proveedor: ${inv.nombre}`, marginX, y); y += 6;
+  if (COT_ACTUAL?.nombre) { doc.text(`Solicitud: ${COT_ACTUAL.nombre}`, marginX, y); y += 6; }
+  doc.text(`Fecha: ${fmt(new Date().toISOString().slice(0, 10))}`, marginX, y); y += 10;
+
+  const body = filas.map(({ item, precio }) => {
+    const mejor = cheapestForItem(item.id, tc);
+    let mejorTxt = '–', difTxt = '–';
+    if (mejor) {
+      mejorTxt = fmtMonto(mejor.precio, mejor.moneda);
+      const propioUSD = precio.moneda === 'USD' ? Number(precio.precio_unitario) : (tc ? Number(precio.precio_unitario) / tc : null);
+      const mejorUSD = mejor.moneda === 'USD' ? mejor.precio : (tc ? mejor.precio / tc : null);
+      if (propioUSD != null && mejorUSD != null && mejorUSD > 0) {
+        const pct = ((propioUSD - mejorUSD) / mejorUSD) * 100;
+        difTxt = (pct > 0 ? '+' : '') + numFmt(pct, 1) + '%';
+      }
+    }
+    return [
+      item.cod_articulo,
+      item.descripcion || '',
+      `${numFmt(item.cant_umc)} ${item.umc || ''}`,
+      fmtMonto(precio.precio_unitario, precio.moneda),
+      mejorTxt,
+      difTxt,
+    ];
+  });
+
+  doc.autoTable({
+    startY: y,
+    margin: { left: marginX, right: marginX },
+    head: [['Código', 'Descripción', 'Cantidad', 'Tu precio', 'Mejor precio conseguido', 'Diferencia']],
+    body,
+    styles: { fontSize: 9, cellPadding: 2.5 },
+    headStyles: { fillColor: [30, 41, 59] },
+    columnStyles: { 2: { halign: 'right' }, 3: { halign: 'right' }, 4: { halign: 'right' }, 5: { halign: 'right' } },
+  });
+
+  y = doc.lastAutoTable.finalY + 10;
+  doc.setFont('helvetica', 'italic'); doc.setFontSize(8); doc.setTextColor(120);
+  doc.text(doc.splitTextToSize('"Mejor precio conseguido" corresponde al precio más conveniente recibido entre los proveedores invitados a cotizar, sin identificar a cuál corresponde.', pageW - marginX * 2), marginX, y);
+
+  doc.save(`comparativa_${(inv.nombre || 'proveedor').replace(/[^a-z0-9]+/gi, '_')}.pdf`);
+}
+
 // Mientras ganador_manual esté en false, el ganador sugerido sigue
 // al más barato a medida que se cargan precios. En cuanto el
 // usuario elige uno a mano (setGanador), esa fila se "traba" y deja
@@ -1735,6 +1819,7 @@ function renderTablaComparativa() {
         <option value="USD" ${COL_MONEDA[inv.proveedor_id] === 'USD' ? 'selected' : ''}>U$S</option>
       </select>
       <button type="button" class="bsm cot-moneda-aplicar" data-prov="${inv.proveedor_id}" title="Corregir a esta moneda los precios ya cargados en esta columna que están en la otra" style="padding:1px 5px;font-size:10px;margin-top:2px">🔁 corregir</button>
+      <button type="button" class="bsm cot-devolucion-proveedor" data-prov="${inv.proveedor_id}" title="Generar PDF con el precio de este proveedor vs. el mejor conseguido, para pasarle una devolución — no revela a qué otro proveedor corresponde" style="padding:1px 5px;font-size:10px;margin-top:2px">📄</button>
     </th>`;
   }).join('');
 
@@ -2247,6 +2332,9 @@ function initDelegacionDetalle() {
       if (sel) cambiarMonedaColumna(monedaAplicar.dataset.prov, sel.value, true);
       return;
     }
+
+    const devolucionBtn = e.target.closest('.cot-devolucion-proveedor');
+    if (devolucionBtn) { generarDevolucionProveedor(devolucionBtn.dataset.prov); return; }
 
     const confirmarBtn = e.target.closest('.cot-confirmar-compra');
     if (confirmarBtn) { confirmarCompraProveedor(confirmarBtn.dataset.prov); return; }
