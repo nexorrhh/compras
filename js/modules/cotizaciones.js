@@ -1777,6 +1777,40 @@ function renderTablaDuplicados(wrap) {
   </table>`;
 }
 
+// Totales de referencia por unidad (pedido explícito del usuario,
+// 2026-10-30: "quisiera que me agregues un total de metros y KG en
+// algún lado para también tener de referencia") — suma, entre los
+// ítems visibles en ese momento (mismos filtros de bloque/rubro/
+// "ocultar los que no se compran" que la tabla), la cantidad "como la
+// pidió Ingeniería" (`cant_ums`/`ums`, ej. metros de un perfil) y la
+// cantidad de compra (`cant_umc`/`umc`, ej. kg de ese mismo perfil) por
+// separado cuando son unidades distintas — mismo criterio de "no
+// convertir a una unidad común" que ya usa el Resumen por proveedor
+// (ver 9.2 punto 8), solo que acá es el total de TODO lo visible, no
+// por proveedor ganador.
+function totalesPorUnidad(lista) {
+  const porUnidad = new Map();
+  for (const it of lista) {
+    if (it.ums && it.umc && it.ums !== it.umc && Number(it.cant_ums) > 0) {
+      porUnidad.set(it.ums, (porUnidad.get(it.ums) || 0) + Number(it.cant_ums));
+    }
+    if (it.cant_umc != null) {
+      const u = it.umc || '?';
+      porUnidad.set(u, (porUnidad.get(u) || 0) + Number(it.cant_umc));
+    }
+  }
+  return porUnidad;
+}
+
+function renderTotalesVisibles(lista) {
+  const cont = document.getElementById('cot_totales_visibles');
+  if (!cont) return;
+  const porUnidad = totalesPorUnidad(lista);
+  if (!porUnidad.size) { cont.textContent = ''; return; }
+  const chips = [...porUnidad.entries()].sort((a, b) => a[0].localeCompare(b[0])).map(([u, c]) => `${numFmt(c)} ${u}`).join(' · ');
+  cont.textContent = `Total visible: ${chips}`;
+}
+
 function renderTablaComparativa() {
   const wrap = document.getElementById('cot-tabla-wrap');
   if (!wrap) return;
@@ -1820,6 +1854,8 @@ function renderTablaComparativa() {
   const lista = itemsVisibles();
   const invitados = invitadosVisibles();
   const tc = tipoCambioActual();
+
+  renderTotalesVisibles(lista);
 
   // El selector de moneda del encabezado es solo el default para el
   // PRÓXIMO precio que se cargue en esa columna (ver 9.2) — un mismo

@@ -1244,7 +1244,16 @@ OT del modal "+ Agregar ítem para cotizar" (ver más abajo).
    puede quedar un ganador sugerido/elegido, pero no tiene sentido que ensucie el resumen ni el botón
    "Confirmar compra" de ese proveedor (bug real reportado por el usuario, 2026-09-02: antes tenía que
    borrar el ganador a mano en cada ítem "No" para que no sumara) — el ganador queda guardado igual, por
-   si el ítem se vuelve a marcar "Sí" más adelante.
+   si el ítem se vuelve a marcar "Sí" más adelante. **Total visible, arriba de la tabla** (pedido
+   explícito del usuario, 2026-10-30: "un total de metros y KG en algún lado para también tener de
+   referencia"): una línea chica (`renderTotalesVisibles()`/`totalesPorUnidad()` en
+   `js/modules/cotizaciones.js`) suma, entre TODOS los ítems que se están viendo en ese momento (mismos
+   filtros de bloque/rubro/"ocultar los que no se compran" que la tabla, sin importar si tienen ganador
+   o a quién), la cantidad por unidad real — igual criterio de "no convertir a una unidad común" que el
+   Resumen por proveedor, pero sin filtrar por proveedor ganador. Para un ítem con equivalencia
+   mts/m²↔kg (ver 9.1) suma las dos cantidades por separado, bajo su propia unidad (ej. "120 MTS" y
+   "890 KGS" en la misma línea) — no es una conversión, son dos sumas independientes que coinciden en
+   valer lo mismo físicamente.
 9. **Confirmar la compra**: el botón "✅ Confirmar compra (N)" en cada tarjeta del resumen cierra la
    decisión para ese proveedor — pasa los ítems que ganó (los que todavía no estaban confirmados) a
    `confirmado = true` y los oculta de la comparativa (ya están resueltos, no hace falta seguir
