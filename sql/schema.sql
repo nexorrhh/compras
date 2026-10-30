@@ -461,6 +461,17 @@ create table compras_dolar_historico (
   actualizado_en timestamptz not null default now()
 );
 
+-- Presupuesto en precio por OT (ver sql/031_materot_presupuesto.sql y
+-- CLAUDE.md sección 13.13) — por ahora cargado a mano desde un PDF
+-- aparte, un monto total por OT efectiva (madre + adicionales juntas).
+create table compras_materot_presupuesto (
+  n_ot text primary key,
+  monto numeric not null,
+  moneda text not null default 'ARS' check (moneda in ('ARS', 'USD')),
+  fecha date not null default current_date,
+  actualizado_en timestamptz not null default now()
+);
+
 -- ------------------------------------------------------------
 -- ÍNDICES
 -- ------------------------------------------------------------

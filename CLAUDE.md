@@ -2110,7 +2110,8 @@ tablero-compras/
     ├── 027_cotizaciones_precio_alternativo.sql
     ├── 028_cotizaciones_confirmado_en.sql
     ├── 029_notas_pedido_cerrada.sql
-    └── 030_dolar_historico.sql
+    ├── 030_dolar_historico.sql
+    └── 031_materot_presupuesto.sql
 ```
 
 > `porteria.html` y `solicitud.html` son entry points separados (audiencias distintas: portero de
@@ -2866,6 +2867,51 @@ aprovechar que ya guarda la serie completa día por día.
   razonable para una compra de bulones, confirmado contra la API directamente antes de dar el cálculo
   por bueno.
 
+### 13.13 Presupuesto en precio por OT (2026-10-30)
+
+Pedido explícito del usuario: "quiero que sumemos lo presupuestado en precio. Yo lo tengo en un PDF
+quisiera que por ahora se pueda agregar a mano y luego vemos de alguna forma de automatizarlo.
+Lógicamente la idea sería poder comparar presupuestado vs. comprado/asignado". Hasta acá el único
+"presupuesto" del módulo era `cant_cotiz`/`kg_cotiz` — en **kg**, viene solo del export de Capataz (ver
+13.1/13.10). Esto es distinto: un monto en **dinero**, que Presupuestos arma aparte en un PDF que el
+módulo no puede leer todavía — por eso se carga a mano, con la idea explícita de automatizarlo más
+adelante (ver TBD en sección 16).
+
+**Un monto por OT efectiva** (`compras_materot_presupuesto`, ver
+[`sql/031_materot_presupuesto.sql`](sql/031_materot_presupuesto.sql)) — igual criterio que el archivado
+(sección 13.6): madre + adicionales agrupadas se tratan como una sola unidad, un único presupuesto para
+el grupo entero, no uno por cada N° de OT individual. `n_ot` como PK, se carga con `upsert` así que se
+puede corregir las veces que haga falta.
+
+**Moneda y fecha se eligen al cargar, no se asumen** — el PDF puede traer el monto en pesos o en
+dólares (no hay forma de saberlo de antemano, y asumir mal arruinaría toda la comparación de ahí en
+más), así que el modal `mMROPRESUP` (`abrirModalPresupuesto()`/`guardarPresupuesto()` en
+`js/modules/materot.js`) pide Monto + selector ARS/USD + **Fecha del presupuesto** (date picker,
+default hoy). Un monto en pesos se convierte a dólares con el dólar oficial de **esa fecha** —
+`presupuestoUSD()` reusa `dolarEnFecha()`, el mismo mecanismo que ya convierte "Costo realizado" (ver
+13.12) — nunca con el de hoy, mismo motivo: "si hoy subió el dólar me va a incrementar algo que no es
+real". Sin cotización del dólar para esa fecha, el presupuesto queda marcado **"⚠️ sin T.C."** en vez de
+inventar una conversión.
+
+**Por qué el parseo del monto es distinto al de un precio unitario**: los precios de Cotizaciones
+aceptan coma decimal con un simple `replace(',', '.')` porque son números chicos (nunca llevan punto de
+miles) — un presupuesto de una OT puede ser de millones, así que `parseMontoAR()` en
+`js/modules/materot.js` primero saca los puntos de miles (formato es-AR) y recién después cambia la
+coma por punto, para poder tipear "1.250.000" o "1.250.000,50" tal como se ve en el PDF.
+
+**Dónde se ve**: dos KPIs nuevos en el grupo "💰 Costo real" de la pestaña Resumen —
+**"Presupuestado (USD)"** (con el monto original y la fecha como subtítulo, y el botón
+"✏️ Cargar/editar" para darlo de alta o corregirlo) y **"Desvío vs. presupuesto (USD)"** = (Costo
+realizado + Ahorro por stock asignado) − Presupuestado, en rojo si se excedió y verde si quedó por
+debajo — comparando contra el **valor total de material usado** (comprado + asignado, la misma suma que
+ya mostraba "Valor total de material usado (USD)"), no solo contra lo comprado, porque el presupuesto de
+Presupuestos cubre todo el material que se iba a necesitar, se haya terminado comprando o cubierto con
+stock. Sin presupuesto cargado para esa OT, ambos quedan en "–" sin inventar nada.
+
+**Alcance de esta primera versión** (mismo criterio que "Costo realizado", ver 13.9): solo vive en el
+Resumen de **cada OT puntual**, no hay un total agregado en el Dashboard del módulo todavía — se agrega
+más adelante si hace falta, una vez que se revise cómo da OT por OT.
+
 ## 14. Módulo: Consolidado de Compras `[DETALLADO]`
 
 Pedido explícito del usuario (2026-10-15), mirando a mano la hoja "Consolidado" que ya arma el informe
@@ -3072,7 +3118,24 @@ Ya decidido al construir "Posible origen en Cotizaciones" en Órdenes de Compra 
 - [x] Por ahora el aviso solo se ve del lado de Órdenes de Compra, sin nada recíproco en Cotizaciones —
   preguntado explícitamente antes de construir, misma sección.
 
+Ya decidido al construir el Presupuesto en precio por OT en Materiales OT (2026-10-30):
+- [x] Se carga **a mano** por ahora (el usuario lo tiene en un PDF que el tablero todavía no puede leer)
+  — pedido explícito del usuario, con la automatización quedando para más adelante, ver sección 13.13.
+- [x] Un monto por **OT efectiva** (madre + adicionales juntas), no uno por cada N° de OT individual —
+  mismo criterio que el archivado (sección 13.6).
+- [x] Moneda (ARS/USD) y fecha del presupuesto se eligen al cargar, no se asume ninguna — un monto en
+  pesos se convierte a dólares con el oficial de ESA fecha (nunca el de hoy, mismo mecanismo que "Costo
+  realizado", ver 13.12).
+- [x] Se compara contra el **valor total de material usado** (comprado + asignado), no solo contra lo
+  comprado — el presupuesto cubre todo el material que se iba a necesitar, se haya comprado o cubierto
+  con stock.
+- [x] Sin total agregado en el Dashboard del módulo todavía — mismo criterio que "Costo realizado"
+  (13.9), vive solo en el Resumen de cada OT puntual por ahora.
+
 Todavía sin decidir:
+- [ ] Materiales OT: cómo automatizar la carga del presupuesto en precio — hoy se tipea a mano desde un
+  PDF (ver sección 13.13); falta definir si el PDF tiene un formato lo bastante regular como para
+  parsearlo, o si conviene otro mecanismo (ej. un Excel aparte).
 - [ ] Materiales OT: confirmar el nombre exacto de la variante del export de Capataz (el instructivo de
   carga en `js/main.js` asume el mismo menú que Cotizaciones, sin confirmar — ver sección 13.7).
 - [ ] Materiales OT: confirmar el menú exacto de Tango para exportar el nombre de proyecto/cliente por
@@ -3179,9 +3242,13 @@ Todavía sin decidir:
     `compras_dolar_historico` para el nuevo módulo Parametrización → Dólar histórico (ver sección 12.5)
     (**todavía falta correr en la base real** — hasta que se corra, "Cargar/actualizar histórico
     completo" va a fallar porque la tabla no existe).
-30. Probar el circuito completo: pedir vehículo (solicitud.html) → aprobar y asignar (index.html) →
+30. Correr [`sql/031_materot_presupuesto.sql`](sql/031_materot_presupuesto.sql) — crea
+    `compras_materot_presupuesto` para el presupuesto en precio por OT de Materiales OT (ver sección
+    13.13) (**todavía falta correr en la base real** — hasta que se corra, "✏️ Cargar/editar" presupuesto
+    va a fallar porque la tabla no existe).
+31. Probar el circuito completo: pedir vehículo (solicitud.html) → aprobar y asignar (index.html) →
    registrar salida/retorno (porteria.html) → ver el movimiento reflejado en el dashboard.
-31. Evaluar RLS (Row Level Security) en las tablas `compras_*` — hoy cualquiera con el link de
+32. Evaluar RLS (Row Level Security) en las tablas `compras_*` — hoy cualquiera con el link de
    `solicitud.html`/`porteria.html` puede leer/escribir todas las tablas, sin ningún login de por medio.
-32. Ir completando los módulos `[TBD]` de la sección 3 a medida que los necesites, usando el módulo
+33. Ir completando los módulos `[TBD]` de la sección 3 a medida que los necesites, usando el módulo
    Flota (carpeta `js/modules/`) como plantilla.
