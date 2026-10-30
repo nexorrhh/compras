@@ -1811,6 +1811,96 @@ function renderTotalesVisibles(lista) {
   cont.textContent = `Total visible: ${chips}`;
 }
 
+// ------------------------------------------------------------
+// "💡 Estimar gasto" — pedido explícito del usuario (2026-10-30), tras
+// ver el botón de Historial de precios por artículo (ver 9.6/9.7):
+// "yo me lo imaginaba como un botón donde automáticamente te traiga
+// posibles precios o los mejores precios y quién te lo cotizó, para
+// rápidamente tener un panorama general de qué voy a gastar" — no
+// quiere ir artículo por artículo, quiere un total de un vistazo para
+// TODO el bloque.
+//
+// Para cada ítem visible (`a_comprar = true`, mismos filtros de bloque/
+// rubro de la pantalla) se usa, en este orden:
+//   1. El precio YA CARGADO acá para su ganador (el dato más confiable:
+//      es la cotización real de esta solicitud).
+//   2. Si no tiene, el histórico más reciente de CUALQUIER proveedor que
+//      lo haya cotizado antes en otra solicitud (`HISTORIAL_COMPARAR`,
+//      ya cargado por `cargarHistorialParaComparar()` al abrir la ficha
+//      — mismo dato que ya usa el aviso de variación de 9.7, no una
+//      consulta nueva). Se usa el más RECIENTE, no el más barato
+//      histórico — con la inflación local, un precio viejo por más bajo
+//      que haya sido no sirve de referencia para "qué voy a gastar hoy".
+//   3. Si no hay ninguno de los dos, el ítem queda "sin dato" y no suma
+//      al total — mismo criterio de "no inventar" de todo el tablero.
+// Todo en USD (precio real convertido con el mismo "Tipo de cambio" de
+// referencia de arriba de la tabla; el histórico ya viene en USD desde
+// `cargarHistorialParaComparar()`, convertido con el dólar oficial del
+// día de CADA cotización vieja) — para poder sumar todo en un solo total
+// sin mezclar monedas.
+// ------------------------------------------------------------
+function precioRealUSD(item, tc) {
+  if (!item.ganador_proveedor_id) return null;
+  const p = PRECIOS.find(pr => pr.item_id === item.id && pr.proveedor_id === item.ganador_proveedor_id);
+  if (!p || p.precio_unitario == null) return null;
+  if (p.moneda === 'USD') return Number(p.precio_unitario);
+  return tc ? Number(p.precio_unitario) / tc : null;
+}
+
+function calcularEstimado(lista) {
+  const tc = tipoCambioActual();
+  const filas = lista.filter(it => it.a_comprar).map(item => {
+    const cantidad = Number(item.cant_umc) || 0;
+    const real = precioRealUSD(item, tc);
+    if (real != null) {
+      const provNombre = INVITADOS.find(i => i.proveedor_id === item.ganador_proveedor_id)?.nombre || '(?)';
+      return { item, origen: 'real', precioUSD: real, proveedor: provNombre, fecha: null, cantidad };
+    }
+    const hist = historialParaComparar(item.cod_articulo, null);
+    if (hist) return { item, origen: 'historico', precioUSD: hist.precioUSD, proveedor: hist.proveedor_nombre, fecha: hist.fecha, cantidad };
+    return { item, origen: 'sin_dato', precioUSD: null, proveedor: null, fecha: null, cantidad };
+  });
+  const totalUSD = filas.reduce((s, f) => s + (f.precioUSD != null ? f.precioUSD * f.cantidad : 0), 0);
+  return {
+    filas,
+    totalUSD,
+    nReal: filas.filter(f => f.origen === 'real').length,
+    nHistorico: filas.filter(f => f.origen === 'historico').length,
+    nSinDato: filas.filter(f => f.origen === 'sin_dato').length,
+  };
+}
+
+function abrirModalEstimado() {
+  const { filas, totalUSD, nReal, nHistorico, nSinDato } = calcularEstimado(itemsVisibles());
+  const set = (id, val) => { const el = document.getElementById(id); if (el) el.textContent = val; };
+  set('coest_k_total', `U$S ${numFmt(totalUSD, 2)}`);
+  set('coest_k_real', String(nReal));
+  set('coest_k_hist', String(nHistorico));
+  set('coest_k_sin', String(nSinDato));
+
+  const ORIGEN_BADGE = {
+    real: '<span class="badge aprobado">✅ Real</span>',
+    historico: f => `<span class="badge revisar-cierre" title="Más reciente cotizado por ${escAttr(f.proveedor)} el ${fmt(f.fecha)}, en cualquier otra solicitud">📈 Histórico</span>`,
+    sin_dato: '<span class="badge vencido">❌ Sin dato</span>',
+  };
+  const tb = document.getElementById('coest_items');
+  if (tb) {
+    tb.innerHTML = filas.length ? filas.map(f => {
+      const badge = typeof ORIGEN_BADGE[f.origen] === 'function' ? ORIGEN_BADGE[f.origen](f) : ORIGEN_BADGE[f.origen];
+      const subFecha = f.origen === 'historico' ? `<div style="font-size:11px;color:var(--muted)">${escAttr(f.proveedor)} · ${fmt(f.fecha)}</div>` : '';
+      return `<tr>
+        <td>${escAttr(f.item.cod_articulo)}</td>
+        <td>${escAttr(f.item.descripcion || '')}</td>
+        <td style="text-align:right;white-space:nowrap">${numFmt(f.cantidad)} ${escAttr(f.item.umc || '')}</td>
+        <td>${badge}${subFecha}</td>
+        <td style="text-align:right">${f.precioUSD != null ? numFmt(f.precioUSD, 3) : '–'}</td>
+        <td style="text-align:right">${f.precioUSD != null ? numFmt(f.precioUSD * f.cantidad, 2) : '–'}</td>
+      </tr>`;
+    }).join('') : '<tr><td colspan="6" style="text-align:center;padding:18px;color:var(--muted)">Sin ítems para estimar en este bloque</td></tr>';
+  }
+  om('mCOTESTIMAR');
+}
+
 function renderTablaComparativa() {
   const wrap = document.getElementById('cot-tabla-wrap');
   if (!wrap) return;
@@ -3563,6 +3653,7 @@ export function init() {
   document.getElementById('cot_f_ocultar_no_comprar')?.addEventListener('change', renderTablaComparativa);
   document.getElementById('cot_f_mostrar_confirmados')?.addEventListener('change', renderTablaComparativa);
   document.getElementById('cot_exportar')?.addEventListener('click', exportarParaCotizar);
+  document.getElementById('cot_estimar_gasto')?.addEventListener('click', abrirModalEstimado);
   document.getElementById('cot_informe_reparto')?.addEventListener('click', emitirInformeReparto);
   document.getElementById('cot_f_grupo')?.addEventListener('change', renderTablaComparativa);
   document.getElementById('cot_f_nrosolic')?.addEventListener('change', renderTablaComparativa);

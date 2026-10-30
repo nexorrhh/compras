@@ -1254,6 +1254,23 @@ OT del modal "+ Agregar ítem para cotizar" (ver más abajo).
    mts/m²↔kg (ver 9.1) suma las dos cantidades por separado, bajo su propia unidad (ej. "120 MTS" y
    "890 KGS" en la misma línea) — no es una conversión, son dos sumas independientes que coinciden en
    valer lo mismo físicamente.
+
+   **"💡 Estimar gasto"** (mismo pedido del usuario, ampliado el mismo día tras ver el botón de Historial
+   de precios: "yo me lo imaginaba como un botón donde automáticamente te traiga posibles precios o los
+   mejores precios y quién te lo cotizó, para rápidamente tener un panorama general de qué voy a
+   gastar" — no quería ir artículo por artículo, quería un total de un vistazo para todo el bloque). El
+   botón junto a "Exportar para cotizar" abre el modal `mCOTESTIMAR`
+   (`abrirModalEstimado()`/`calcularEstimado()` en `js/modules/cotizaciones.js`) con un total estimado
+   en USD de todos los ítems visibles (`a_comprar = true`) y el detalle artículo por artículo. Para cada
+   ítem usa, en este orden: **1)** el precio YA cargado acá para su ganador (el dato más confiable,
+   convertido con el mismo "Tipo de cambio" de referencia si está en pesos); **2)** si no tiene, el
+   histórico más **reciente** de cualquier proveedor que lo haya cotizado antes en otra solicitud —
+   reusa `HISTORIAL_COMPARAR` (ya cargado por `cargarHistorialParaComparar()` al abrir la ficha para el
+   aviso de variación, ver 9.7 — no es una consulta nueva), marcado en la tabla con el badge
+   "📈 Histórico" y quién/cuándo lo cotizó; **3)** si no hay ninguno de los dos, queda "❌ Sin dato" y no
+   suma al total. Se usa el más **reciente**, no el más barato histórico — con la inflación local, un
+   precio viejo por más bajo que haya sido no sirve de referencia de "qué voy a gastar hoy" (mismo
+   criterio que ya eligió el usuario para el aviso de variación de 9.7).
 9. **Confirmar la compra**: el botón "✅ Confirmar compra (N)" en cada tarjeta del resumen cierra la
    decisión para ese proveedor — pasa los ítems que ganó (los que todavía no estaban confirmados) a
    `confirmado = true` y los oculta de la comparativa (ya están resueltos, no hace falta seguir

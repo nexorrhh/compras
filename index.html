@@ -1003,6 +1003,7 @@
             Mostrar confirmados
           </label>
           <button type="button" class="bsm" id="cot_exportar">📥 Exportar para cotizar (.xlsx)</button>
+          <button type="button" class="bsm p" id="cot_estimar_gasto" title="Para cada ítem visible usa el precio ya cargado o, si todavía no tiene, el histórico más reciente de cualquier proveedor que lo haya cotizado antes">💡 Estimar gasto</button>
         </div>
       </div>
     </div>
@@ -1423,6 +1424,25 @@
     <button type="button" class="bsm" id="cotprov_devolucion" title="Generar PDF con el precio de este proveedor vs. el mejor conseguido, para pasarle una devolución — no revela a qué otro proveedor corresponde">📄 Devolución</button>
     <button type="button" class="btn p" onclick="cm('mCOTPROV')">Listo, comparar</button>
   </div>
+</div></div>
+
+<!-- ============ MODAL — ESTIMAR GASTO (CON PRECIO REAL O HISTÓRICO) ============ -->
+<div class="modal-ov" id="mCOTESTIMAR">
+<div class="modal" style="width:820px;max-width:95vw">
+  <span class="mcls" onclick="cm('mCOTESTIMAR')">×</span>
+  <div class="mtitle">💡 Estimado de gasto</div>
+  <div class="psub" id="coest_sub">Por cada ítem visible: el precio ya cargado acá o, si todavía no tiene, el histórico más reciente de cualquier proveedor que lo haya cotizado antes.</div>
+  <div class="kpi-grid" style="grid-template-columns:repeat(4,minmax(130px,1fr));margin-top:10px">
+    <div class="kpi"><div class="kpi-val text-accent" id="coest_k_total">–</div><div class="kpi-lbl">Estimado total (U$S)</div></div>
+    <div class="kpi"><div class="kpi-val text-green" id="coest_k_real">–</div><div class="kpi-lbl">Con precio real</div></div>
+    <div class="kpi"><div class="kpi-val" style="color:var(--purple)" id="coest_k_hist">–</div><div class="kpi-lbl">Estimados por historial</div></div>
+    <div class="kpi"><div class="kpi-val text-red" id="coest_k_sin">–</div><div class="kpi-lbl">Sin ningún dato</div></div>
+  </div>
+  <div class="tw" style="max-height:50vh;overflow-y:auto;margin-top:10px"><table>
+    <thead><tr><th>Código</th><th>Descripción</th><th>Cantidad</th><th>Origen</th><th>Precio (U$S)</th><th>Subtotal (U$S)</th></tr></thead>
+    <tbody id="coest_items"></tbody>
+  </table></div>
+  <div class="brow"><button type="button" class="btn p" onclick="cm('mCOTESTIMAR')">Cerrar</button></div>
 </div></div>
 
 <!-- ============ CONSOLIDADO — DASHBOARD ============ -->
