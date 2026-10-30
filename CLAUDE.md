@@ -1769,6 +1769,17 @@ Un precio marcado **alternativo** (otra medida/spec, ver 9.2) se sigue mostrando
 gráfico — no se excluye, mismo criterio que el resto del tablero ("no inventar, mostrar todo real, avisar
 sin ocultar") — solo se distingue con el badge 🔀 y su nota.
 
+**Acceso directo desde donde ya se está mirando el artículo** (pedido explícito del usuario,
+2026-10-30: "cotizo la chapa pero resulta que ya me la cotizaron un montón de veces... podemos agregar un
+botón que me permita eso? o que yo pueda tocar un artículo y me traiga todos los que la cotizaron y a
+cuánto?"): hasta acá había que entrar a "📈 Historial de precios" y buscar el código a mano. Un botón
+**"📈"** (`irAHistorialArticulo()` en `js/modules/cotizaciones.js`) junto al código de cada artículo —
+en la comparativa de una solicitud, en el modal `mCOTPROV` (carga enfocada por proveedor) y en
+"🌐 Pendientes (todas)" — navega directo a esta sub-vista (simulando el click del ítem de nav) con ese
+artículo ya cargado, reusando `seleccionarArticuloHistorial()` tal cual, sin lógica nueva. En la
+comparativa de una solicitud, volver después a "Solicitudes" retoma la ficha donde había quedado
+(`COT_ACTUAL` no se pierde al navegar a otra sub-vista, ver `render()`).
+
 ### 9.7 Aviso de variación vs. historial al cargar un precio (en la comparativa)
 
 Pedido explícito del usuario, mismo día que 9.6: "cuando cargue los precios quisiera que busque entre el

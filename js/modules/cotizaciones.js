@@ -1961,7 +1961,7 @@ function renderTablaComparativa() {
     return `<tr${item.confirmado ? ' style="background:var(--row-hover)"' : ''}>
       <td><input type="checkbox" class="cot-check-row" data-id="${item.id}" style="width:auto"></td>
       <td style="white-space:nowrap;color:var(--muted);font-size:12px">${item.nro_solicitud ? escAttr(formatOTExport(item.nro_solicitud)) : '–'}${accionesManual}</td>
-      <td>${escAttr(item.cod_articulo)}</td>
+      <td>${escAttr(item.cod_articulo)} <button type="button" class="bsm cot-ver-historial" data-cod="${escAttr(item.cod_articulo)}" data-desc="${escAttr(item.descripcion || '')}" title="Ver historial de precios — todas las veces que se cotizó este artículo antes" style="padding:0 3px;font-size:10px;vertical-align:middle">📈</button></td>
       <td style="white-space:nowrap;color:var(--muted);font-size:12px">${escAttr(formatOTExport(item.n_ot)) || '–'}</td>
       <td>${escAttr(item.descripcion || '')}${item.desc_adicional ? `<div style="font-size:11px;color:var(--muted)">${escAttr(item.desc_adicional)}</div>` : ''}</td>
       <td style="text-align:right;white-space:nowrap">${celdaCantidad}</td>
@@ -2264,7 +2264,7 @@ function renderModalProveedorItems() {
       }
     }
     return `<tr${esAlternativo ? ' style="background:rgba(245,158,11,.06)"' : ''}>
-      <td>${escAttr(item.cod_articulo)}</td>
+      <td>${escAttr(item.cod_articulo)} <button type="button" class="bsm cot-ver-historial" data-cod="${escAttr(item.cod_articulo)}" data-desc="${escAttr(item.descripcion || '')}" title="Ver historial de precios — todas las veces que se cotizó este artículo antes" style="padding:0 3px;font-size:10px;vertical-align:middle">📈</button></td>
       <td>${escAttr(item.descripcion || '')}${item.desc_adicional ? `<div style="font-size:11px;color:var(--muted)">${escAttr(item.desc_adicional)}</div>` : ''}</td>
       <td style="text-align:right;white-space:nowrap">${item.cant_umc != null ? numFmt(item.cant_umc) : '–'} ${escAttr(item.umc || '')}</td>
       <td style="white-space:nowrap">
@@ -2358,6 +2358,9 @@ function initDelegacionDetalle() {
     const devolucionBtn = e.target.closest('.cot-devolucion-proveedor');
     if (devolucionBtn) { generarDevolucionProveedor(devolucionBtn.dataset.prov); return; }
 
+    const historialBtn = e.target.closest('.cot-ver-historial');
+    if (historialBtn) { irAHistorialArticulo(historialBtn.dataset.cod, historialBtn.dataset.desc); return; }
+
     const confirmarBtn = e.target.closest('.cot-confirmar-compra');
     if (confirmarBtn) { confirmarCompraProveedor(confirmarBtn.dataset.prov); return; }
 
@@ -2438,6 +2441,8 @@ function initModalProveedor() {
     enfocarPrecioAdyacente(e.target, e.shiftKey ? -1 : 1);
   });
   document.getElementById('cotprov_items')?.addEventListener('click', e => {
+    const historialBtn = e.target.closest('.cot-ver-historial');
+    if (historialBtn) { cm('mCOTPROV'); irAHistorialArticulo(historialBtn.dataset.cod, historialBtn.dataset.desc); return; }
     const altBtn = e.target.closest('.cotprov-toggle-alternativo');
     if (altBtn && PROV_MODAL_ID) toggleAlternativoPrecio(altBtn.dataset.item, PROV_MODAL_ID);
   });
@@ -2802,7 +2807,7 @@ function renderTablaPendientes() {
     ).join('');
 
     return `<tr class="oc-row">
-      <td><span class="oc-chevron">▸</span> ${escAttr(g.cod_articulo)}</td>
+      <td><span class="oc-chevron">▸</span> ${escAttr(g.cod_articulo)} <button type="button" class="bsm cot-ver-historial" data-cod="${escAttr(g.cod_articulo)}" data-desc="${escAttr(g.descripcion || '')}" title="Ver historial de precios — todas las veces que se cotizó este artículo antes" style="padding:0 3px;font-size:10px;vertical-align:middle">📈</button></td>
       <td>${escAttr(g.descripcion || '')}${g.desc_adicional ? `<div style="font-size:11px;color:var(--muted)">${escAttr(g.desc_adicional)}</div>` : ''}</td>
       <td style="text-align:right;white-space:nowrap">${numFmt(g.cant_ums)} ${escAttr(g.ums || '')}${g.ums !== g.umc ? `<div style="font-size:11px;color:var(--muted)">${numFmt(g.cant_umc)} ${escAttr(g.umc || '')}</div>` : ''}</td>
       ${celdasPrecio}
@@ -2958,6 +2963,9 @@ function initDelegacionPendientes() {
   if (!cont) return;
 
   cont.addEventListener('click', e => {
+    const historialBtn = e.target.closest('.cot-ver-historial');
+    if (historialBtn) { irAHistorialArticulo(historialBtn.dataset.cod, historialBtn.dataset.desc); return; }
+
     const row = e.target.closest('.oc-row');
     if (row && row.closest('#cotp-tabla-wrap')) {
       const detailRow = row.nextElementSibling;
@@ -3320,6 +3328,23 @@ async function buscarHistorialPrecios(codArticulo) {
   }
   filas.sort((a, b) => a.fecha.localeCompare(b.fecha));
   return filas;
+}
+
+// Botón "📈" en cada fila de la comparativa, del modal mCOTPROV y de
+// "Pendientes (todas)" (pedido explícito del usuario, 2026-10-30: "que
+// yo pueda tocar un artículo y me traiga todos los que la cotizaron y a
+// cuánto" — ya existía la vista Historial de precios, ver 9.6, pero
+// había que buscar el artículo a mano; esto salta directo desde donde
+// ya se está mirando/cargando ese artículo). Navega a la sub-vista
+// "📈 Historial de precios" (simulando el click del nav, mismo criterio
+// que las demás navegaciones cruzadas entre módulos del tablero) y
+// precarga la búsqueda con el mismo código — reusa `seleccionarArticuloHistorial()`
+// tal cual, sin lógica nueva.
+function irAHistorialArticulo(cod, descripcion) {
+  document.querySelector('.nav-item[data-sec="cot-historial"]')?.click();
+  const input = document.getElementById('coth_buscar');
+  if (input) input.value = `${cod} — ${descripcion || ''}`;
+  seleccionarArticuloHistorial(cod, descripcion);
 }
 
 async function seleccionarArticuloHistorial(cod, descripcion) {
