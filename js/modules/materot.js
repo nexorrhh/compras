@@ -40,13 +40,13 @@
 // los ítems de toda OT hija bajo su madre antes de mostrarlos.
 // ============================================================
 import { SB } from '../supabase-client.js';
-import { toast, norm, txt, num, fetchAll, escAttr, fmt, om, cm, obtenerHistoricoDolarCompleto } from '../utils.js';
+import { toast, norm, txt, num, fetchAll, escAttr, fmt, obtenerHistoricoDolarCompleto } from '../utils.js';
 
 let ITEMS = [];      // compras_materot_items, todas las filas
 let GRUPOS = [];      // compras_materot_ot_grupos — [{n_ot_hija, n_ot_madre}]
 let ARCHIVADAS = new Set(); // n_ot (OT efectiva) ya archivadas
 let OT_INFO = new Map(); // n_ot -> {nombre_proyecto, cliente} — compras_materot_ot_info
-let PRESUPUESTOS = new Map(); // n_ot (efectiva) -> {monto, moneda, fecha} — compras_materot_presupuesto, ver 13.13
+let PRESUP_PRECIOS = new Map(); // `${n_ot}|${cod_articulo}` -> precio_usd — compras_materot_presupuesto_precios, ver 13.13
 
 let OT_ACTUAL = null; // OT madre que se está viendo en el detalle; null = vista de tarjetas
 let OT_TAB = 'resumen';
@@ -123,29 +123,51 @@ const SIMBOLO = m => m === 'USD' ? 'U$S' : '$';
 const fmtMonto = (n, moneda) => SIMBOLO(moneda) + (moneda === 'USD' ? ' ' : '') + numFmt(n, 2);
 function setTxt(id, v) { const el = document.getElementById(id); if (el) el.textContent = v; }
 
-// Presupuesto en precio por OT (ver CLAUDE.md 13.13) — un monto en USD se
-// usa tal cual; uno en ARS se divide por el dólar oficial de la FECHA DEL
-// PRESUPUESTO (mismo criterio que "Costo realizado", nunca el de hoy —
-// ver calcularCosto()). `null` si no hay presupuesto cargado para esa OT
-// o si todavía no hay cotización del dólar para esa fecha (no se inventa
-// una conversión).
-function presupuestoUSD(ot) {
-  const p = PRESUPUESTOS.get(ot);
-  if (!p) return null;
-  if (p.moneda === 'USD') return Number(p.monto);
-  const tc = dolarEnFecha(p.fecha);
-  return tc ? Number(p.monto) / tc.venta : null;
+// Presupuesto en precio por OT, cargado POR ARTÍCULO (ver CLAUDE.md
+// 13.13) — pedido explícito del usuario tras probar la primera versión
+// (un monto único por OT): "lo que yo quiero es poner por artículo los
+// precios en USD a los que se cotizó, ese dato lo tengo". El precio
+// siempre es **U$S por KG** (preguntado explícitamente — el rubro se
+// maneja mayormente por peso, mismo criterio que el cruce con
+// Cotizaciones, ver 13.9 "siempre se tiene que tomar el KG") y se
+// guarda directo en dólares — no hay conversión de por medio, a
+// diferencia del monto único que sí necesitaba resolver una fecha/dólar
+// (esa primera versión se descartó).
+//
+// Clave `(n_ot, cod_articulo)`: el `n_ot` es siempre la OT EFECTIVA
+// (madre, la que se está viendo en el detalle) — el presupuesto es un
+// documento por obra, no por cada N° de OT hija individual, mismo
+// criterio que el archivado (13.6).
+function precioPresupArticulo(ot, codArticulo) {
+  const p = PRESUP_PRECIOS.get(`${ot}|${codArticulo}`);
+  return p != null ? Number(p) : null;
 }
 
-// El monto del presupuesto puede venir en millones (formato es-AR: punto
-// separador de miles, coma decimal) — a diferencia de un precio unitario
-// (siempre un número chico, donde alcanza con reemplazar la coma por
-// punto, ver guardarPrecio() en Cotizaciones), acá sí hace falta sacar
-// los puntos de miles antes de convertir a número.
-function parseMontoAR(v) {
+// Total presupuestado de una OT: suma, por cada artículo con precio
+// cargado, `kg_cotiz × precio` (la cantidad que Presupuestos dijo que
+// iba a necesitar, al precio que Presupuestos cotizó — las dos cosas
+// vienen de la misma fuente) — mismo criterio de "no inventar" de
+// siempre: un artículo sin precio cargado no entra en la suma, se
+// cuenta aparte en `nSinPrecio` para que la cobertura quede visible.
+function calcularPresupuesto(ot, items) {
+  let totalUSD = 0, nConPrecio = 0, nSinPrecio = 0;
+  for (const it of items) {
+    const precio = precioPresupArticulo(ot, it.cod_articulo);
+    if (precio == null) { nSinPrecio++; continue; }
+    nConPrecio++;
+    totalUSD += kgsItem(it).cotiz * precio;
+  }
+  return { totalUSD, nConPrecio, nSinPrecio };
+}
+
+// Precio unitario (U$S/kg) — texto libre, acepta coma decimal (mismo
+// criterio que `guardarPrecio()` en Cotizaciones: es un número chico,
+// no hace falta sacar puntos de miles como sí hacía falta para el
+// monto único de la primera versión de este feature).
+function parsePrecioUSD(v) {
   const t = (v || '').trim();
   if (!t) return null;
-  const n = Number(t.replace(/\./g, '').replace(',', '.'));
+  const n = Number(t.replace(',', '.'));
   return isFinite(n) ? n : null;
 }
 
@@ -336,7 +358,7 @@ async function cargarTodo() {
     SB.from('compras_materot_ot_grupos').select('*').then(r => r),
     SB.from('compras_materot_ot_archivadas').select('n_ot').then(r => r),
     fetchAll(() => SB.from('compras_materot_ot_info').select('*')),
-    SB.from('compras_materot_presupuesto').select('*').then(r => r),
+    fetchAll(() => SB.from('compras_materot_presupuesto_precios').select('*')),
   ]);
   const error = e1 || e2 || e3 || e4 || e5;
   if (error) { toast(error.message, 'er'); return; }
@@ -344,7 +366,7 @@ async function cargarTodo() {
   GRUPOS = grupos || [];
   OT_INFO = new Map((info || []).map(i => [i.n_ot, i]));
   ARCHIVADAS = new Set((arch || []).map(a => a.n_ot));
-  PRESUPUESTOS = new Map((presup || []).map(p => [p.n_ot, p]));
+  PRESUP_PRECIOS = new Map((presup || []).map(p => [`${p.n_ot}|${p.cod_articulo}`, p.precio_usd]));
 }
 
 const esArchivada = ot => ARCHIVADAS.has(ot);
@@ -1073,6 +1095,10 @@ function renderDetalle() {
       .map(it => {
         const k = kgsItem(it);
         const otItem = (it.n_ot || '').trim();
+        const precioPresup = precioPresupArticulo(OT_ACTUAL, it.cod_articulo);
+        const valorPresup = precioPresup != null
+          ? `<div style="font-size:10px;color:var(--muted);white-space:nowrap">≈ ${fmtMonto(k.cotiz * precioPresup, 'USD')}</div>`
+          : '';
         return `<tr>
           <td>${otItem && otItem !== OT_ACTUAL ? `<span class="badge" title="Ítem de la OT adicional ${escAttr(formatOT(otItem))}, agrupada acá">${escAttr(formatOT(otItem))}</span>` : escAttr(formatOT(otItem) || '–')}</td>
           <td>${escAttr(it.cod_articulo)}</td>
@@ -1080,6 +1106,10 @@ function renderDetalle() {
           <td>${escAttr(it.agrupacion || '–')}</td>
           <td>${escAttr(it.ume || '–')}</td>
           <td style="text-align:right">${numFmt(k.cotiz)}</td>
+          <td style="white-space:nowrap">
+            <input type="text" inputmode="decimal" class="mrod-presup-input" data-cod="${escAttr(it.cod_articulo)}"
+              value="${precioPresup != null ? precioPresup : ''}" placeholder="—" style="width:70px;text-align:right">${valorPresup}
+          </td>
           <td style="text-align:right">${numFmt(k.plan)}</td>
           <td style="text-align:right">${numFmt(k.solic)}</td>
           <td style="text-align:right">${numFmt(k.comprado)}</td>
@@ -1089,7 +1119,7 @@ function renderDetalle() {
           <td><span class="badge ${(it.estado || '').toUpperCase() === 'DIF' ? 'rechazado' : 'aprobado'}">${escAttr(it.estado || '–')}</span></td>
         </tr>`;
       }).join('');
-    tbody.innerHTML = filas || `<tr><td colspan="13" style="text-align:center;padding:18px;color:var(--muted)">Sin ítems para los filtros actuales</td></tr>`;
+    tbody.innerHTML = filas || `<tr><td colspan="14" style="text-align:center;padding:18px;color:var(--muted)">Sin ítems para los filtros actuales</td></tr>`;
   }
 
   mostrarTabOT(OT_TAB);
@@ -1148,6 +1178,15 @@ function renderResumenOT(items, st) {
   renderBarrasCotizadoVsCubierto('mrod_chart_rubro', items);
   renderTablaDesvios('t-mro-desvios', items);
 
+  // -- Presupuestado (suma de kg_cotiz × precio por artículo, ver 13.13) —
+  // no depende de Cotizaciones ni del dólar, el precio ya se carga en USD
+  // directo por artículo (pestaña Detalle), así que se calcula siempre.
+  const presup = calcularPresupuesto(OT_ACTUAL, items);
+  setTxt('mrod_k_presup', presup.nConPrecio > 0 ? fmtMonto(presup.totalUSD, 'USD') : '–');
+  setTxt('mrod_k_presup_sub', presup.nConPrecio > 0
+    ? `${presup.nConPrecio} de ${presup.nConPrecio + presup.nSinPrecio} ítems con precio cargado`
+    : 'Cargá el precio U$S/kg de cada artículo en la pestaña Detalle');
+
   // -- Costo real, todo en USD (si ya cargaron precios + histórico del dólar) --
   if (PRECIO_POR_ARTICULO && DOLAR_HISTORICO) {
     const { filas, costoUSD, ahorroUSD, nValorizados, nSinPrecio, nSinTipoCambio } = calcularCosto(items);
@@ -1163,26 +1202,12 @@ function renderResumenOT(items, st) {
     renderGrupoPorMoneda('mrod_wrap_costorubro', 'Costo comprado por rubro', agruparCostoPor(filas, f => f.it.agrupacion || '(Sin rubro)'), '#22c55e');
     renderGrupoPorMoneda('mrod_wrap_provs', 'Top proveedores (costo comprado)', agruparCostoPor(filas, f => f.precioInfo.proveedor_nombre || '(?)'), '#3b82f6');
 
-    // -- Presupuestado vs. comprado/asignado (ver CLAUDE.md 13.13) --
-    const presup = PRESUPUESTOS.get(OT_ACTUAL);
-    const presupUSD = presup ? presupuestoUSD(OT_ACTUAL) : null;
-    if (!presup) {
-      setTxt('mrod_k_presup', '–');
-      setTxt('mrod_k_presup_sub', 'Sin presupuesto cargado');
-    } else if (presupUSD == null) {
-      setTxt('mrod_k_presup', '⚠️ sin T.C.');
-      setTxt('mrod_k_presup_sub', `Sin cotización del dólar para el ${fmt(presup.fecha)} todavía`);
-    } else {
-      setTxt('mrod_k_presup', fmtMonto(presupUSD, 'USD'));
-      setTxt('mrod_k_presup_sub', presup.moneda === 'ARS'
-        ? `≈ convertido de ${fmtMonto(presup.monto, 'ARS')} del ${fmt(presup.fecha)}`
-        : `Cargado el ${fmt(presup.fecha)}`);
-    }
+    // -- Desvío vs. presupuesto (comprado + asignado, vs. lo presupuestado) --
     const valorUsado = costoUSD + ahorroUSD;
     const desviopresupEl = document.getElementById('mrod_k_desviopresup');
-    if (presupUSD != null) {
-      const desvio = valorUsado - presupUSD;
-      const desvioPresupPct = presupUSD > 0 ? (desvio / presupUSD * 100) : null;
+    if (presup.nConPrecio > 0) {
+      const desvio = valorUsado - presup.totalUSD;
+      const desvioPresupPct = presup.totalUSD > 0 ? (desvio / presup.totalUSD * 100) : null;
       if (desviopresupEl) {
         desviopresupEl.textContent = `${desvio > 0 ? '+' : ''}${fmtMonto(desvio, 'USD')}`;
         desviopresupEl.style.color = desvio > 0.01 ? 'var(--red)' : (desvio < -0.01 ? 'var(--green)' : '');
@@ -1205,41 +1230,27 @@ function renderResumenOT(items, st) {
   }
 }
 
-// Alta/edición del presupuesto de la OT actual — pedido explícito del
-// usuario, 2026-10-30: "quiero que sumemos lo presupuestado en precio...
-// lo tengo en un PDF, quisiera que por ahora se pueda agregar a mano".
-// Un monto por OT efectiva (`upsert`, se puede corregir las veces que
-// haga falta); moneda y fecha se eligen al cargar, no se asume ninguna
-// (ver CLAUDE.md 13.13).
-function abrirModalPresupuesto() {
+// Alta/edición del precio presupuestado (U$S/kg) de un artículo puntual,
+// dentro de la OT que se está viendo — pedido explícito del usuario,
+// 2026-10-30 (ver CLAUDE.md 13.13). Se guarda al salir del campo (sin
+// botón "Guardar"), mismo patrón que cualquier precio editable del
+// tablero (ver `guardarPrecio()` en Cotizaciones). Un valor vacío borra
+// el precio cargado para ese artículo (vuelve a "sin precio").
+async function guardarPrecioPresupuesto(codArticulo, valorStr) {
   if (OT_ACTUAL === null) return;
-  const p = PRESUPUESTOS.get(OT_ACTUAL);
-  const titulo = document.getElementById('mropresup_t');
-  if (titulo) titulo.textContent = `💰 Presupuesto — OT ${formatOT(OT_ACTUAL) || '(Sin OT)'}`;
-  const monto = document.getElementById('mropresup_monto');
-  if (monto) monto.value = p ? String(p.monto) : '';
-  const moneda = document.getElementById('mropresup_moneda');
-  if (moneda) moneda.value = p?.moneda || 'ARS';
-  const fecha = document.getElementById('mropresup_fecha');
-  if (fecha) fecha.value = p?.fecha || new Date().toISOString().slice(0, 10);
-  om('mMROPRESUP');
-}
-
-async function guardarPresupuesto(e) {
-  e.preventDefault();
-  if (OT_ACTUAL === null) return;
-  const monto = parseMontoAR(document.getElementById('mropresup_monto')?.value);
-  if (monto == null || monto <= 0) { toast('Monto inválido', 'er'); return; }
-  const moneda = document.getElementById('mropresup_moneda')?.value || 'ARS';
-  const fecha = document.getElementById('mropresup_fecha')?.value || new Date().toISOString().slice(0, 10);
-
-  const { data, error } = await SB.from('compras_materot_presupuesto')
-    .upsert({ n_ot: OT_ACTUAL, monto, moneda, fecha }, { onConflict: 'n_ot' })
-    .select().single();
-  if (error) { toast(error.message, 'er'); return; }
-  PRESUPUESTOS.set(OT_ACTUAL, data);
-  cm('mMROPRESUP');
-  toast('✓ Presupuesto guardado');
+  const v = (valorStr || '').trim();
+  if (v === '') {
+    const { error } = await SB.from('compras_materot_presupuesto_precios').delete().eq('n_ot', OT_ACTUAL).eq('cod_articulo', codArticulo);
+    if (error) { toast(error.message, 'er'); return; }
+    PRESUP_PRECIOS.delete(`${OT_ACTUAL}|${codArticulo}`);
+  } else {
+    const precio = parsePrecioUSD(v);
+    if (precio == null) { toast('Precio inválido', 'er'); return; }
+    const { error } = await SB.from('compras_materot_presupuesto_precios')
+      .upsert({ n_ot: OT_ACTUAL, cod_articulo: codArticulo, precio_usd: precio }, { onConflict: 'n_ot,cod_articulo' });
+    if (error) { toast(error.message, 'er'); return; }
+    PRESUP_PRECIOS.set(`${OT_ACTUAL}|${codArticulo}`, precio);
+  }
   renderDetalle();
 }
 
@@ -1470,8 +1481,9 @@ export function init() {
   document.getElementById('mro_det_toggle_archivo')?.addEventListener('click', () => {
     if (OT_ACTUAL !== null) toggleArchivoOT(OT_ACTUAL, esArchivada(OT_ACTUAL));
   });
-  document.getElementById('mrod_presup_editar')?.addEventListener('click', abrirModalPresupuesto);
-  document.getElementById('fMROPRESUP')?.addEventListener('submit', guardarPresupuesto);
+  document.getElementById('t-mro-detalle')?.addEventListener('change', e => {
+    if (e.target.classList.contains('mrod-presup-input')) guardarPrecioPresupuesto(e.target.dataset.cod, e.target.value);
+  });
   document.getElementById('mro_cards_grid')?.addEventListener('click', e => {
     const btnArch = e.target.closest('.mro-toggle-archivo');
     if (btnArch) { toggleArchivoOT(btnArch.dataset.ot, btnArch.dataset.archivada === '1'); return; }

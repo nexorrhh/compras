@@ -1250,7 +1250,6 @@
         <div class="kpi">
           <div class="kpi-val" style="color:var(--purple)" id="mrod_k_presup">–</div><div class="kpi-lbl">Presupuestado (USD)</div>
           <div class="mkpi-sub" id="mrod_k_presup_sub"></div>
-          <button type="button" class="bsm" id="mrod_presup_editar" style="margin-top:6px;padding:1px 6px;font-size:11px">✏️ Cargar/editar</button>
         </div>
         <div class="kpi">
           <div class="kpi-val" id="mrod_k_desviopresup">–</div><div class="kpi-lbl">Desvío vs. presupuesto (USD)</div>
@@ -1301,7 +1300,7 @@
         </div>
       </div>
       <div class="tw"><table>
-        <thead><tr><th>OT</th><th>Código</th><th>Descripción</th><th>Rubro</th><th>Unidad</th><th>Cotiz. (kg)</th><th>Plan. (kg)</th><th>Solic. (kg)</th><th>Comprado (kg)</th><th>Asig. (kg)</th><th>Recibido (kg)</th><th>Entregado (kg)</th><th>Estado</th></tr></thead>
+        <thead><tr><th>OT</th><th>Código</th><th>Descripción</th><th>Rubro</th><th>Unidad</th><th>Cotiz. (kg)</th><th title="Precio presupuestado por Presupuestos, en U$S por KG — se carga acá a mano">Precio presup. (U$S/kg)</th><th>Plan. (kg)</th><th>Solic. (kg)</th><th>Comprado (kg)</th><th>Asig. (kg)</th><th>Recibido (kg)</th><th>Entregado (kg)</th><th>Estado</th></tr></thead>
         <tbody id="t-mro-detalle"></tbody>
       </table></div>
     </div>
@@ -1452,29 +1451,6 @@
     <tbody id="coest_items"></tbody>
   </table></div>
   <div class="brow"><button type="button" class="btn p" onclick="cm('mCOTESTIMAR')">Cerrar</button></div>
-</div></div>
-
-<!-- ============ MODAL — PRESUPUESTO DE LA OT (Materiales OT) ============ -->
-<div class="modal-ov" id="mMROPRESUP">
-<div class="modal" style="max-width:420px">
-  <span class="mcls" onclick="cm('mMROPRESUP')">×</span>
-  <div class="mtitle" id="mropresup_t">💰 Presupuesto de la OT</div>
-  <div class="psub" style="margin:0 0 14px">Monto total presupuestado para esta OT (del PDF de Presupuestos) — por ahora se carga a mano. Un monto en pesos se convierte a dólares con la cotización oficial de la fecha indicada, no la de hoy.</div>
-  <form id="fMROPRESUP">
-    <div class="fg"><label>Monto</label>
-      <div style="display:flex;gap:8px">
-        <input id="mropresup_monto" autocomplete="off" inputmode="decimal" placeholder="Ej. 1.250.000" style="flex:1" required>
-        <select id="mropresup_moneda" style="width:110px">
-          <option value="ARS">Pesos ($)</option>
-          <option value="USD">Dólares (U$S)</option>
-        </select>
-      </div>
-    </div>
-    <div class="fg"><label>Fecha del presupuesto</label>
-      <input type="date" id="mropresup_fecha" required>
-    </div>
-    <div class="brow"><button type="button" class="btn" onclick="cm('mMROPRESUP')">Cancelar</button><button type="submit" class="btn p">💰 Guardar</button></div>
-  </form>
 </div></div>
 
 <!-- ============ CONSOLIDADO — DASHBOARD ============ -->

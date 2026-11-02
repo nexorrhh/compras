@@ -2867,7 +2867,7 @@ aprovechar que ya guarda la serie completa día por día.
   razonable para una compra de bulones, confirmado contra la API directamente antes de dar el cálculo
   por bueno.
 
-### 13.13 Presupuesto en precio por OT (2026-10-30)
+### 13.13 Presupuesto en precio por OT — cargado POR ARTÍCULO (2026-10-30)
 
 Pedido explícito del usuario: "quiero que sumemos lo presupuestado en precio. Yo lo tengo en un PDF
 quisiera que por ahora se pueda agregar a mano y luego vemos de alguna forma de automatizarlo.
@@ -2877,39 +2877,44 @@ Lógicamente la idea sería poder comparar presupuestado vs. comprado/asignado".
 módulo no puede leer todavía — por eso se carga a mano, con la idea explícita de automatizarlo más
 adelante (ver TBD en sección 16).
 
-**Un monto por OT efectiva** (`compras_materot_presupuesto`, ver
-[`sql/031_materot_presupuesto.sql`](sql/031_materot_presupuesto.sql)) — igual criterio que el archivado
-(sección 13.6): madre + adicionales agrupadas se tratan como una sola unidad, un único presupuesto para
-el grupo entero, no uno por cada N° de OT individual. `n_ot` como PK, se carga con `upsert` así que se
-puede corregir las veces que haga falta.
+**Primera versión (descartada el mismo día): un monto único por OT.** El primer diseño pedía un solo
+total en ARS o USD por OT, con una fecha para convertir. El usuario, al ver el modal, aclaró que en
+realidad el dato que tiene es otro: **"lo que yo quiero es poner por artículo los precios en USD a los
+que se cotizó, ese dato lo tengo"** — tiene, del mismo PDF, un precio por cada artículo, no un total a
+mano alzada. Se rehizo el feature entero sobre esa base.
 
-**Moneda y fecha se eligen al cargar, no se asumen** — el PDF puede traer el monto en pesos o en
-dólares (no hay forma de saberlo de antemano, y asumir mal arruinaría toda la comparación de ahí en
-más), así que el modal `mMROPRESUP` (`abrirModalPresupuesto()`/`guardarPresupuesto()` en
-`js/modules/materot.js`) pide Monto + selector ARS/USD + **Fecha del presupuesto** (date picker,
-default hoy). Un monto en pesos se convierte a dólares con el dólar oficial de **esa fecha** —
-`presupuestoUSD()` reusa `dolarEnFecha()`, el mismo mecanismo que ya convierte "Costo realizado" (ver
-13.12) — nunca con el de hoy, mismo motivo: "si hoy subió el dólar me va a incrementar algo que no es
-real". Sin cotización del dólar para esa fecha, el presupuesto queda marcado **"⚠️ sin T.C."** en vez de
-inventar una conversión.
+**Un precio en U$S/KG por artículo, dentro de cada OT** (`compras_materot_presupuesto_precios`, ver
+[`sql/031_materot_presupuesto.sql`](sql/031_materot_presupuesto.sql)) — clave `(n_ot, cod_articulo)`,
+con `n_ot` siempre la **OT efectiva** (madre, si tiene adicionales agrupadas — mismo criterio que el
+archivado, sección 13.6): el presupuesto es un documento por obra, no por cada N° de OT hija individual.
+Se edita directo en la pestaña **Detalle** de cada OT: una columna nueva **"Precio presup. (U$S/kg)"**
+(`guardarPrecioPresupuesto()` en `js/modules/materot.js`) con un input de texto por fila — mismo patrón
+que cualquier precio editable del tablero (se guarda solo al salir del campo, sin botón "Guardar", y
+acepta coma decimal). Dejarlo vacío borra el precio cargado para ese artículo.
 
-**Por qué el parseo del monto es distinto al de un precio unitario**: los precios de Cotizaciones
-aceptan coma decimal con un simple `replace(',', '.')` porque son números chicos (nunca llevan punto de
-miles) — un presupuesto de una OT puede ser de millones, así que `parseMontoAR()` en
-`js/modules/materot.js` primero saca los puntos de miles (formato es-AR) y recién después cambia la
-coma por punto, para poder tipear "1.250.000" o "1.250.000,50" tal como se ve en el PDF.
+**Siempre U$S por KG** (preguntado explícitamente al usuario antes de construirlo — la diferencia entre
+interpretar el número como $/metro o $/kg puede ser de 40-50 veces para un perfil): se multiplica contra
+`kg_cotiz` del artículo (`kgsItem(it).cotiz`, ver 13.2) — la cantidad que Presupuestos dijo que iba a
+necesitar, al precio que Presupuestos cotizó, las dos cosas de la misma fuente — mismo criterio de
+"siempre KG" que ya usa el cruce con Cotizaciones de "Costo realizado" (ver 13.9). Como ya está en
+dólares, no hace falta ninguna conversión ni fecha de por medio — a diferencia del monto único
+descartado, que sí necesitaba resolver un tipo de cambio.
 
-**Dónde se ve**: dos KPIs nuevos en el grupo "💰 Costo real" de la pestaña Resumen —
-**"Presupuestado (USD)"** (con el monto original y la fecha como subtítulo, y el botón
-"✏️ Cargar/editar" para darlo de alta o corregirlo) y **"Desvío vs. presupuesto (USD)"** = (Costo
-realizado + Ahorro por stock asignado) − Presupuestado, en rojo si se excedió y verde si quedó por
-debajo — comparando contra el **valor total de material usado** (comprado + asignado, la misma suma que
-ya mostraba "Valor total de material usado (USD)"), no solo contra lo comprado, porque el presupuesto de
-Presupuestos cubre todo el material que se iba a necesitar, se haya terminado comprando o cubierto con
-stock. Sin presupuesto cargado para esa OT, ambos quedan en "–" sin inventar nada.
+**Total presupuestado de la OT** = suma de `kg_cotiz × precio` entre todos los artículos que tengan
+precio cargado (`calcularPresupuesto()`) — un artículo sin precio no entra en la suma ni se inventa
+nada, pero sí cuenta aparte para mostrar la cobertura ("N de M ítems con precio cargado").
+
+**Dónde se ve**: en la pestaña **Resumen**, dos KPIs en el grupo "💰 Costo real" — **"Presupuestado
+(USD)"** (con la cobertura como subtítulo) y **"Desvío vs. presupuesto (USD)"** = (Costo realizado +
+Ahorro por stock asignado) − Presupuestado, en rojo si se excedió y verde si quedó por debajo —
+comparando contra el **valor total de material usado** (comprado + asignado), no solo contra lo
+comprado, porque el presupuesto cubre todo el material que se iba a necesitar, se haya terminado
+comprando o cubierto con stock. Sin ningún artículo con precio cargado, ambos quedan en "–". En la
+pestaña **Detalle**, debajo del input de cada fila se muestra el valor presupuestado de esa línea
+puntual ("≈ U$S X"), para poder revisar artículo por artículo antes de mirar el total.
 
 **Alcance de esta primera versión** (mismo criterio que "Costo realizado", ver 13.9): solo vive en el
-Resumen de **cada OT puntual**, no hay un total agregado en el Dashboard del módulo todavía — se agrega
+detalle de **cada OT puntual**, no hay un total agregado en el Dashboard del módulo todavía — se agrega
 más adelante si hace falta, una vez que se revise cómo da OT por OT.
 
 ## 14. Módulo: Consolidado de Compras `[DETALLADO]`
@@ -3121,16 +3126,19 @@ Ya decidido al construir "Posible origen en Cotizaciones" en Órdenes de Compra 
 Ya decidido al construir el Presupuesto en precio por OT en Materiales OT (2026-10-30):
 - [x] Se carga **a mano** por ahora (el usuario lo tiene en un PDF que el tablero todavía no puede leer)
   — pedido explícito del usuario, con la automatización quedando para más adelante, ver sección 13.13.
-- [x] Un monto por **OT efectiva** (madre + adicionales juntas), no uno por cada N° de OT individual —
-  mismo criterio que el archivado (sección 13.6).
-- [x] Moneda (ARS/USD) y fecha del presupuesto se eligen al cargar, no se asume ninguna — un monto en
-  pesos se convierte a dólares con el oficial de ESA fecha (nunca el de hoy, mismo mecanismo que "Costo
-  realizado", ver 13.12).
-- [x] Se compara contra el **valor total de material usado** (comprado + asignado), no solo contra lo
-  comprado — el presupuesto cubre todo el material que se iba a necesitar, se haya comprado o cubierto
-  con stock.
+- [x] Es un precio **por artículo** (U$S/kg), no un monto único por OT — el primer diseño (un total a
+  mano por OT) se descartó el mismo día: el usuario aclaró que lo que tiene es un precio por artículo,
+  no un total. Se edita en la pestaña Detalle, fila por fila.
+- [x] El precio es siempre **U$S por KG** — preguntado explícitamente antes de construir (confundir
+  $/metro con $/kg puede ser un error de 40-50 veces) — se multiplica contra `kg_cotiz` de cada
+  artículo, mismo criterio "siempre KG" que ya usa "Costo realizado" (13.9).
+- [x] Clave `(OT efectiva, cod_articulo)` — madre + adicionales juntas, no un precio por cada N° de OT
+  individual, mismo criterio que el archivado (sección 13.6).
+- [x] El total se compara contra el **valor total de material usado** (comprado + asignado), no solo
+  contra lo comprado — el presupuesto cubre todo el material que se iba a necesitar, se haya comprado o
+  cubierto con stock.
 - [x] Sin total agregado en el Dashboard del módulo todavía — mismo criterio que "Costo realizado"
-  (13.9), vive solo en el Resumen de cada OT puntual por ahora.
+  (13.9), vive solo en el detalle de cada OT puntual por ahora.
 
 Todavía sin decidir:
 - [ ] Materiales OT: cómo automatizar la carga del presupuesto en precio — hoy se tipea a mano desde un
@@ -3243,9 +3251,9 @@ Todavía sin decidir:
     (**todavía falta correr en la base real** — hasta que se corra, "Cargar/actualizar histórico
     completo" va a fallar porque la tabla no existe).
 30. Correr [`sql/031_materot_presupuesto.sql`](sql/031_materot_presupuesto.sql) — crea
-    `compras_materot_presupuesto` para el presupuesto en precio por OT de Materiales OT (ver sección
-    13.13) (**todavía falta correr en la base real** — hasta que se corra, "✏️ Cargar/editar" presupuesto
-    va a fallar porque la tabla no existe).
+    `compras_materot_presupuesto_precios` para el presupuesto en precio por artículo de Materiales OT
+    (ver sección 13.13) (**todavía falta correr en la base real** — hasta que se corra, cargar un precio
+    en la columna "Precio presup. (U$S/kg)" de la pestaña Detalle va a fallar porque la tabla no existe).
 31. Probar el circuito completo: pedir vehículo (solicitud.html) → aprobar y asignar (index.html) →
    registrar salida/retorno (porteria.html) → ver el movimiento reflejado en el dashboard.
 32. Evaluar RLS (Row Level Security) en las tablas `compras_*` — hoy cualquiera con el link de
