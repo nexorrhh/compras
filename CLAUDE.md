@@ -2917,6 +2917,21 @@ puntual ("≈ U$S X"), para poder revisar artículo por artículo antes de mirar
 detalle de **cada OT puntual**, no hay un total agregado en el Dashboard del módulo todavía — se agrega
 más adelante si hace falta, una vez que se revise cómo da OT por OT.
 
+**Comparativo línea por línea, en la pestaña "💰 Costo"** (pedido explícito del usuario, 2026-11-02:
+"necesitaría acá tener un comparativo de comprado vs cotizado" — viendo la tabla artículo por artículo
+de esa pestaña, que hasta acá solo mostraba lo realmente comprado/asignado, sin ningún punto de
+comparación). `renderCosto()` suma cuatro columnas a esa tabla: **"Cotizado (kg)"** (lo que Presupuestos
+dijo que iba a necesitar para ese artículo, `kgsItem(it).cotiz` — mismo dato que ya se ve en Detalle/
+Resumen, ver 13.1/13.10) junto a **"Comprado"**, y **"Precio presup. (U$S/kg)"** / **"Valorizado presup.
+(USD)"** (= Cotizado × precio presupuestado) junto a **"Precio unit."**/**"Costo comprado (USD)"**, más
+una columna **"Desvío (USD)"** = Costo comprado − Valorizado presupuestado (rojo si se excedió, verde si
+quedó por debajo). Como el precio presupuestado ya está en dólares (ver más arriba), estas columnas se
+muestran **igual** aunque la fila esté "Sin cotización" o "⚠️ sin T.C. de su fecha" del lado de lo
+comprado (dos problemas independientes: no tener con qué valorizar lo comprado no impide saber cuánto se
+había presupuestado para ese artículo) — en esos casos "Desvío" queda en "–" porque no hay costo
+comprado real con qué comparar, no se inventa nada. Un artículo sin precio presupuestado cargado muestra
+"Sin presupuesto" en vez de "0" o un desvío inventado.
+
 ## 14. Módulo: Consolidado de Compras `[DETALLADO]`
 
 Pedido explícito del usuario (2026-10-15), mirando a mano la hoja "Consolidado" que ya arma el informe

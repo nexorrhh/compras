@@ -1278,13 +1278,33 @@ function renderCosto() {
       .sort((a, b) => (a.it.descripcion || '').localeCompare(b.it.descripcion || '', 'es'))
       .map(f => {
         const it = f.it;
+        // Comprado vs. Cotizado, también en esta tabla línea por línea
+        // (pedido explícito del usuario, 2026-11-02): tanto en cantidad
+        // (Cotizado en kg, lo que Presupuestos dijo que iba a necesitar —
+        // ver 13.1) como en plata (Precio/Valorizado presupuestado, el
+        // precio U$S/kg que se carga por artículo en la pestaña Detalle,
+        // ver 13.13) — contra el Comprado/Precio unit./Costo comprado
+        // reales de esta misma fila. El presupuesto ya está en dólares,
+        // no necesita tipo de cambio — por eso se muestra igual aunque la
+        // fila esté "sin cotización"/"sin T.C." del lado de lo comprado.
+        const kCotiz = kgsItem(it).cotiz;
+        const precioPresup = precioPresupArticulo(OT_ACTUAL, it.cod_articulo);
+        const valorPresupUSD = precioPresup != null ? kCotiz * precioPresup : null;
+        const celdaCotiz = `<td style="text-align:right">${numFmt(kCotiz)} kg</td>`;
+        const celdaPresup = precioPresup != null
+          ? `<td style="text-align:right">${numFmt(precioPresup, 3)}</td><td style="text-align:right">${fmtMonto(valorPresupUSD, 'USD')}</td>`
+          : `<td colspan="2" style="text-align:center;color:var(--muted)">Sin presupuesto</td>`;
+
         if (!f.precioInfo) {
           return `<tr style="opacity:.6">
             <td>${escAttr(it.cod_articulo)}</td>
             <td>${escAttr(it.descripcion || '')}</td>
             <td>${escAttr(it.agrupacion || '–')}</td>
+            ${celdaCotiz}
             <td style="text-align:right">${numFmt(it.comprado)} ${escAttr(it.ume || '')}</td>
             <td colspan="2" style="text-align:center;color:var(--muted)" title="${it.ume ? `Esta OT lo mide en ${escAttr(it.ume)}` : ''}">${f.motivo === 'unidad distinta' ? '⚠️ unidad distinta' : 'Sin cotización'}</td>
+            ${celdaPresup}
+            <td style="text-align:center;color:var(--muted)">–</td>
             <td style="text-align:right">${numFmt(it.cant_asig)} ${escAttr(it.ume || '')}</td>
             <td style="text-align:center;color:var(--muted)">–</td>
           </tr>`;
@@ -1294,27 +1314,37 @@ function renderCosto() {
             <td>${escAttr(it.cod_articulo)}</td>
             <td>${escAttr(it.descripcion || '')}</td>
             <td>${escAttr(it.agrupacion || '–')}</td>
+            ${celdaCotiz}
             <td style="text-align:right">${numFmt(f.cant.comprado)} ${escAttr(f.cant.unidad)}</td>
             <td style="text-align:right">${fmtMonto(f.precioInfo.precio_unitario, f.precioInfo.moneda)}</td>
-            <td colspan="2" style="text-align:center;color:var(--muted)" title="No hay cotización del dólar cargada para la fecha de esta compra todavía">⚠️ sin T.C. de su fecha</td>
+            <td style="text-align:center;color:var(--muted)" title="No hay cotización del dólar cargada para la fecha de esta compra todavía">⚠️ sin T.C. de su fecha</td>
+            ${celdaPresup}
+            <td style="text-align:center;color:var(--muted)">–</td>
+            <td style="text-align:right">${numFmt(f.cant.asig)} ${escAttr(f.cant.unidad)}</td>
             <td style="text-align:center;color:var(--muted)">–</td>
           </tr>`;
         }
         const tcTitle = f.precioInfo.moneda === 'ARS' && f.tcUsado
           ? `Convertido con el dólar oficial del ${fmt(f.tcUsado.fecha)} ($${numFmt(f.tcUsado.venta)})`
           : 'Ya estaba cotizado en dólares';
+        const desvio = valorPresupUSD != null ? f.costoCompradoUSD - valorPresupUSD : null;
+        const desvioTxt = desvio == null ? '–' : `${desvio > 0 ? '+' : ''}${fmtMonto(desvio, 'USD')}`;
+        const desvioColor = desvio == null ? '' : (desvio > 0.01 ? 'var(--red)' : (desvio < -0.01 ? 'var(--green)' : ''));
         return `<tr>
           <td>${escAttr(it.cod_articulo)}</td>
           <td>${escAttr(it.descripcion || '')}</td>
           <td>${escAttr(it.agrupacion || '–')}</td>
+          ${celdaCotiz}
           <td style="text-align:right">${numFmt(f.cant.comprado)} ${escAttr(f.cant.unidad)}</td>
           <td style="text-align:right" title="Proveedor ganador: ${escAttr(f.precioInfo.proveedor_nombre)}${f.precioEspecifico ? ' — precio cotizado específicamente para esta OT' : ' — precio más reciente (de otra OT/solicitud)'}">${fmtMonto(f.precioInfo.precio_unitario, f.precioInfo.moneda)}${f.precioEspecifico ? ' <span style="color:var(--accent)">🎯</span>' : ''}</td>
           <td style="text-align:right" title="${tcTitle}">${fmtMonto(f.costoCompradoUSD, 'USD')}</td>
+          ${celdaPresup}
+          <td style="text-align:right;color:${desvioColor}">${desvioTxt}</td>
           <td style="text-align:right">${numFmt(f.cant.asig)} ${escAttr(f.cant.unidad)}</td>
           <td style="text-align:right" title="${tcTitle}">${fmtMonto(f.ahorroStockUSD, 'USD')}</td>
         </tr>`;
       }).join('');
-    tbody.innerHTML = filasHtml || `<tr><td colspan="8" style="text-align:center;padding:18px;color:var(--muted)">Sin ítems</td></tr>`;
+    tbody.innerHTML = filasHtml || `<tr><td colspan="12" style="text-align:center;padding:18px;color:var(--muted)">Sin ítems</td></tr>`;
   }
 
   renderHorasOT();
