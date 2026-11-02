@@ -377,20 +377,33 @@ async function cargarArchivoInfo(file) {
 // Carga de datos
 // ------------------------------------------------------------
 async function cargarTodo() {
-  const [{ data: items, error: e1 }, { data: grupos, error: e2 }, { data: arch, error: e3 }, { data: info, error: e4 }, { data: presup, error: e5 }] = await Promise.all([
+  // Las tablas base (ítems/grupos/archivadas) son las que el resto del
+  // módulo necesita sí o sí para poder mostrar algo — un error ahí sí
+  // corta todo. `compras_materot_ot_info` y `compras_materot_presupuesto_precios`
+  // son referencias ADICIONALES (nombre de proyecto, presupuesto por
+  // artículo): si a alguna de las dos le falta correr su migración
+  // (`sql/023_materot_ot_info.sql`/`sql/031_materot_presupuesto.sql`) en
+  // la base real, no tiene que tumbar el refresco de todo lo demás —
+  // caso real (2026-11-02): una carga de Excel exitosa quedaba sin
+  // reflejarse en pantalla porque la consulta a la tabla de presupuesto,
+  // que todavía no existía, hacía abortar `cargarTodo()` entero antes de
+  // llegar a actualizar ITEMS/GRUPOS/ARCHIVADAS.
+  const [{ data: items, error: e1 }, { data: grupos, error: e2 }, { data: arch, error: e3 }, infoRes, presupRes] = await Promise.all([
     fetchAll(() => SB.from('compras_materot_items').select('*')),
     SB.from('compras_materot_ot_grupos').select('*').then(r => r),
     SB.from('compras_materot_ot_archivadas').select('n_ot').then(r => r),
     fetchAll(() => SB.from('compras_materot_ot_info').select('*')),
     fetchAll(() => SB.from('compras_materot_presupuesto_precios').select('*')),
   ]);
-  const error = e1 || e2 || e3 || e4 || e5;
+  const error = e1 || e2 || e3;
   if (error) { toast(error.message, 'er'); return; }
   ITEMS = items || [];
   GRUPOS = grupos || [];
-  OT_INFO = new Map((info || []).map(i => [i.n_ot, i]));
   ARCHIVADAS = new Set((arch || []).map(a => a.n_ot));
-  PRESUP_PRECIOS = new Map((presup || []).map(p => [`${p.n_ot}|${p.cod_articulo}`, p.precio_usd]));
+  if (infoRes.error) toast('Nombre de proyecto/cliente por OT no disponible: ' + infoRes.error.message, 'er');
+  OT_INFO = new Map((infoRes.data || []).map(i => [i.n_ot, i]));
+  if (presupRes.error) toast('Presupuesto por artículo no disponible: ' + presupRes.error.message, 'er');
+  PRESUP_PRECIOS = new Map((presupRes.data || []).map(p => [`${p.n_ot}|${p.cod_articulo}`, p.precio_usd]));
 }
 
 const esArchivada = ot => ARCHIVADAS.has(ot);
