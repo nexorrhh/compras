@@ -2940,6 +2940,53 @@ el mismo dólar oficial de la fecha de esa compra (`f.tcUsado`, el mismo que ya 
 precio original en su moneda nativa no se pierde, queda en el tooltip de la celda. El 🎯 (precio
 cotizado específicamente para esta OT, ver 13.9) se mantiene al lado del valor ya convertido.
 
+**Orden de columnas: Presupuesto antes que Real** (corregido el mismo día, pedido explícito del usuario:
+"quisiera que tenga mas sentido esto me estas poniendo el precio presupuestado ultimo y considero que
+deberia primero mostrar el precio cotizado luego el precio comprado"). Antes de reordenar se investigó
+qué columnas suele mostrar un reporte de presupuesto-vs-real de este estilo (plantillas de
+budget-vs-actual de obra/manufactura) — confirma la intuición del usuario: el orden estándar es
+Presupuesto → Real → Diferencia, nunca al revés. La tabla de la pestaña "💰 Costo" quedó así: Código /
+Descripción / Rubro / **Cotizado (kg) / Precio presup. (U$S/kg) / Valorizado presup. (USD)** / Comprado /
+Precio unit. (USD) / Costo comprado (USD) / Desvío (USD) / Desvío (%) / Asignado / Ahorro stock (USD) —
+con un encabezado de dos filas (`<thead>` con una fila de grupos por `colspan` arriba:
+"📋 Presupuesto" / "🛒 Real (comprado)" / "📊 Diferencia" / "📦 Stock") para que las tres columnas de
+presupuesto, las tres de lo comprado, y las dos de diferencia se lean como bloques, no como una lista
+plana de 13 columnas sueltas — mismo patrón de grupo visual, llevado a la tabla.
+
+**Desvío también en %** (mismo pedido de "optimizar", misma investigación): además del monto en dólares,
+se sumó una columna **"Desvío (%)"** (`desvio / valorPresupUSD × 100`) al lado de "Desvío (USD)" — es
+estándar mostrar las dos formas juntas en este tipo de reporte (el monto para dimensionar, el % para
+comparar artículos de magnitudes distintas). Mismo color que "Desvío (USD)" (rojo si se excedió, verde si
+quedó por debajo) — **sin un umbral que decida cuándo "alertar"**: cualquier desvío real se muestra con
+su signo, a propósito, mismo criterio que ya se usa en el aviso de variación de precio de Cotizaciones
+(ver 9.7, "sin umbral de negocio... cualquier variación real se muestra"). Se investigó si convenía un
+umbral de alerta tipo "±10%" (práctica común en dashboards de procurement) y se descartó a propósito por
+esa misma razón — no inventar un punto de corte de negocio que el usuario no pidió.
+
+**KPI nuevo: "Costo proyectado total (USD)"** (mismo pedido de "optimizar" — versión simplificada de lo
+que en gestión de proyectos se llama Estimate at Completion/EAC, investigado antes de construir: la
+fórmula completa con CPI/SPI es para proyectos grandes, no aplica acá, pero la idea simple sí —
+"gastado hasta ahora + lo que falta, estimado"). `calcularProyectado()` en `js/modules/materot.js` suma
+**lo ya cubierto** (Costo realizado + Ahorro por stock asignado — lo mismo que ya se llama "Valor total
+de material usado" en el Resumen, ver más arriba) más **lo que todavía falta cubrir** valorizado al
+precio presupuestado: para cada artículo, `max(0, Cotizado − Comprado − Asignado)` en kg, multiplicado
+por su precio presupuestado — mismo precio que ya se carga por artículo en Detalle, no uno nuevo. Un
+artículo pendiente sin precio presupuestado cargado no se estima (no se inventa un precio) y queda
+contado aparte en el subtítulo del KPI ("N pendiente(s) sin ese precio, no incluido(s)"), para que la
+proyección avise que está incompleta en vez de mostrar un total que parece cerrado sin estarlo. Mismo
+KPI de **Presupuestado (USD)** y **Desvío vs. presupuesto (USD)** que ya existían en el Resumen (13.13,
+más arriba) se sumaron también acá, en la misma pestaña Costo, para no tener que ir y volver entre las
+dos pestañas para ver el total contra el detalle línea por línea.
+
+**Lo que se investigó y se decidió NO sumar, por ahora**: una columna "comprometido" (lo ya pedido/en OC
+pero aún no recibido/pagado) — el "Comprado" de este módulo ya nace de una decisión ya tomada en
+Cotizaciones (ganador confirmado), no hay un estado intermedio real que trackear acá; una fila TOTAL al
+pie de la tabla — se descartó porque "Comprado"/"Asignado" están en la unidad nativa de cada artículo
+(kg, lts, uni, mts mezclados fila por fila) y sumarlos sin convertir daría un total sin sentido, mismo
+problema que ya evitan los "Resumen por proveedor" de Cotizaciones (ver 9.2 punto 8) — los nuevos KPIs
+de cabecera (Presupuestado/Costo realizado/Desvío/Proyectado, todos en USD) ya cumplen ese rol de "total
+a nivel OT" sin ese problema.
+
 ## 14. Módulo: Consolidado de Compras `[DETALLADO]`
 
 Pedido explícito del usuario (2026-10-15), mirando a mano la hoja "Consolidado" que ya arma el informe

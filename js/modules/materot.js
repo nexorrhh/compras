@@ -160,6 +160,30 @@ function calcularPresupuesto(ot, items) {
   return { totalUSD, nConPrecio, nSinPrecio };
 }
 
+// "Costo proyectado total" — versión simplificada de un Estimate at
+// Completion (EAC = AC + ETC): lo ya gastado/cubierto en esta OT (costo
+// comprado + ahorro por stock asignado, ambos ya reales) más una
+// estimación de lo que todavía falta cubrir (Cotizado − Comprado −
+// Asignado, en kg) valorizado al precio presupuestado por artículo —
+// el mismo precio que ya se carga a mano, no uno nuevo. Un artículo
+// pendiente sin precio presupuestado cargado no se estima (no se
+// inventa un precio) y queda contado aparte en `nPendienteSinPrecio`,
+// para que la proyección avise que está incompleta en vez de mostrar
+// un total que parece cerrado sin estarlo.
+function calcularProyectado(ot, items, costoUSD, ahorroUSD) {
+  let pendienteUSD = 0, nPendienteConPrecio = 0, nPendienteSinPrecio = 0;
+  for (const it of items) {
+    const k = kgsItem(it);
+    const faltanteKg = k.cotiz - k.comprado - k.asig;
+    if (faltanteKg <= 0) continue;
+    const precio = precioPresupArticulo(ot, it.cod_articulo);
+    if (precio == null) { nPendienteSinPrecio++; continue; }
+    nPendienteConPrecio++;
+    pendienteUSD += faltanteKg * precio;
+  }
+  return { totalUSD: costoUSD + ahorroUSD + pendienteUSD, pendienteUSD, nPendienteConPrecio, nPendienteSinPrecio };
+}
+
 // Precio unitario (U$S/kg) — texto libre, acepta coma decimal (mismo
 // criterio que `guardarPrecio()` en Cotizaciones: es un número chico,
 // no hace falta sacar puntos de miles como sí hacía falta para el
@@ -1264,9 +1288,33 @@ function renderCosto() {
   const items = agruparPorOTMadre().get(OT_ACTUAL) || [];
 
   const { filas, costoUSD, ahorroUSD, nValorizados, nSinPrecio, nSinTipoCambio } = calcularCosto(items);
+  const presup = calcularPresupuesto(OT_ACTUAL, items);
+  const proyectado = calcularProyectado(OT_ACTUAL, items, costoUSD, ahorroUSD);
 
+  setTxt('mroc_k_presup', presup.nConPrecio > 0 ? fmtMonto(presup.totalUSD, 'USD') : '–');
+  setTxt('mroc_k_presup_sub', presup.nConPrecio > 0
+    ? `${presup.nConPrecio} de ${presup.nConPrecio + presup.nSinPrecio} ítems con precio cargado`
+    : 'Cargá el precio U$S/kg de cada artículo en la pestaña Detalle');
   setTxt('mroc_k_costo', fmtMonto(costoUSD, 'USD'));
+  const desviopresupEl = document.getElementById('mroc_k_desviopresup');
+  if (presup.nConPrecio > 0) {
+    const valorUsado = costoUSD + ahorroUSD;
+    const desvioPresup = valorUsado - presup.totalUSD;
+    const desvioPresupPct = presup.totalUSD > 0 ? (desvioPresup / presup.totalUSD * 100) : null;
+    if (desviopresupEl) {
+      desviopresupEl.textContent = `${desvioPresup > 0 ? '+' : ''}${fmtMonto(desvioPresup, 'USD')}`;
+      desviopresupEl.style.color = desvioPresup > 0.01 ? 'var(--red)' : (desvioPresup < -0.01 ? 'var(--green)' : '');
+    }
+    setTxt('mroc_k_desviopresup_sub', desvioPresupPct == null ? '' : `${desvioPresupPct > 0 ? '+' : ''}${numFmt(desvioPresupPct, 1)}% vs. presupuestado`);
+  } else {
+    if (desviopresupEl) { desviopresupEl.textContent = '–'; desviopresupEl.style.color = ''; }
+    setTxt('mroc_k_desviopresup_sub', '');
+  }
   setTxt('mroc_k_ahorro', fmtMonto(ahorroUSD, 'USD'));
+  setTxt('mroc_k_proyectado', fmtMonto(proyectado.totalUSD, 'USD'));
+  setTxt('mroc_k_proyectado_sub', proyectado.nPendienteSinPrecio > 0
+    ? `Ya gastado + ${proyectado.nPendienteConPrecio} ítem(s) pendiente(s) a precio presup. — ${proyectado.nPendienteSinPrecio} pendiente(s) sin ese precio, no incluido(s)`
+    : 'Ya gastado/asignado + lo que falta cubrir, a precio presupuestado');
   setTxt('mroc_k_valorizados', nValorizados);
   setTxt('mroc_k_sinprecio', nSinPrecio);
   setTxt('mroc_k_sintc', nSinTipoCambio);
@@ -1301,9 +1349,10 @@ function renderCosto() {
             <td>${escAttr(it.descripcion || '')}</td>
             <td>${escAttr(it.agrupacion || '–')}</td>
             ${celdaCotiz}
+            ${celdaPresup}
             <td style="text-align:right">${numFmt(it.comprado)} ${escAttr(it.ume || '')}</td>
             <td colspan="2" style="text-align:center;color:var(--muted)" title="${it.ume ? `Esta OT lo mide en ${escAttr(it.ume)}` : ''}">${f.motivo === 'unidad distinta' ? '⚠️ unidad distinta' : 'Sin cotización'}</td>
-            ${celdaPresup}
+            <td style="text-align:center;color:var(--muted)">–</td>
             <td style="text-align:center;color:var(--muted)">–</td>
             <td style="text-align:right">${numFmt(it.cant_asig)} ${escAttr(it.ume || '')}</td>
             <td style="text-align:center;color:var(--muted)">–</td>
@@ -1315,10 +1364,11 @@ function renderCosto() {
             <td>${escAttr(it.descripcion || '')}</td>
             <td>${escAttr(it.agrupacion || '–')}</td>
             ${celdaCotiz}
+            ${celdaPresup}
             <td style="text-align:right">${numFmt(f.cant.comprado)} ${escAttr(f.cant.unidad)}</td>
             <td style="text-align:right">${fmtMonto(f.precioInfo.precio_unitario, f.precioInfo.moneda)}</td>
             <td style="text-align:center;color:var(--muted)" title="No hay cotización del dólar cargada para la fecha de esta compra todavía">⚠️ sin T.C. de su fecha</td>
-            ${celdaPresup}
+            <td style="text-align:center;color:var(--muted)">–</td>
             <td style="text-align:center;color:var(--muted)">–</td>
             <td style="text-align:right">${numFmt(f.cant.asig)} ${escAttr(f.cant.unidad)}</td>
             <td style="text-align:center;color:var(--muted)">–</td>
@@ -1338,21 +1388,24 @@ function renderCosto() {
         const desvio = valorPresupUSD != null ? f.costoCompradoUSD - valorPresupUSD : null;
         const desvioTxt = desvio == null ? '–' : `${desvio > 0 ? '+' : ''}${fmtMonto(desvio, 'USD')}`;
         const desvioColor = desvio == null ? '' : (desvio > 0.01 ? 'var(--red)' : (desvio < -0.01 ? 'var(--green)' : ''));
+        const desvioPct = (desvio != null && valorPresupUSD > 0) ? (desvio / valorPresupUSD * 100) : null;
+        const desvioPctTxt = desvioPct == null ? '–' : `${desvioPct > 0 ? '+' : ''}${numFmt(desvioPct, 1)}%`;
         return `<tr>
           <td>${escAttr(it.cod_articulo)}</td>
           <td>${escAttr(it.descripcion || '')}</td>
           <td>${escAttr(it.agrupacion || '–')}</td>
           ${celdaCotiz}
+          ${celdaPresup}
           <td style="text-align:right">${numFmt(f.cant.comprado)} ${escAttr(f.cant.unidad)}</td>
           <td style="text-align:right" title="${precioTitle}">${precioUnitUSD != null ? fmtMonto(precioUnitUSD, 'USD') : '⚠️ sin T.C.'}${f.precioEspecifico ? ' <span style="color:var(--accent)">🎯</span>' : ''}</td>
           <td style="text-align:right" title="${tcTitle}">${fmtMonto(f.costoCompradoUSD, 'USD')}</td>
-          ${celdaPresup}
           <td style="text-align:right;color:${desvioColor}">${desvioTxt}</td>
+          <td style="text-align:right;color:${desvioColor}">${desvioPctTxt}</td>
           <td style="text-align:right">${numFmt(f.cant.asig)} ${escAttr(f.cant.unidad)}</td>
           <td style="text-align:right" title="${tcTitle}">${fmtMonto(f.ahorroStockUSD, 'USD')}</td>
         </tr>`;
       }).join('');
-    tbody.innerHTML = filasHtml || `<tr><td colspan="12" style="text-align:center;padding:18px;color:var(--muted)">Sin ítems</td></tr>`;
+    tbody.innerHTML = filasHtml || `<tr><td colspan="13" style="text-align:center;padding:18px;color:var(--muted)">Sin ítems</td></tr>`;
   }
 
   renderHorasOT();
