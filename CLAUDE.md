@@ -2987,6 +2987,25 @@ problema que ya evitan los "Resumen por proveedor" de Cotizaciones (ver 9.2 punt
 de cabecera (Presupuestado/Costo realizado/Desvío/Proyectado, todos en USD) ya cumplen ese rol de "total
 a nivel OT" sin ese problema.
 
+**El presupuesto no siempre es por KG** (corregido 2026-11-02, caso real reportado por el usuario viendo
+la OT 617: la bulonería — tuercas, bulones — aparecía con "0 kg" cotizado, y cargarle un precio en
+U$S/kg contra esa cantidad siempre daba U$S 0; "no es representativo, los bulones no van a tener kg").
+La decisión original de la sección 13.13 ("siempre U$S por KG") asumía el caso típico del rubro
+(perfiles/chapas/ángulos), pero Capataz directamente no calcula ningún peso para artículos que se
+cuentan por unidad o se miden por litro (bulonería, pintura) — para esos, `kg_cotiz`/`kg_plan`/etc. son
+sistemáticamente 0, sin importar cuánta actividad real tenga el artículo. `tieneKgEquivalente(it)` en
+`js/modules/materot.js` detecta esto mirando si CUALQUIERA de las 7 etapas en kg (Cotizado/Planificado/
+Solicitado/Comprado/Asignado/Recibido/Entregado) es distinta de cero — si ninguna lo es, el artículo no
+tiene un peso real que trackear y `cantidadesPresup(it)` pasa a usar su **cantidad y unidad nativas**
+(`cant_cotiz`/`comprado`/`cant_asig` + `ume`, el mismo criterio que ya usa `cantidadParaCosto()` del
+lado de "Costo realizado" — ver 13.9 — cuando el precio ganador de Cotizaciones no está en KGS). Si en
+cambio el artículo sí tiene algún kg real en alguna etapa (perfiles/chapas/ángulos, con una conversión
+física real a peso aunque esta OT los mida nativamente en MTS/MT2), se sigue presupuestando por KG, sin
+cambios. `calcularPresupuesto()`/`calcularProyectado()` y las celdas de "Cotizado"/"Precio presup."/
+"Valorizado presup." (tanto en Detalle como en Costo) usan esta misma función — la unidad real de cada
+fila se muestra al lado del precio/cantidad (ej. "U$S 1,20/uni" en vez de forzar "/kg"), para que quede
+claro en qué unidad se está cargando/leyendo cada precio.
+
 ## 14. Módulo: Consolidado de Compras `[DETALLADO]`
 
 Pedido explícito del usuario (2026-10-15), mirando a mano la hoja "Consolidado" que ya arma el informe

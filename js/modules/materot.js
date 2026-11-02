@@ -126,10 +126,7 @@ function setTxt(id, v) { const el = document.getElementById(id); if (el) el.text
 // Presupuesto en precio por OT, cargado POR ARTÍCULO (ver CLAUDE.md
 // 13.13) — pedido explícito del usuario tras probar la primera versión
 // (un monto único por OT): "lo que yo quiero es poner por artículo los
-// precios en USD a los que se cotizó, ese dato lo tengo". El precio
-// siempre es **U$S por KG** (preguntado explícitamente — el rubro se
-// maneja mayormente por peso, mismo criterio que el cruce con
-// Cotizaciones, ver 13.9 "siempre se tiene que tomar el KG") y se
+// precios en USD a los que se cotizó, ese dato lo tengo". El precio se
 // guarda directo en dólares — no hay conversión de por medio, a
 // diferencia del monto único que sí necesitaba resolver una fecha/dólar
 // (esa primera versión se descartó).
@@ -143,19 +140,48 @@ function precioPresupArticulo(ot, codArticulo) {
   return p != null ? Number(p) : null;
 }
 
+// Unidad de referencia del presupuesto por artículo — **no siempre KG**
+// (corregido 2026-11-02, caso real reportado por el usuario: bulonería
+// mostraba "0 kg" en un ítem que nunca se pesa, lo cargado en
+// U$S/kg contra 0 kg siempre da U$S 0, "no es representativo"). Un
+// artículo que SÍ tiene un kg equivalente real en alguna etapa (perfiles/
+// chapas/ángulos, medidos nativamente en MTS/MT2 pero con una
+// conversión física real a peso — ver 13.2) sigue presupuestándose por
+// KG, mismo criterio que el cruce con Cotizaciones (13.9, "siempre KG").
+// Un artículo sin ningún kg en ninguna etapa (bulonería/consumibles
+// contados por unidad o litro — Capataz directamente no calcula un peso
+// para ellos) usa en cambio su cantidad y unidad NATIVAS
+// (`cant_cotiz`/`comprado`/`cant_asig` + `ume`), igual que ya hace
+// `cantidadParaCosto()` del lado de "Costo realizado" cuando el precio
+// ganador no está cotizado en KGS.
+function tieneKgEquivalente(it) {
+  const k = kgsItem(it);
+  return k.cotiz > 0 || k.plan > 0 || k.solic > 0 || k.comprado > 0 || k.asig > 0 || k.recibido > 0 || k.entregado > 0;
+}
+
+function cantidadesPresup(it) {
+  if (tieneKgEquivalente(it)) {
+    const k = kgsItem(it);
+    return { cotiz: k.cotiz, comprado: k.comprado, asig: k.asig, unidad: 'KGS' };
+  }
+  return { cotiz: Number(it.cant_cotiz || 0), comprado: Number(it.comprado || 0), asig: Number(it.cant_asig || 0), unidad: it.ume || '' };
+}
+
 // Total presupuestado de una OT: suma, por cada artículo con precio
-// cargado, `kg_cotiz × precio` (la cantidad que Presupuestos dijo que
-// iba a necesitar, al precio que Presupuestos cotizó — las dos cosas
-// vienen de la misma fuente) — mismo criterio de "no inventar" de
-// siempre: un artículo sin precio cargado no entra en la suma, se
-// cuenta aparte en `nSinPrecio` para que la cobertura quede visible.
+// cargado, `cantidad cotizada × precio` (la cantidad que Presupuestos
+// dijo que iba a necesitar, en KG o en la unidad nativa del artículo
+// según corresponda — ver `cantidadesPresup()` — al precio que
+// Presupuestos cotizó, las dos cosas vienen de la misma fuente) —
+// mismo criterio de "no inventar" de siempre: un artículo sin precio
+// cargado no entra en la suma, se cuenta aparte en `nSinPrecio` para
+// que la cobertura quede visible.
 function calcularPresupuesto(ot, items) {
   let totalUSD = 0, nConPrecio = 0, nSinPrecio = 0;
   for (const it of items) {
     const precio = precioPresupArticulo(ot, it.cod_articulo);
     if (precio == null) { nSinPrecio++; continue; }
     nConPrecio++;
-    totalUSD += kgsItem(it).cotiz * precio;
+    totalUSD += cantidadesPresup(it).cotiz * precio;
   }
   return { totalUSD, nConPrecio, nSinPrecio };
 }
@@ -164,7 +190,8 @@ function calcularPresupuesto(ot, items) {
 // Completion (EAC = AC + ETC): lo ya gastado/cubierto en esta OT (costo
 // comprado + ahorro por stock asignado, ambos ya reales) más una
 // estimación de lo que todavía falta cubrir (Cotizado − Comprado −
-// Asignado, en kg) valorizado al precio presupuestado por artículo —
+// Asignado, en KG o en unidad nativa según corresponda — ver
+// `cantidadesPresup()`) valorizado al precio presupuestado por artículo —
 // el mismo precio que ya se carga a mano, no uno nuevo. Un artículo
 // pendiente sin precio presupuestado cargado no se estima (no se
 // inventa un precio) y queda contado aparte en `nPendienteSinPrecio`,
@@ -173,13 +200,13 @@ function calcularPresupuesto(ot, items) {
 function calcularProyectado(ot, items, costoUSD, ahorroUSD) {
   let pendienteUSD = 0, nPendienteConPrecio = 0, nPendienteSinPrecio = 0;
   for (const it of items) {
-    const k = kgsItem(it);
-    const faltanteKg = k.cotiz - k.comprado - k.asig;
-    if (faltanteKg <= 0) continue;
+    const c = cantidadesPresup(it);
+    const faltante = c.cotiz - c.comprado - c.asig;
+    if (faltante <= 0) continue;
     const precio = precioPresupArticulo(ot, it.cod_articulo);
     if (precio == null) { nPendienteSinPrecio++; continue; }
     nPendienteConPrecio++;
-    pendienteUSD += faltanteKg * precio;
+    pendienteUSD += faltante * precio;
   }
   return { totalUSD: costoUSD + ahorroUSD + pendienteUSD, pendienteUSD, nPendienteConPrecio, nPendienteSinPrecio };
 }
@@ -1133,8 +1160,10 @@ function renderDetalle() {
         const k = kgsItem(it);
         const otItem = (it.n_ot || '').trim();
         const precioPresup = precioPresupArticulo(OT_ACTUAL, it.cod_articulo);
+        const cPresup = cantidadesPresup(it);
+        const unidadPresup = cPresup.unidad === 'KGS' ? 'kg' : (cPresup.unidad || 'uni').toLowerCase();
         const valorPresup = precioPresup != null
-          ? `<div style="font-size:10px;color:var(--muted);white-space:nowrap">≈ ${fmtMonto(k.cotiz * precioPresup, 'USD')}</div>`
+          ? `<div style="font-size:10px;color:var(--muted);white-space:nowrap">≈ ${fmtMonto(cPresup.cotiz * precioPresup, 'USD')}</div>`
           : '';
         return `<tr>
           <td>${otItem && otItem !== OT_ACTUAL ? `<span class="badge" title="Ítem de la OT adicional ${escAttr(formatOT(otItem))}, agrupada acá">${escAttr(formatOT(otItem))}</span>` : escAttr(formatOT(otItem) || '–')}</td>
@@ -1145,7 +1174,8 @@ function renderDetalle() {
           <td style="text-align:right">${numFmt(k.cotiz)}</td>
           <td style="white-space:nowrap">
             <input type="text" inputmode="decimal" class="mrod-presup-input" data-cod="${escAttr(it.cod_articulo)}"
-              value="${precioPresup != null ? precioPresup : ''}" placeholder="—" style="width:70px;text-align:right">${valorPresup}
+              value="${precioPresup != null ? precioPresup : ''}" placeholder="—" style="width:70px;text-align:right" title="U$S por ${unidadPresup}">
+            <span style="font-size:10px;color:var(--muted)">/${unidadPresup}</span>${valorPresup}
           </td>
           <td style="text-align:right">${numFmt(k.plan)}</td>
           <td style="text-align:right">${numFmt(k.solic)}</td>
@@ -1341,19 +1371,25 @@ function renderCosto() {
         const it = f.it;
         // Comprado vs. Cotizado, también en esta tabla línea por línea
         // (pedido explícito del usuario, 2026-11-02): tanto en cantidad
-        // (Cotizado en kg, lo que Presupuestos dijo que iba a necesitar —
-        // ver 13.1) como en plata (Precio/Valorizado presupuestado, el
-        // precio U$S/kg que se carga por artículo en la pestaña Detalle,
-        // ver 13.13) — contra el Comprado/Precio unit./Costo comprado
-        // reales de esta misma fila. El presupuesto ya está en dólares,
-        // no necesita tipo de cambio — por eso se muestra igual aunque la
-        // fila esté "sin cotización"/"sin T.C." del lado de lo comprado.
-        const kCotiz = kgsItem(it).cotiz;
+        // (Cotizado, lo que Presupuestos dijo que iba a necesitar — ver
+        // 13.1) como en plata (Precio/Valorizado presupuestado, el precio
+        // que se carga por artículo en la pestaña Detalle, ver 13.13) —
+        // contra el Comprado/Precio unit./Costo comprado reales de esta
+        // misma fila. El presupuesto ya está en dólares, no necesita tipo
+        // de cambio — por eso se muestra igual aunque la fila esté "sin
+        // cotización"/"sin T.C." del lado de lo comprado. La unidad de
+        // referencia no siempre es KG — un artículo sin kg equivalente
+        // real (bulonería, consumibles contados por unidad/litro, ver
+        // `cantidadesPresup()`) se presupuesta en su unidad nativa, para
+        // no multiplicar un precio cargado contra una cantidad en kg que
+        // nunca va a ser otra cosa que cero.
+        const cPresup = cantidadesPresup(it);
+        const unidadPresupLbl = cPresup.unidad === 'KGS' ? 'kg' : (cPresup.unidad || 'uni').toLowerCase();
         const precioPresup = precioPresupArticulo(OT_ACTUAL, it.cod_articulo);
-        const valorPresupUSD = precioPresup != null ? kCotiz * precioPresup : null;
-        const celdaCotiz = `<td style="text-align:right">${numFmt(kCotiz)} kg</td>`;
+        const valorPresupUSD = precioPresup != null ? cPresup.cotiz * precioPresup : null;
+        const celdaCotiz = `<td style="text-align:right">${numFmt(cPresup.cotiz)} ${unidadPresupLbl}</td>`;
         const celdaPresup = precioPresup != null
-          ? `<td style="text-align:right">${numFmt(precioPresup, 3)}</td><td style="text-align:right">${fmtMonto(valorPresupUSD, 'USD')}</td>`
+          ? `<td style="text-align:right">${numFmt(precioPresup, 3)}<span style="color:var(--muted)">/${unidadPresupLbl}</span></td><td style="text-align:right">${fmtMonto(valorPresupUSD, 'USD')}</td>`
           : `<td colspan="2" style="text-align:center;color:var(--muted)">Sin presupuesto</td>`;
 
         if (!f.precioInfo) {
