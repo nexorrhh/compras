@@ -2932,6 +2932,14 @@ había presupuestado para ese artículo) — en esos casos "Desvío" queda en "�
 comprado real con qué comparar, no se inventa nada. Un artículo sin precio presupuestado cargado muestra
 "Sin presupuesto" en vez de "0" o un desvío inventado.
 
+**"Precio unit." siempre en dólares** (corregido el mismo día, pedido explícito del usuario: "pasame
+todo a dólares es un quilombo así" — la columna mostraba el precio en la moneda REAL cargada en
+Cotizaciones para cada fila, mezclando "$" y "U$S" según el caso, a diferencia de "Costo comprado (USD)"
+que sí ya estaba siempre convertido). Ahora "Precio unit. (USD)" también convierte un precio en ARS con
+el mismo dólar oficial de la fecha de esa compra (`f.tcUsado`, el mismo que ya usa "Costo comprado") — el
+precio original en su moneda nativa no se pierde, queda en el tooltip de la celda. El 🎯 (precio
+cotizado específicamente para esta OT, ver 13.9) se mantiene al lado del valor ya convertido.
+
 ## 14. Módulo: Consolidado de Compras `[DETALLADO]`
 
 Pedido explícito del usuario (2026-10-15), mirando a mano la hoja "Consolidado" que ya arma el informe

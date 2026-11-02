@@ -1327,6 +1327,14 @@ function renderCosto() {
         const tcTitle = f.precioInfo.moneda === 'ARS' && f.tcUsado
           ? `Convertido con el dólar oficial del ${fmt(f.tcUsado.fecha)} ($${numFmt(f.tcUsado.venta)})`
           : 'Ya estaba cotizado en dólares';
+        // Precio unit. siempre en dólares acá (pedido explícito del
+        // usuario, 2026-11-02: "pasame todo a dólares es un quilombo
+        // así" — antes mostraba la moneda REAL cargada en Cotizaciones
+        // ($ o U$S según el caso), mezclando símbolos fila por fila en
+        // esta columna. El precio original en su moneda nativa queda en
+        // el tooltip, no se pierde, solo deja de imprimirse en pantalla.
+        const precioUnitUSD = f.precioInfo.moneda === 'USD' ? Number(f.precioInfo.precio_unitario) : (f.tcUsado ? Number(f.precioInfo.precio_unitario) / f.tcUsado.venta : null);
+        const precioTitle = `Proveedor ganador: ${escAttr(f.precioInfo.proveedor_nombre)}${f.precioEspecifico ? ' — precio cotizado específicamente para esta OT' : ' — precio más reciente (de otra OT/solicitud)'} — ${f.precioInfo.moneda === 'ARS' ? `original ${fmtMonto(f.precioInfo.precio_unitario, 'ARS')}, ${tcTitle.toLowerCase()}` : tcTitle}`;
         const desvio = valorPresupUSD != null ? f.costoCompradoUSD - valorPresupUSD : null;
         const desvioTxt = desvio == null ? '–' : `${desvio > 0 ? '+' : ''}${fmtMonto(desvio, 'USD')}`;
         const desvioColor = desvio == null ? '' : (desvio > 0.01 ? 'var(--red)' : (desvio < -0.01 ? 'var(--green)' : ''));
@@ -1336,7 +1344,7 @@ function renderCosto() {
           <td>${escAttr(it.agrupacion || '–')}</td>
           ${celdaCotiz}
           <td style="text-align:right">${numFmt(f.cant.comprado)} ${escAttr(f.cant.unidad)}</td>
-          <td style="text-align:right" title="Proveedor ganador: ${escAttr(f.precioInfo.proveedor_nombre)}${f.precioEspecifico ? ' — precio cotizado específicamente para esta OT' : ' — precio más reciente (de otra OT/solicitud)'}">${fmtMonto(f.precioInfo.precio_unitario, f.precioInfo.moneda)}${f.precioEspecifico ? ' <span style="color:var(--accent)">🎯</span>' : ''}</td>
+          <td style="text-align:right" title="${precioTitle}">${precioUnitUSD != null ? fmtMonto(precioUnitUSD, 'USD') : '⚠️ sin T.C.'}${f.precioEspecifico ? ' <span style="color:var(--accent)">🎯</span>' : ''}</td>
           <td style="text-align:right" title="${tcTitle}">${fmtMonto(f.costoCompradoUSD, 'USD')}</td>
           ${celdaPresup}
           <td style="text-align:right;color:${desvioColor}">${desvioTxt}</td>
