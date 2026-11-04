@@ -1050,28 +1050,55 @@ function sincronizarResumenItems() {
   ];
 }
 
+// Caso real del usuario (2026-11-04): confirmó la compra de un ítem y
+// después decidió no hacerla — lo marcó "No comprar" pero el tablero "no
+// actualizaba": el toggle solo tocaba `a_comprar` y nunca repintaba el
+// panel "Resumen por proveedor" (quedaba con los totales viejos hasta que
+// alguna OTRA acción disparara un render), y si el ítem ya estaba
+// `confirmado`, se quedaba mostrando "✅ Confirmada" para una compra que ya
+// no se iba a hacer — podía filtrarse como compra real en Consolidado de
+// Compras (sección 14, que solo filtra por `confirmado`, ver 14.4) o en
+// Materiales OT. Marcar "No comprar" ahora deshace esa confirmación (mismo
+// criterio que deshacerConfirmacion(), sin tocar el ganador elegido — si
+// se vuelve a marcar "Sí" más adelante, no hace falta re-elegirlo) y
+// repinta el resumen igual que el resto de las acciones del módulo.
 async function toggleComprarFila(itemId) {
   const item = ITEMS.find(i => i.id === itemId);
   if (!item) return;
   const nuevo = !item.a_comprar;
-  const { error } = await SB.from('compras_cotizaciones_items').update({ a_comprar: nuevo }).eq('id', itemId);
+  const patch = { a_comprar: nuevo };
+  if (!nuevo && item.confirmado) { patch.confirmado = false; patch.confirmado_en = null; }
+  const { error } = await SB.from('compras_cotizaciones_items').update(patch).eq('id', itemId);
   if (error) { toast(error.message, 'er'); return; }
-  item.a_comprar = nuevo;
+  Object.assign(item, patch);
+  if (patch.confirmado === false) toast('Se marcó "No comprar" — se deshizo la confirmación de compra de este ítem');
   sincronizarResumenItems();
   renderTablaComparativa();
+  renderResumenProveedores();
 }
 
 async function marcarComprarSeleccionados(valor) {
   const ids = Array.from(document.querySelectorAll('.cot-check-row:checked')).map(c => c.dataset.id);
   if (!ids.length) { toast('Seleccioná al menos un ítem', 'er'); return; }
+  // Mismo criterio que toggleComprarFila(): marcar "No comprar" en bloque
+  // deshace la confirmación de los que ya estaban confirmados.
+  const aDesconfirmar = !valor ? ITEMS.filter(it => ids.includes(it.id) && it.confirmado).map(it => it.id) : [];
   for (let i = 0; i < ids.length; i += 100) {
     const { error } = await SB.from('compras_cotizaciones_items').update({ a_comprar: valor }).in('id', ids.slice(i, i + 100));
     if (error) { toast(error.message, 'er'); return; }
   }
-  ITEMS.forEach(it => { if (ids.includes(it.id)) it.a_comprar = valor; });
+  for (let i = 0; i < aDesconfirmar.length; i += 100) {
+    const { error } = await SB.from('compras_cotizaciones_items').update({ confirmado: false, confirmado_en: null }).in('id', aDesconfirmar.slice(i, i + 100));
+    if (error) { toast(error.message, 'er'); return; }
+  }
+  ITEMS.forEach(it => {
+    if (ids.includes(it.id)) it.a_comprar = valor;
+    if (aDesconfirmar.includes(it.id)) { it.confirmado = false; it.confirmado_en = null; }
+  });
   sincronizarResumenItems();
-  toast(`✓ ${ids.length} ítem${ids.length === 1 ? '' : 's'} marcado${ids.length === 1 ? '' : 's'} como "${valor ? 'a comprar' : 'no comprar'}"`);
+  toast(`✓ ${ids.length} ítem${ids.length === 1 ? '' : 's'} marcado${ids.length === 1 ? '' : 's'} como "${valor ? 'a comprar' : 'no comprar'}"${aDesconfirmar.length ? ` (${aDesconfirmar.length} confirmación${aDesconfirmar.length === 1 ? '' : 'es'} deshecha${aDesconfirmar.length === 1 ? '' : 's'})` : ''}`);
   renderTablaComparativa();
+  renderResumenProveedores();
 }
 
 // ------------------------------------------------------------
