@@ -1382,6 +1382,75 @@ function cheapestForItem(itemId, tc = null) {
 }
 
 // ------------------------------------------------------------
+// Aviso antes de guardar un precio sospechoso — caso real del usuario
+// (2026-11-03): varios perfiles/chapas quedaron cargados en $ (ARS) en vez
+// de U$S por dejar el selector de moneda sin cambiar (ver CLAUDE.md 9.2
+// punto 6) — el precio convertido daba ≈U$S 0,0008/kg, y la fila mostraba
+// un "+155.900%" de variación sin que nadie lo notara hasta mucho después.
+// El aviso pasivo de 9.7 (celda naranja/verde) ya existía pero es fácil de
+// pasar por alto con muchas filas — esto agrega una interrupción real
+// (confirm()) en dos casos, sin umbral para la coloración de 9.7 (que
+// sigue igual) pero SÍ con un umbral acá a propósito, para no interrumpir
+// con cada variación real de precio, solo las que huelen a error de carga:
+//   1) Moneda atípica para ESE proveedor — si el 80%+ de su historial
+//      (con al menos 5 precios cargados) está en una moneda y este precio
+//      se está por cargar en la otra, exactamente el pedido del usuario
+//      ("aceros coco siempre me cotiza en dólares").
+//   2) Variación extrema vs. el histórico de este artículo (misma fuente
+//      que 9.7, `historialParaComparar()`) — más de 20 veces más caro o
+//      más barato (equivalente a ±1900%), un patrón típico de error de
+//      moneda o de coma/punto decimal, no de un movimiento real de precio.
+// Solo vive acá (ficha + modal mCOTPROV, los dos únicos llamadores de
+// guardarPrecio()) — mismo alcance que el aviso de 9.7, que a propósito
+// tampoco se sumó a "Pendientes (todas)" (preguntado explícitamente en su
+// momento, el usuario eligió que no).
+// ------------------------------------------------------------
+let PROVEEDOR_MONEDA_HABITUAL = null; // Map proveedor_id -> 'ARS'|'USD' (null = sin costumbre clara todavía), cacheado para toda la sesión
+
+async function monedaHabitualProveedores() {
+  if (PROVEEDOR_MONEDA_HABITUAL) return PROVEEDOR_MONEDA_HABITUAL;
+  PROVEEDOR_MONEDA_HABITUAL = new Map();
+  const { data, error } = await fetchAll(() => SB.from('compras_cotizaciones_precios').select('proveedor_id,moneda'));
+  if (error || !data) return PROVEEDOR_MONEDA_HABITUAL;
+  const conteo = new Map();
+  for (const p of data) {
+    if (!p.proveedor_id || !p.moneda) continue;
+    const c = conteo.get(p.proveedor_id) || { ARS: 0, USD: 0 };
+    c[p.moneda] = (c[p.moneda] || 0) + 1;
+    conteo.set(p.proveedor_id, c);
+  }
+  for (const [id, c] of conteo) {
+    const total = c.ARS + c.USD;
+    if (total < 5) continue; // poca historia todavía — no alcanza para hablar de una "costumbre"
+    if (c.USD / total >= 0.8) PROVEEDOR_MONEDA_HABITUAL.set(id, 'USD');
+    else if (c.ARS / total >= 0.8) PROVEEDOR_MONEDA_HABITUAL.set(id, 'ARS');
+  }
+  return PROVEEDOR_MONEDA_HABITUAL;
+}
+
+async function precioEsPlausible(itemId, proveedorId, precio, moneda) {
+  const nombre = (PROVEEDORES.find(p => p.id === proveedorId) || {}).nombre || 'Este proveedor';
+  const habitual = (await monedaHabitualProveedores()).get(proveedorId);
+  if (habitual && habitual !== moneda) {
+    return confirm(`${nombre} casi siempre cotiza en ${habitual === 'USD' ? 'dólares (U$S)' : 'pesos ($)'}, y este precio se está cargando en ${moneda === 'USD' ? 'dólares (U$S)' : 'pesos ($)'}.\n\n¿Confirmás que la moneda es correcta?`);
+  }
+  const item = ITEMS.find(i => i.id === itemId);
+  const comp = item ? historialParaComparar(item.cod_articulo, proveedorId) : null;
+  if (comp && comp.precioUSD > 0) {
+    const tc = tipoCambioActual();
+    const precioUSD = moneda === 'USD' ? precio : (tc ? precio / tc : null);
+    if (precioUSD != null) {
+      const ratio = precioUSD / comp.precioUSD;
+      if (ratio > 20 || ratio < 0.05) {
+        const otroProv = comp.mismoProveedor ? '' : ` (${comp.proveedor_nombre})`;
+        return confirm(`Este precio (${moneda === 'USD' ? 'U$S' : '$'} ${precio}) es ${ratio > 1 ? 'muchísimo más caro' : 'muchísimo más barato'} que la última cotización registrada para este artículo${otroProv}: ≈U$S ${numFmt(comp.precioUSD, 3)} el ${fmt(comp.fecha)}.\n\nEs el patrón típico de cargar mal la moneda ($/U$S) o el número.\n\n¿Confirmás que el valor y la moneda son correctos?`);
+      }
+    }
+  }
+  return true;
+}
+
+// ------------------------------------------------------------
 // Devolución de precios para un proveedor — pedido explícito del usuario
 // (2026-10-29): un proveedor pidió feedback de por qué no ganó, y hace
 // falta poder pasarle un PDF con SU precio contra el mejor conseguido.
@@ -1539,6 +1608,7 @@ async function guardarPrecio(itemId, proveedorId, valorStr) {
     const precio = Number(v.replace(',', '.'));
     if (!isFinite(precio)) { toast('Precio inválido', 'er'); return; }
     const moneda = COL_MONEDA[proveedorId] || 'ARS';
+    if (!(await precioEsPlausible(itemId, proveedorId, precio, moneda))) { toast('Precio no guardado — revisá el valor/moneda', 'er'); return; }
     const { data, error } = await SB.from('compras_cotizaciones_precios')
       .upsert({ item_id: itemId, proveedor_id: proveedorId, precio_unitario: precio, moneda }, { onConflict: 'item_id,proveedor_id' })
       .select().single();

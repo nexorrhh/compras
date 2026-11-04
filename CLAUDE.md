@@ -1596,6 +1596,38 @@ artículos, no tiene sentido traerlo si nunca se usa el buscador. Si ninguna de 
 el formulario sigue funcionando igual (sin sugerencias) — el campo siempre admite texto libre, por si el
 artículo urgente todavía no apareció en ningún Stock/Materiales OT cargado.
 
+**Aviso ANTES de guardar un precio sospechoso** (caso real del usuario, 2026-11-03): varios perfiles/
+chapas (`AN13/4M1/8`, `CH1/2F24`, `CUADR1/2AE1010`, `PERUPN120`, `PERUPN260`, `PERW250X17.9`,
+`PERW31021F-36`, además de `JUNT20AIS316` de otro proveedor, este último ya **confirmado**) quedaron
+cargados el 30/10/2026 con el selector de moneda dejado en "$" (ARS) en vez de "U$S" — mismo número
+tipeado, pero sin cambiar el selector del encabezado esa sesión completa (ver 9.2 punto 6). El resultado:
+un precio real de ≈U$S 1,20/kg quedaba guardado como "$1,20 ARS", que convertido daba ≈U$S 0,0008 — y
+la celda de "💡 Estimar gasto"/la variación de 9.7 mostraban un número absurdo ("+155.900%") que pasó
+desapercibido durante días. Se corrigieron los 14 precios afectados a mano (reetiquetar `moneda` de ARS
+a USD sin tocar `precio_unitario`, verificado antes contra `compras_cotizaciones_precios` por API) y el
+usuario pidió una regla que "saque estos errores" en vez de confiar en notar el aviso pasivo de 9.7.
+
+`precioEsPlausible()` en `js/modules/cotizaciones.js`, llamada desde `guardarPrecio()` (el único punto de
+guardado compartido por la comparativa y el modal `mCOTPROV`, ver 9.2 punto 6 — **no** se sumó a
+"Pendientes (todas)"/`guardarPrecioPendiente()`, mismo alcance que ya se decidió para el aviso de 9.7)
+interrumpe con un `confirm()` **antes** de guardar, en dos casos:
+1. **Moneda atípica para ese proveedor**: `monedaHabitualProveedores()` cuenta, para todo el historial de
+   `compras_cotizaciones_precios` (cacheado una vez por sesión, no por ficha), qué moneda usa cada
+   proveedor — si el 80%+ de sus precios (con al menos 5 cargados) está en una moneda y el precio nuevo
+   se está por cargar en la otra, avisa. Es la regla que pidió el usuario explícitamente ("aceros coco
+   siempre me cotiza en dólares").
+2. **Variación extrema vs. historial** (mismo dato que ya usa el resaltado pasivo de 9.7,
+   `historialParaComparar()`, sin agregar ninguna consulta nueva): si el precio convertido a USD es más
+   de 20 veces más caro o más barato que la última cotización conocida de ese artículo, avisa — un umbral
+   que 9.7 **no** tiene a propósito (ahí cualquier variación real se muestra, sin umbral de negocio) pero
+   acá sí hace falta uno para no interrumpir con cada variación de precio real, solo con las que huelen a
+   error de carga (moneda equivocada, coma/punto corrido).
+
+Cancelar el `confirm()` no guarda el precio (mismo criterio que "Precio inválido": se avisa con un toast
+y se corta ahí, sin re-pintar la tabla) — el usuario puede corregir el valor/moneda y volver a intentar.
+Un proveedor sin costumbre de moneda clara (menos de 5 precios históricos, o mezcla pareja de las dos)
+no dispara el primer chequeo — no se inventa una costumbre que todavía no existe.
+
 ### 9.3 Modelo de datos — `sql/013_cotizaciones.sql` + `sql/014_cotizaciones_bloques.sql` + `sql/015_cotizaciones_confirmado.sql` + `sql/016_cotizaciones_condicion_pago.sql` + `sql/017_cotizaciones_duplicado_aceptado.sql` + `sql/018_articulos_largo_barra.sql` + `sql/027_cotizaciones_precio_alternativo.sql`
 
 Cinco tablas (ver `sql/schema.sql` para el estado final), sin RLS (mismo criterio que el resto de
