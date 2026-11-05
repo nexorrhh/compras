@@ -3038,6 +3038,40 @@ cambios. `calcularPresupuesto()`/`calcularProyectado()` y las celdas de "Cotizad
 fila se muestra al lado del precio/cantidad (ej. "U$S 1,20/uni" en vez de forzar "/kg"), para que quede
 claro en qué unidad se está cargando/leyendo cada precio.
 
+**Carga masiva puntual desde los PDF de presupuesto reales (2026-11-05):** pedido explícito del usuario
+— "en la carpeta OT tiene las OT con su número, dentro de cada carpeta hay un archivo que se llama 3,
+en ese está el valor de cada ítem con el que se cotizó, ¿podrás agregarmelo a la tabla de Supabase?".
+Confirma y resuelve la pregunta abierta de la sección 16 ("¿tiene el PDF un formato lo bastante regular
+como para parsearlo?") — **sí**: cada carpeta `OT/<número>/` tiene 5 PDF numerados (`1`-`5`) que son el
+paquete estándar de reportes de presupuesto de Tango (RESUMEN GENERAL / ITEMS DEL PROYECTO / PLANILLA DE
+MATERIALES DE ITEMS / PRESUPUESTO DE PROYECTO / PLANILLA DE MATERIALES DE ITEMS TOTAL — códigos de
+reporte Tango `PI200A`-`PI200E`); el `3` es siempre la Planilla de Materiales de Ítems, con una tabla
+Código/Descripción/Cantidad/UME/Precio/Importe/KGS por cada "Item" (sub-parte) de la OT — exactamente el
+precio U$S por unidad de compra que se carga en esta sección (confirmado: `Moneda: DOL` en el encabezado
+de cada Item, así que `Precio` ya está en dólares, sin conversión).
+
+Se procesaron a mano las 15 carpetas existentes (546, 550, 551, 563, 582, 583, 584, 592, 595, 596, 597,
+598, 602, 604, 617) — fue una carga puntual vía API directa a `compras_materot_presupuesto_precios`
+(`upsert` por lotes), **no** una funcionalidad nueva del tablero (no hay botón "Cargar PDF" en el módulo,
+ver TBD sección 16 — parsear un PDF en el navegador es más trabajoso que un Excel con SheetJS y no se
+pidió para esta vuelta). Dos decisiones tomadas al procesar:
+- **OT efectiva, no la carpeta**: `551` y `563` son hijas de `550` y `435` respectivamente en
+  `compras_materot_ot_grupos` (ver 13.3) — sus precios se cargaron bajo el `n_ot` de la madre, nunca bajo
+  su propio número, porque `precioPresupArticulo()` nunca busca por el número de una hija (ver 13.3/13.13:
+  "madre + adicionales juntas"). `551` resultó ser un duplicado exacto de `550` (mismo presupuesto, 8
+  módulos idénticos repetidos) — no aportó ningún precio nuevo.
+- **Promedio ponderado por cantidad cuando el mismo artículo se repite con precios distintos dentro de
+  la misma OT** (pasa seguido: la OT real suma varios "Items"/sub-partes, cada uno con su propia lista de
+  materiales, y a veces el mismo código aparece en dos Items a precios ligeramente distintos — ej.
+  `BRIDAWNRF2` en la OT 582 varió entre U$S 12,87 y U$S 16,00 según el Item). En vez de quedarse con el
+  último valor leído o promediar sin ponderar, se sumó `cantidad × precio` de todas las apariciones y se
+  dividió por la cantidad total — así un Item grande no queda tapado por uno chico con precio distinto.
+
+Resultado: 364 pares (OT efectiva, artículo) cargados, cubriendo las 14 OT efectivas resultantes. Quedó
+documentado acá para que, si se repite este proceso con carpetas `OT/` nuevas más adelante, se sepa el
+criterio exacto usado (archivo `3`, siempre Items en USD, promedio ponderado, resolución de OT efectiva
+antes de cargar).
+
 ## 14. Módulo: Consolidado de Compras `[DETALLADO]`
 
 Pedido explícito del usuario (2026-10-15), mirando a mano la hoja "Consolidado" que ya arma el informe
@@ -3262,9 +3296,12 @@ Ya decidido al construir el Presupuesto en precio por OT en Materiales OT (2026-
   (13.9), vive solo en el detalle de cada OT puntual por ahora.
 
 Todavía sin decidir:
-- [ ] Materiales OT: cómo automatizar la carga del presupuesto en precio — hoy se tipea a mano desde un
-  PDF (ver sección 13.13); falta definir si el PDF tiene un formato lo bastante regular como para
-  parsearlo, o si conviene otro mecanismo (ej. un Excel aparte).
+- [ ] Materiales OT: sumar un importador en el tablero para el PDF de presupuesto — se confirmó
+  (2026-11-05, ver 13.13) que el archivo `3` de cada carpeta `OT/<número>/` tiene un formato Tango
+  regular y parseable (se hizo una carga masiva puntual de las 15 carpetas existentes vía API), pero
+  sigue sin existir un botón "Cargar PDF" en el módulo — hoy que se repita esto para una OT nueva sigue
+  siendo a mano. Falta decidir si conviene parsear el PDF en el navegador (más trabajo que un Excel con
+  SheetJS) o pedir que el PDF reemplace a algo más simple de leer.
 - [ ] Materiales OT: confirmar el nombre exacto de la variante del export de Capataz (el instructivo de
   carga en `js/main.js` asume el mismo menú que Cotizaciones, sin confirmar — ver sección 13.7).
 - [ ] Materiales OT: confirmar el menú exacto de Tango para exportar el nombre de proyecto/cliente por
