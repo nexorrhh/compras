@@ -502,16 +502,8 @@
     </div>
   </div>
 
-  <div class="nav-group" id="nav-ot" data-default-sec="ot-dash">
-    <div class="nav-parent"><span>🏷️</span> OT <span class="nav-chevron">▾</span></div>
-    <div class="nav-children">
-      <div class="nav-item" data-sec="ot-dash"><span>📊</span> Dashboard</div>
-      <div class="nav-item" data-sec="ot-cards"><span>🗂️</span> Por OT</div>
-    </div>
-  </div>
-
   <div class="nav-group" id="nav-materot" data-default-sec="materot-dash">
-    <div class="nav-parent"><span>📐</span> Materiales OT <span class="nav-chevron">▾</span></div>
+    <div class="nav-parent"><span>🏷️</span> OT <span class="nav-chevron">▾</span></div>
     <div class="nav-children">
       <div class="nav-item" data-sec="materot-dash"><span>📊</span> Dashboard</div>
       <div class="nav-item" data-sec="materot-cards"><span>🗂️</span> Por OT</div>
@@ -1096,77 +1088,38 @@
 </div>
 
 <!-- ============ OT — DASHBOARD ============ -->
-<div class="sec" id="s-ot-dash">
-  <div class="ptitle">OT — Dashboard</div>
-  <div class="psub">Comprado vs. asignado de stock por OT — se alimenta de los ítems de todas las solicitudes de Cotizaciones, agrupados según la OT que trae el archivo de Capataz</div>
-  <div class="kpi-grid">
-    <div class="kpi"><div class="kpi-val text-accent" id="otd_k_ot">–</div><div class="kpi-lbl">OTs con datos</div></div>
-    <div class="kpi"><div class="kpi-val text-green" id="otd_k_comprados">–</div><div class="kpi-lbl">Ítems comprados</div></div>
-    <div class="kpi"><div class="kpi-val" id="otd_k_stock">–</div><div class="kpi-lbl">Ítems de stock</div></div>
-    <div class="kpi"><div class="kpi-val text-yellow" id="otd_k_sinot">–</div><div class="kpi-lbl">Ítems sin OT</div></div>
-  </div>
-  <div class="psub" style="margin:4px 0 8px">Comprado vs. de stock — un gráfico por unidad (KGS, LTS, UNI, etc.)</div>
-  <div class="charts-grid" id="otd_chart_compstock_wrap"></div>
-  <div class="psub" style="margin:4px 0 8px">Ranking de OTs por monto comprado — un gráfico por moneda si hay más de una</div>
-  <div class="charts-grid" id="otd_ranking_wrap"></div>
-  <div class="sh"><h2>Accesos rápidos</h2></div>
-  <div style="display:flex;gap:10px;flex-wrap:wrap">
-    <button class="btn p" id="otd-ir-cards">🗂️ Ver por OT</button>
-  </div>
-</div>
-
-<!-- ============ OT — POR OT (tarjetas + detalle) ============ -->
-<div class="sec" id="s-ot-cards">
-  <div id="ot-vista-cards">
-    <div class="ptitle">OT — Por OT</div>
-    <div class="psub">Elegí una OT para ver el detalle completo — comprado vs. stock, gasto por proveedor y evolución en el tiempo</div>
-    <div class="sh">
-      <div class="filters">
-        <input placeholder="Buscar OT..." id="ot_f_q">
-      </div>
-    </div>
-    <div id="ot_cards_grid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:12px"></div>
-  </div>
-
-  <div id="ot-vista-detalle" style="display:none">
-    <button type="button" class="bsm" id="ot_det_volver">← Volver a Por OT</button>
-    <div class="ptitle" style="margin-top:10px" id="ot_det_titulo">OT</div>
-
-    <div class="subtabs" id="ot_det_tabs" style="margin:10px 0 16px">
-      <button type="button" class="subtab active" data-tab="resumen">📊 Resumen</button>
-      <button type="button" class="subtab" data-tab="detalle">📋 Detalle</button>
-    </div>
-
-    <div id="ot_det_panel_resumen">
-      <div class="kpi-grid">
-        <div class="kpi"><div class="kpi-val text-green" id="otdet_k_comprados">–</div><div class="kpi-lbl">Ítems comprados</div></div>
-        <div class="kpi"><div class="kpi-val" id="otdet_k_stock">–</div><div class="kpi-lbl">Ítems de stock</div></div>
-        <div class="kpi"><div class="kpi-val text-yellow" id="otdet_k_pendientes">–</div><div class="kpi-lbl">Pendientes</div></div>
-        <div class="kpi"><div class="kpi-val text-accent" id="otdet_k_sinconfirmar">–</div><div class="kpi-lbl">Comprados sin confirmar</div></div>
-      </div>
-      <div class="psub" style="margin:4px 0 8px">Comprado vs. de stock — un gráfico por unidad (KGS, LTS, UNI, etc.)</div>
-      <div class="charts-grid" id="otdet_chart_compstock_wrap"></div>
-      <div class="psub" style="margin:4px 0 8px">Gasto por proveedor</div>
-      <div class="charts-grid" id="otdet_prov_wrap"></div>
-      <div class="psub" style="margin:4px 0 8px">Evolución en el tiempo (por fecha de solicitud)</div>
-      <div class="charts-grid" id="otdet_evol_wrap"></div>
-    </div>
-
-    <div id="ot_det_panel_detalle" style="display:none">
-      <div class="tw"><table>
-        <thead><tr><th>Código</th><th>Descripción</th><th>Cantidad</th><th>Origen</th><th>Proveedor</th><th>Precio</th><th>Subtotal</th><th>Estado</th><th>Solicitud</th></tr></thead>
-        <tbody id="t-ot-detalle"></tbody>
-      </table></div>
-    </div>
-  </div>
-</div>
-
-<!-- ============ MATERIALES OT — DASHBOARD ============ -->
 <div class="sec" id="s-materot-dash">
-  <div class="ptitle">Materiales OT — Dashboard</div>
-  <div class="psub">Seguimiento por OT del export de Capataz (Cotizado → Planificado → Solicitado → Comprado → Asignado → Recibido → Entregado), en KGS (Capataz ya trae el kg equivalente de cada etapa) — solo OT activas (las archivadas no suman acá, ver "Agrupar OT"/"Por OT")</div>
+  <div class="ptitle">OT — Dashboard</div>
+  <div class="psub">Panorama de todas las órdenes de trabajo activas (las archivadas no suman acá, ver "Agrupar OT"/"Por OT") — qué se compró, contra qué se había presupuestado y qué diferencias de carga quedaron sin resolver. Costos en dólares: un precio en pesos se convierte con el tipo de cambio oficial del día real en que se confirmó esa compra, nunca el de hoy.</div>
+
+  <div class="msec-title">💰 Panorama de costos (USD)</div>
   <div class="kpi-grid">
     <div class="kpi"><div class="kpi-val text-accent" id="mrd_k_ot">–</div><div class="kpi-lbl">OTs con datos</div></div>
+    <div class="kpi"><div class="kpi-val text-green" id="mrd_k_monto">–</div><div class="kpi-lbl">Monto comprado (USD)</div></div>
+    <div class="kpi">
+      <div class="kpi-val" style="color:var(--purple)" id="mrd_k_presup">–</div><div class="kpi-lbl">Presupuestado (USD)</div>
+      <div class="mkpi-sub" id="mrd_k_presup_sub"></div>
+    </div>
+    <div class="kpi">
+      <div class="kpi-val" id="mrd_k_veredicto" style="font-size:16px">–</div><div class="kpi-lbl">¿Compramos caro o barato?</div>
+      <div class="mkpi-sub" id="mrd_k_veredicto_sub"></div>
+    </div>
+  </div>
+  <div class="psub" style="margin:4px 0 8px">Monto comprado por mes (todas las OT activas juntas) y ranking de las OT que más dinero representan</div>
+  <div class="charts-grid">
+    <div class="chart-card"><h3>Monto comprado por mes (USD)</h3><div class="chart-wrap"><canvas id="mrd_chart_evolusd"></canvas></div></div>
+    <div class="chart-card"><h3>Top 10 OT por monto comprado (USD)</h3><div class="chart-wrap"><canvas id="mrd_chart_topotusd"></canvas></div></div>
+  </div>
+
+  <div class="msec-title">⚠️ OT con mayor desvío vs. presupuesto</div>
+  <div class="psub" style="margin:0 0 8px">Solo entran las OT con al menos un artículo presupuestado (ver "Por OT" → pestaña Detalle) — sin eso no hay con qué comparar.</div>
+  <div class="tw"><table>
+    <thead><tr><th>OT</th><th>Proyecto / Cliente</th><th style="text-align:right">Presupuestado (USD)</th><th style="text-align:right">Real (USD)</th><th style="text-align:right">Desvío</th><th>Veredicto</th></tr></thead>
+    <tbody id="t-mrd-desvios"></tbody>
+  </table></div>
+
+  <div class="msec-title">✅ Calidad de carga y volumen (KGS)</div>
+  <div class="kpi-grid">
     <div class="kpi"><div class="kpi-val text-green" id="mrd_k_ok">–</div><div class="kpi-lbl">Ítems OK</div></div>
     <div class="kpi"><div class="kpi-val text-red" id="mrd_k_dif">–</div><div class="kpi-lbl">Ítems con diferencia (DIF)</div></div>
     <div class="kpi"><div class="kpi-val text-yellow" id="mrd_k_sinot">–</div><div class="kpi-lbl">Ítems sin OT</div></div>
@@ -1185,7 +1138,7 @@
 <!-- ============ MATERIALES OT — POR OT (tarjetas + detalle) ============ -->
 <div class="sec" id="s-materot-cards">
   <div id="mro-vista-cards">
-    <div class="ptitle">Materiales OT — Por OT</div>
+    <div class="ptitle">OT — Por OT</div>
     <div class="psub">Una OT con "adicionales" agrupadas (ver "Agrupar OT") muestra el total conjunto</div>
     <div class="sh">
       <div class="filters">
@@ -1252,7 +1205,7 @@
           <div class="mkpi-sub" id="mrod_k_presup_sub"></div>
         </div>
         <div class="kpi">
-          <div class="kpi-val" id="mrod_k_desviopresup">–</div><div class="kpi-lbl">Desvío vs. presupuesto (USD)</div>
+          <div class="kpi-val" id="mrod_k_desviopresup" style="font-size:16px">–</div><div class="kpi-lbl">¿Compramos caro o barato?</div>
           <div class="mkpi-sub" id="mrod_k_desviopresup_sub"></div>
         </div>
       </div>
@@ -1314,7 +1267,7 @@
         </div>
         <div class="kpi"><div class="kpi-val text-green" id="mroc_k_costo">–</div><div class="kpi-lbl">Costo realizado (comprado, USD)</div></div>
         <div class="kpi">
-          <div class="kpi-val" id="mroc_k_desviopresup">–</div><div class="kpi-lbl">Desvío vs. presupuesto (USD)</div>
+          <div class="kpi-val" id="mroc_k_desviopresup" style="font-size:16px">–</div><div class="kpi-lbl">¿Compramos caro o barato?</div>
           <div class="mkpi-sub" id="mroc_k_desviopresup_sub"></div>
         </div>
         <div class="kpi"><div class="kpi-val text-accent" id="mroc_k_ahorro">–</div><div class="kpi-lbl">Ahorro por stock asignado (USD)</div></div>
@@ -1352,7 +1305,7 @@
 
 <!-- ============ MATERIALES OT — AGRUPAR OT ============ -->
 <div class="sec" id="s-materot-grupos">
-  <div class="ptitle">Materiales OT — Agrupar OT</div>
+  <div class="ptitle">OT — Agrupar OT</div>
   <div class="psub">Algunas OT son "adicionales" de una OT madre (misma obra, números distintos) — no hay forma de detectarlo solo, así que se carga la relación acá a mano. Elegí la OT madre, después tildá todas sus adicionales (podés tildar varias a la vez) y confirmá — "Por OT" y el Dashboard suman todo bajo la OT madre.</div>
   <div class="sh">
     <div style="max-width:280px">
@@ -1523,7 +1476,7 @@
 
 <div class="sec" id="s-param-dolar">
   <div class="ptitle">Parametrización — Dólar histórico</div>
-  <div class="psub">Cotización diaria del dólar oficial (Banco Nación), traída de ArgentinaDatos (API pública, sin backend propio) — sirve de referencia para convertir precios entre pesos y dólares en el resto del tablero (hoy: Materiales OT → Costo, que la toma sola para sugerir el tipo de cambio del día). Se guarda por fecha y nunca se borra — volver a cargar el histórico completo solo agrega/actualiza, no pisa nada.</div>
+  <div class="psub">Cotización diaria del dólar oficial (Banco Nación), traída de ArgentinaDatos (API pública, sin backend propio) — sirve de referencia para convertir precios entre pesos y dólares en el resto del tablero (hoy: OT → Costo, que la toma sola para sugerir el tipo de cambio del día). Se guarda por fecha y nunca se borra — volver a cargar el histórico completo solo agrega/actualiza, no pisa nada.</div>
   <div class="sh">
     <div></div>
     <div style="display:flex;gap:8px">

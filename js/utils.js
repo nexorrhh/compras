@@ -101,8 +101,7 @@ export const MODULOS_APP = [
   { key: 'proveedores', label: '🏭 Proveedores' },
   { key: 'np', label: '📝 Notas de Pedido' },
   { key: 'cot', label: '🧮 Cotizaciones' },
-  { key: 'ot', label: '🏷️ OT' },
-  { key: 'materot', label: '📐 Materiales OT' },
+  { key: 'materot', label: '🏷️ OT' },
   { key: 'consol', label: '💰 Consolidado' },
   { key: 'param', label: '⚙️ Parametrización' },
 ];

@@ -45,9 +45,8 @@ seguros, permisos). El resto de los módulos se va a ir sumando a medida que se 
 | **Proveedores** | `[DETALLADO]` (sección 7) | Agenda de compras por rubro (grupo) + ranking de compras — el proveedor se agrupa solo según qué artículos le compraste por OC |
 | **Notas de Pedido** | `[DETALLADO]` (sección 8) | Lo que se le manda al proveedor para confirmar una cotización urgente o un servicio — numeración automática, PDF descargable, seguimiento por vínculo con la Orden de Compra que las cierra |
 | **Cotizaciones** | `[DETALLADO]` (sección 9) | Solicitudes de cotización armadas desde el export de Capataz — marcar qué artículos no hace falta comprar (ya hay stock), invitar proveedores, cargar precios y comparar, con un resumen por proveedor en kg/lts/uni para repartir la compra respetando mínimos |
-| **OT** | `[DETALLADO]` (sección 10) | Seguimiento de compras por orden de trabajo — tarjetas por OT + gráficos, distinguiendo lo comprado de lo asignado de stock; lee los datos de Cotizaciones, sin tablas propias |
 | **Parametrización** | `[DETALLADO]` (sección 12) | Alta de perfiles con PIN self-service y restricción de qué módulos puede ver cada uno (a nivel interfaz, no seguridad real) |
-| **Materiales OT** | `[DETALLADO]` (sección 13) | Seguimiento por OT del export de Capataz "Gestión personalizada de Ventas y Compras" (variante por OT) — Cotizado/Planificado/Solicitado/Comprado/Asignado/Recibido/Entregado, visto en KGS, con agrupación manual de OT adicionales bajo su OT madre |
+| **OT** | `[DETALLADO]` (sección 13) | Seguimiento por OT del export de Capataz "Gestión personalizada de Ventas y Compras" (variante por OT) — Cotizado/Planificado/Solicitado/Comprado/Asignado/Recibido/Entregado, Costo realizado vs. presupuesto en USD, agrupación manual de OT adicionales bajo su OT madre. Fusiona y reemplaza al viejo módulo "OT" (2026-11-06, ver 13.14), del que era superconjunto |
 | **Consolidado de Compras** | `[DETALLADO]` (sección 14) | Cuánto se le compró ya confirmado a cada proveedor, agrupado por semana — sin tablas propias, lee las compras confirmadas en Cotizaciones |
 | Presupuesto y gastos de compras | `[TBD]` | Presupuestado vs. real por categoría/área, alertas de desvío |
 | Contratos y vencimientos | `[TBD]` | Contratos de servicios, alquileres, licencias — no solo de vehículos |
@@ -1875,12 +1874,34 @@ tooltip con el precio y la fecha exactos. El umbral de ±0,05% es solo para no r
 del tipo de cambio — no un piso de "variación relevante": cualquier variación real se muestra, suba o
 baje, sin umbral de negocio (pedido explícito del usuario).
 
-## 10. Módulo: OT `[DETALLADO]`
+## 10. Módulo: OT `[RETIRADO — fusionado con Materiales OT, ver sección 13]`
 
-Módulo de nav propio (grupo colapsable "🏷️ OT", como Flota/OC/Stock/Proveedores), pedido explícito del
-usuario (2026-09-02) para poder seguir el gasto de un trabajo puntual (orden de trabajo) con tarjetas
-por OT y gráficos de detalle — no es una tabla nueva, **lee y reagrupa los mismos datos de Cotizaciones**
-(`js/modules/ot.js`, sin tablas ni migraciones propias).
+> **Fusionado el 2026-11-06.** Pedido explícito del usuario: "quiero que borres el módulo OT y a este que
+> se llama materiales OT le pongas OT y que sea el nuevo OT, teniendo en cuenta que presentan la misma
+> información nada más que el materiales OT es mil veces más completo". El módulo **OT** (descrito más
+> abajo, histórico) y **Materiales OT** (sección 13) perseguían la misma idea — gasto por orden de
+> trabajo — pero de dos fuentes distintas: OT leía `compras_cotizaciones_items.n_ot` (solo cubre lo que
+> pasó por una solicitud de Cotizaciones, sin Cotizado/Planificado/Solicitado/Asignado/Recibido/
+> Entregado, sin presupuesto, sin horas); Materiales OT lee el export dedicado de Capataz y además ya
+> tenía el cruce de costo con Cotizaciones, el presupuesto por artículo y las horas de Capataz (ver
+> 13.9-13.13) — estrictamente un superconjunto. Se borró `js/modules/ot.js` entero, se sacó su grupo de
+> nav ("🏷️ OT", `nav-ot`) y sus dos secciones (`s-ot-dash`/`s-ot-cards`) de `index.html`, y el grupo de
+> nav de Materiales OT (`nav-materot`, sin cambiar su `id` ni el `key` `'materot'` de `MODULOS_APP` en
+> `js/utils.js` — un perfil restringido a `materot` sigue funcionando igual) pasó a mostrarse como
+> "🏷️ OT" (reusando el ícono que tenía el módulo viejo). Las secciones internas se siguen llamando
+> `materot-dash`/`materot-cards`/`materot-grupos` — invisible para quien usa el tablero, no hacía falta
+> tocarlo para cumplir el pedido y tocarlo hubiera sido mucho más riesgo (relaciones `compras_usuarios.
+> modulos_habilitados` ya guardadas, etc.) sin ningún beneficio real.
+>
+> De lo que tenía el OT viejo y Materiales OT todavía no mostraba, se incorporaron al Dashboard de
+> Materiales OT (ver 13.5/13.14) las dos cosas genuinamente nuevas: un **monto en dólares** (el Dashboard
+> de Materiales OT era 100% kg/calidad de carga, sin un solo número de plata — un vacío real para
+> presentarle esto al directorio, ver 13.14) y una **evolución mensual** del gasto. El resto de las
+> secciones de abajo (10.1-10.5) quedan como **referencia histórica** de cómo funcionaba el módulo
+> retirado, no para reimplementarse — toda esa lógica no se portó porque no era superconjunto de nada
+> (ver el chequeo `esOT1()`, que SÍ convendría evaluar si hace falta en Materiales OT más adelante — no
+> se agregó ahora porque no se pidió y "OT1" no se detectó como un problema real en los datos de
+> Materiales OT todavía).
 
 ### 10.1 De dónde sale el dato
 
@@ -2102,8 +2123,7 @@ tablero-compras/
 │       ├── proveedores.js  (Proveedores — se alimenta de OC, ver sección 7)
 │       ├── notas-pedido.js  (Notas de Pedido — numeración + PDF + vínculo con OC, ver sección 8)
 │       ├── cotizaciones.js  (Cotizaciones — se alimenta de Capataz y de Proveedores, ver sección 9)
-│       ├── ot.js  (OT — lee y reagrupa los datos de Cotizaciones, sin tablas propias, ver sección 10)
-│       ├── materot.js  (Materiales OT — Cotizado/Planificado/Solicitado/Comprado en KGS, ver sección 13)
+│       ├── materot.js  (OT — Cotizado/Planificado/Solicitado/Comprado en KGS + costo/presupuesto en USD, ver sección 13; fusiona y reemplaza al viejo ot.js, ver 13.14)
 │       ├── consolidado.js  (Consolidado de Compras — confirmado por proveedor y por semana, ver sección 14)
 │       ├── parametrizacion.js  (Parametrización — alta de perfiles y módulos habilitados, ver sección 12)
 │       └── dolar.js  (Dólar histórico — sync con ArgentinaDatos, sin tablas propias de otros módulos, ver sección 12.5)
@@ -2491,11 +2511,16 @@ detalle de OT. A diferencia del resto del módulo, este dato **no sale de Capata
 
 ### 13.5 Vistas
 
-Mismo patrón de nav colapsable que el resto ("📐 Materiales OT ▾"):
+Mismo patrón de nav colapsable que el resto ("🏷️ OT ▾" — renombrado de "📐 Materiales OT" el 2026-11-06
+al fusionarse con el viejo módulo OT, ver 13.14):
 
-- **Dashboard** (`materot-dash`) — 4 KPIs (OTs con datos — ya agrupadas por madre —, ítems OK, ítems
-  DIF, ítems sin OT) + 3 gráficos (donut OK vs. DIF, barras "Top 10 OT por KGS comprados", barras "Top
-  10 rubros por KGS comprados" — ver más abajo, "Rubro (`agrupacion`) — datos que ya estaban, sin usar").
+- **Dashboard** (`materot-dash`) — desde el rediseño de 2026-11-06 (ver 13.14) arranca con el bloque
+  **"💰 Panorama de costos (USD)"** (Monto comprado, Presupuestado, veredicto "¿Compramos caro o
+  barato?", evolución mensual en USD, Top 10 OT por monto comprado, tabla de mayor desvío vs.
+  presupuesto — todo cargado lazy) y recién después el bloque original de kg/calidad de carga: 4 KPIs
+  (OTs con datos — ya agrupadas por madre —, ítems OK, ítems DIF, ítems sin OT) + 3 gráficos (donut OK
+  vs. DIF, barras "Top 10 OT por KGS comprados", barras "Top 10 rubros por KGS comprados" — ver más
+  abajo, "Rubro (`agrupacion`) — datos que ya estaban, sin usar").
 - **Por OT** (`materot-cards`) — grilla de tarjetas (mismo patrón visual `.ot-card` que el módulo OT,
   sección 10.3), una por OT madre (con un badge "+N adicionales" si tiene hijas agrupadas), mostrando
   KGS comprado/solicitado/**asignado de stock** y la cantidad de ítems con diferencia (DIF) de un
@@ -2603,10 +2628,10 @@ se pierde nada, solo deja de usarse. El módulo ya no la lee ni la escribe.
   (Venta y Compras → Movimientos → Gestión personalizada de ventas y compras) aclarando "la vista por
   OT" — no se confirmó con el usuario el nombre exacto de esa variante dentro de Capataz, revisar el
   texto cuando lo use de verdad por primera vez.
-- **Sin vínculo con el módulo OT todavía**: ambos terminan hablando de compras por OT pero son dos
-  fuentes de datos distintas (OT no trae Cotizado/Planificado/Asignado/Recibido/Entregado) —
-  unificarlos podría evaluarse más adelante si hiciera falta, no se pidió para esta primera versión.
-  Con **Cotizaciones** sí hay un vínculo, agregado el 2026-10-22 — ver 13.9.
+- **Fusionado con el módulo OT el 2026-11-06**: el viejo módulo OT (que leía `compras_cotizaciones_items.n_ot`,
+  sin Cotizado/Planificado/Asignado/Recibido/Entregado ni presupuesto) era un subconjunto estricto de
+  este módulo — se borró y Materiales OT pasó a ser el único/nuevo "OT" — ver 13.14.
+  Con **Cotizaciones** el vínculo es el cruce de precios de 13.9/13.11, agregado el 2026-10-22.
 
 ### 13.9 Costo realizado — cruce con Cotizaciones
 
@@ -3072,6 +3097,90 @@ documentado acá para que, si se repite este proceso con carpetas `OT/` nuevas m
 criterio exacto usado (archivo `3`, siempre Items en USD, promedio ponderado, resolución de OT efectiva
 antes de cargar).
 
+### 13.14 Fusión con el módulo OT + Dashboard para el directorio (2026-11-06)
+
+Pedido explícito del usuario: "quiero mejorar el módulo de materiales OT en principio quiero que borres
+el módulo OT y a este que se llama materiales OT le pongas OT y que sea el nuevo OT, teniendo en cuenta
+que presentan la misma información nada más que el materiales OT es mil veces más completo" + "la idea
+sería ese módulo presentárselo al directorio... necesitaría que analises todos los dashboards y veas que
+mostramos y que no... quisiera que revises exaustivamente este apartado y busques optimizarlo... la idea
+sería que tengan información clara para la toma de decisiones en cada OT particular" + un defecto puntual
+señalado por el usuario: "si vamos al costo de una OT tenés el siguiente defecto, tenés el precio
+cotizado y el comprado en algunos casos pero no te dice si lo compraste barato o lo compraste caro según
+presupuesto".
+
+**Fusión de módulos** — ver nota al principio de la sección 10 (ahora retirada/histórica): se borró
+`js/modules/ot.js` y su grupo de nav, y el de Materiales OT pasó a llamarse **"🏷️ OT"** en pantalla (sin
+tocar `id`s/claves internas — `nav-materot`, `materot-dash`/`materot-cards`/`materot-grupos`, el `key`
+`'materot'` de `MODULOS_APP` — para no romper nada que ya dependiera de esos nombres, como los perfiles
+de Parametrización). De lo que tenía el módulo viejo, lo único que realmente faltaba acá (el resto era
+subconjunto de lo que Materiales OT ya hacía) eran dos vistas en **dólares** a nivel de todas las OT
+juntas — ver el punto siguiente.
+
+**El Dashboard no tenía ni un solo monto en dólares** — era 100% kg/calidad de carga (OTs con datos,
+ítems OK/DIF, Top 10 OT por KGS, Top 10 rubros por KGS). Para una mesa directiva eso no sirve de
+"información clara para la toma de decisiones": kilos no dicen cuánta plata hay en juego. Se sumó, antes
+de los gráficos de siempre, un bloque **"💰 Panorama de costos (USD)"**:
+- KPIs: **Monto comprado (USD)** (suma de `calcularCosto().costoUSD` de cada OT activa — el mismo cálculo
+  que ya hacía cada OT puntual en su pestaña Costo, sin inventar nada nuevo), **Presupuestado (USD)**
+  (suma de `calcularPresupuesto()` solo de las OT que tienen al menos un artículo presupuestado, con la
+  cobertura como subtítulo) y un KPI de veredicto — ver el punto siguiente.
+- Dos gráficos nuevos: **"Monto comprado por mes (USD)"** (agrupa `costoCompradoUSD` de cada ítem
+  valorizado por el mes de `fechaCompra` — la fecha real de cuando se confirmó esa compra, mismo criterio
+  del dólar histórico de 13.12 — entre TODAS las OT activas juntas) y **"Top 10 OT por monto comprado
+  (USD)"** (mismo ranking que ya hacía el módulo OT viejo, pero reemplazando KGS por dólares reales, que
+  es lo que a una mesa directiva le importa comparar entre obras).
+- Una tabla nueva, **"⚠️ OT con mayor desvío vs. presupuesto"**: ranquea las OT con presupuesto cargado
+  por el módulo de su desvío % (mismo cálculo que ya hace cada OT puntual, `valorUsado − presupTotal`),
+  con Proyecto/Cliente (de `compras_materot_ot_info`, ya existente) para que el directorio identifique la
+  obra sin tener que recordar números de OT. Es el punteo concreto para preguntar "¿qué pasó acá?" sin
+  entrar OT por OT — exactamente lo que un panorama ejecutivo necesita y el Dashboard viejo no daba.
+- Todo esto se carga **lazy** (mismo criterio que ya usaba el detalle de una OT puntual — `cargarPreciosCotizaciones()`/
+  `cargarDolarHistoricoCompleto()`): el Dashboard pinta primero lo que ya tenía (kg/calidad, instantáneo)
+  y repinta el bloque de costos en cuanto termina de cargar, sin bloquear el resto.
+- El bloque de kg/calidad de carga que ya existía se mantuvo igual, pero se movió **después** del de
+  costos (antes era todo lo que había) — la plata es lo primero que un directorio necesita ver, el detalle
+  de calidad de carga es la segunda capa para quien quiera profundizar.
+
+**El defecto del "no me dice si compré caro o barato"** — investigado antes de tocar nada: el dato SÍ
+existía (`mrod_k_desviopresup`/`mroc_k_desviopresup`, ver 13.13), pero con dos problemas reales:
+1. **Cobertura**: la comparación solo aparece si al menos un artículo de la OT tiene precio presupuestado
+   cargado — hasta la carga masiva de la sección 13.13 (2026-11-05), casi ninguna OT real tenía ese dato,
+   así que en la práctica el usuario nunca veía el número aunque el código ya lo calculara ("tenés el
+   precio cotizado y el comprado **en algunos casos**" — la queja describe exactamente esta cobertura
+   parcial). Con las 14 OT ya cargadas, esto empieza a funcionar de verdad.
+2. **Redacción**: el KPI se llamaba "Desvío vs. presupuesto (USD)" y mostraba un monto con signo + un
+   color — correcto, pero no decía "caro" o "barato" con todas las letras, exigía interpretar el signo.
+   Se agregó `veredictoDesvio(desvioUSD, desvioPct)` en `js/modules/materot.js`, reusada por el Resumen,
+   el Costo de cada OT y el nuevo panorama del Dashboard, que devuelve un texto directo —
+   **"🔴 Compramos más caro"** / **"🟢 Compramos más barato"** / **"🟡 En línea con el presupuesto"** (ver
+   más abajo) — en vez de un número pelado. El label del KPI pasó a ser **"¿Compramos caro o barato?"**.
+
+**Tolerancia de ±5% para el veredicto "en línea"** — única excepción a propósito al criterio de "sin
+umbral de negocio" que ya usa el Desvío (%) crudo de la tabla línea por línea (ver 13.13, Cotizaciones
+9.7: "cualquier variación real se muestra, sin umbral de negocio"). Se investigó antes de decidir: esos
+umbrales rechazados eran para decidir cuándo **alertar** sobre un número que de por sí ya se muestra tal
+cual, sin opinar. Acá el objetivo es distinto — resumir un % continuo en un veredicto de tres palabras
+para un panorama ejecutivo — y decir "compramos más caro" por un desvío de +0,3% sería alarmar por ruido
+de redondeo/negociación normal, no por un hallazgo real. La tabla línea por línea de la pestaña Costo
+(Desvío USD/Desvío %, ver 13.13) sigue sin ningún umbral — ahí el usuario de Compras ya sabe interpretar
+el número crudo; el veredicto de 3 palabras es para quien no va a abrir esa tabla.
+
+**Alcance de esta vuelta** — lo que se dejó explícitamente afuera, para no sobre-extender un pedido ya
+grande:
+- No se tocó el resto de la interfaz del módulo (pestaña Detalle, Agrupar OT, exportar diferencias) — el
+  pedido de "revisar toda la interfaz" se interpretó centrado en el Dashboard (lo que se va a presentar al
+  directorio) y en el defecto puntual señalado, no como una reescritura visual completa del módulo entero.
+- `esOT1()` (el cajón "OT1" de compras de planta en general que el módulo viejo excluía del desglose, ver
+  10.1 histórico) no se portó a Materiales OT — no se detectó ese mismo patrón en los datos reales de
+  Materiales OT todavía; si aparece, conviene sumar el mismo filtro.
+- No se verificó visualmente en un navegador (sin herramienta de automatización de navegador disponible
+  en esta sesión) — se validó la sintaxis de `materot.js`, se verificó que cada `id` nuevo usado en el JS
+  exista en el HTML (y viceversa) y se sirvió `index.html` con un servidor estático local para confirmar
+  que el marcado llega entero. Conviene abrir el tablero real y mirar "OT → Dashboard" antes de la
+  presentación, sobre todo con las 14 OT que ya tienen presupuesto cargado (sección 13.13) para ver el
+  veredicto funcionando con datos reales.
+
 ## 14. Módulo: Consolidado de Compras `[DETALLADO]`
 
 Pedido explícito del usuario (2026-10-15), mirando a mano la hoja "Consolidado" que ya arma el informe
@@ -3294,6 +3403,22 @@ Ya decidido al construir el Presupuesto en precio por OT en Materiales OT (2026-
   cubierto con stock.
 - [x] Sin total agregado en el Dashboard del módulo todavía — mismo criterio que "Costo realizado"
   (13.9), vive solo en el detalle de cada OT puntual por ahora.
+
+Ya decidido al fusionar el módulo OT con Materiales OT (2026-11-06):
+- [x] Se borra `js/modules/ot.js` y su grupo de nav — Materiales OT pasa a ser el único/nuevo "OT" en
+  pantalla, sin tocar `id`s/claves internas (`nav-materot`, `materot-dash`/`materot-cards`/
+  `materot-grupos`, el `key` `'materot'` de `MODULOS_APP`) para no romper nada que ya dependiera de esos
+  nombres (ej. perfiles de Parametrización) — pedido explícito del usuario, ver sección 13.14.
+- [x] El Dashboard se rediseña para mostrar montos en **USD** (antes era 100% kg/calidad de carga, sin
+  un solo número de plata) — pedido explícito del usuario pensando en presentarlo al directorio, ver
+  13.14.
+- [x] El defecto "no me dice si compré caro o barato" se resuelve con un veredicto en texto plano
+  (`veredictoDesvio()`, "🔴 Compramos más caro" / "🟢 Compramos más barato" / "🟡 En línea con el
+  presupuesto"), con una tolerancia de ±5% — única excepción a propósito al criterio de "sin umbral de
+  negocio" del resto del tablero, justificada por ser un veredicto categórico para un panorama
+  ejecutivo, no un valor crudo de diagnóstico — ver 13.14.
+- [x] `esOT1()` (el cajón "OT1" que el módulo viejo excluía del desglose) no se portó — no se detectó
+  ese mismo patrón en los datos reales de Materiales OT todavía, queda como TBD si aparece.
 
 Todavía sin decidir:
 - [ ] Materiales OT: sumar un importador en el tablero para el PDF de presupuesto — se confirmó

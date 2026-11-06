@@ -121,7 +121,37 @@ function dolarEnFecha(fechaISO) {
 const numFmt = (n, dec = 2) => Number(n || 0).toLocaleString('es-AR', { maximumFractionDigits: dec });
 const SIMBOLO = m => m === 'USD' ? 'U$S' : '$';
 const fmtMonto = (n, moneda) => SIMBOLO(moneda) + (moneda === 'USD' ? ' ' : '') + numFmt(n, 2);
+const MESES_CORTO = { '01': 'Ene', '02': 'Feb', '03': 'Mar', '04': 'Abr', '05': 'May', '06': 'Jun', '07': 'Jul', '08': 'Ago', '09': 'Sep', '10': 'Oct', '11': 'Nov', '12': 'Dic' };
 function setTxt(id, v) { const el = document.getElementById(id); if (el) el.textContent = v; }
+
+// Veredicto en texto plano de "¿compramos caro o barato?" — pedido
+// explícito del usuario (2026-11-06), viendo que el Desvío vs.
+// presupuesto ya existía como número en dólares pero no decía con
+// todas las letras si eso era bueno o malo ("tenés el precio cotizado
+// y el comprado... pero no te dice si lo compraste barato o caro").
+// Reusado por el Resumen y el Costo de cada OT puntual y por el
+// panorama agregado del Dashboard, para que el mismo número siempre se
+// lea con las mismas palabras/colores en todo el módulo.
+//
+// La tolerancia de ±5% es una excepción a propósito al criterio de
+// "sin umbral de negocio" que ya usa el resto del tablero para el
+// Desvío (%) crudo de la tabla línea por línea (ver CLAUDE.md 13.13,
+// Cotizaciones 9.7) — ahí el número se muestra tal cual, sin opinar.
+// Acá el objetivo es distinto: resumir un % continuo en un veredicto de
+// 3 palabras para un panorama ejecutivo, y decir "compramos más caro"
+// por una diferencia de centavos sería alarmar por ruido de redondeo/
+// negociación normal, no por un desvío real.
+const TOLERANCIA_DESVIO_PCT = 5;
+function veredictoDesvio(desvioUSD, desvioPct) {
+  if (desvioPct == null) return { texto: '–', sub: 'Sin presupuesto cargado para comparar', color: '' };
+  if (Math.abs(desvioPct) <= TOLERANCIA_DESVIO_PCT) {
+    return { texto: '🟡 En línea con el presupuesto', sub: `${fmtMonto(desvioUSD, 'USD')} de diferencia (${desvioPct > 0 ? '+' : ''}${numFmt(desvioPct, 1)}%)`, color: 'var(--yellow)' };
+  }
+  if (desvioPct > 0) {
+    return { texto: '🔴 Compramos más caro', sub: `+${fmtMonto(desvioUSD, 'USD')} (+${numFmt(desvioPct, 1)}%) sobre lo presupuestado`, color: 'var(--red)' };
+  }
+  return { texto: '🟢 Compramos más barato', sub: `${fmtMonto(desvioUSD, 'USD')} (${numFmt(desvioPct, 1)}%) por debajo de lo presupuestado`, color: 'var(--green)' };
+}
 
 // Presupuesto en precio por OT, cargado POR ARTÍCULO (ver CLAUDE.md
 // 13.13) — pedido explícito del usuario tras probar la primera versión
@@ -224,8 +254,7 @@ function parsePrecioUSD(v) {
 
 // Capataz trae el N° de OT con ceros a la izquierda ("000000000596") —
 // se muestra sin esos ceros ("596"). Solo se recorta si es puramente
-// numérico (mismo criterio que formatOT() en js/modules/ot.js,
-// duplicado a propósito — son módulos independientes).
+// numérico.
 function formatOT(ot) {
   if (!ot) return ot;
   return /^\d+$/.test(ot) ? String(parseInt(ot, 10)) : ot;
@@ -937,6 +966,133 @@ function renderBarrasRubro(canvasId, items, topN = 10) {
 }
 
 // ------------------------------------------------------------
+// Panorama de costos del Dashboard — pedido explícito del usuario
+// (2026-11-06), preparando este módulo para presentárselo al directorio:
+// el Dashboard original era 100% en kg/calidad de carga, sin un solo
+// monto en dólares — para una mesa directiva eso no alcanza, necesitan
+// ver plata. Reusa exactamente el mismo cálculo que ya tenía cada OT
+// puntual (calcularCosto()/calcularPresupuesto(), ver 13.9/13.13), solo
+// que acá se recorre TODA OT activa para sumar y rankear — no es un
+// cálculo nuevo, es el mismo de siempre llevado al panorama general.
+// ------------------------------------------------------------
+function calcularPanoramaCostos(gruposActivos) {
+  let montoUSD = 0, ahorroUSD = 0;
+  let nConPresup = 0, nSinPresup = 0;
+  const porOT = [];
+  const porMes = new Map(); // 'YYYY-MM' -> monto USD
+
+  for (const [ot, items] of gruposActivos) {
+    const { filas, costoUSD: c, ahorroUSD: a } = calcularCosto(items);
+    const presup = calcularPresupuesto(ot, items);
+    montoUSD += c;
+    ahorroUSD += a;
+    if (presup.nConPrecio > 0) nConPresup++; else nSinPresup++;
+    porOT.push({ ot, costoUSD: c, ahorroUSD: a, presup });
+    for (const f of filas) {
+      if (f.costoCompradoUSD == null || !f.precioInfo?.fechaCompra) continue;
+      const mes = f.precioInfo.fechaCompra.slice(0, 7);
+      porMes.set(mes, (porMes.get(mes) || 0) + f.costoCompradoUSD);
+    }
+  }
+
+  // El veredicto agregado compara solo las OT que SÍ tienen presupuesto
+  // cargado (comparación justa — mezclar OT sin presupuesto inflaría
+  // "lo real" sin su contraparte presupuestada del otro lado).
+  let montoConPresupUSD = 0, ahorroConPresupUSD = 0, presupUSD = 0;
+  for (const f of porOT) {
+    if (f.presup.nConPrecio === 0) continue;
+    montoConPresupUSD += f.costoUSD;
+    ahorroConPresupUSD += f.ahorroUSD;
+    presupUSD += f.presup.totalUSD;
+  }
+  const desvioUSD = nConPresup > 0 ? (montoConPresupUSD + ahorroConPresupUSD) - presupUSD : null;
+  const desvioPct = (desvioUSD != null && presupUSD > 0) ? (desvioUSD / presupUSD * 100) : null;
+
+  return { montoUSD, presupUSD, nConPresup, nSinPresup, desvioUSD, desvioPct, porOT, porMes };
+}
+
+function renderEvolucionUSD(canvasId, porMes) {
+  const meses = [...porMes.keys()].sort();
+  renderChart(canvasId, canvasId, {
+    type: 'bar',
+    data: {
+      labels: meses.map(mes => `${MESES_CORTO[mes.slice(5)] || mes.slice(5)} ${mes.slice(2, 4)}`),
+      datasets: [{ label: 'Monto comprado', data: meses.map(mes => porMes.get(mes)), backgroundColor: '#3b82f6', borderRadius: 4 }],
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      plugins: { legend: { display: false }, tooltip: { callbacks: { label: ctx => fmtMonto(ctx.raw, 'USD') } } },
+      scales: { y: { ticks: { callback: v => fmtMonto(v, 'USD') } } },
+    },
+  });
+}
+
+function renderBarrasTopOTUSD(canvasId, porOT, topN = 10) {
+  const datos = porOT.filter(f => f.costoUSD > 0).sort((a, b) => b.costoUSD - a.costoUSD).slice(0, topN);
+  renderChart(canvasId, canvasId, {
+    type: 'bar',
+    data: { labels: datos.map(d => formatOT(d.ot) || '(Sin OT)'), datasets: [{ label: 'Monto comprado', data: datos.map(d => d.costoUSD), backgroundColor: '#22c55e', borderRadius: 4 }] },
+    options: {
+      indexAxis: 'y', responsive: true, maintainAspectRatio: false,
+      plugins: { legend: { display: false }, tooltip: { callbacks: { label: ctx => fmtMonto(ctx.raw, 'USD') } } },
+      scales: { x: { ticks: { callback: v => fmtMonto(v, 'USD') } } },
+    },
+  });
+}
+
+// Las OT donde más se alejó lo realmente usado (comprado + asignado) de
+// lo que Presupuestos había cotizado en plata — el punteo concreto para
+// que el directorio sepa, sin entrar OT por OT, en cuáles conviene
+// preguntar qué pasó. Solo entran las que tienen al menos un artículo
+// presupuestado (ver "Sin presupuesto cargado" más arriba) — sin eso no
+// hay con qué comparar, no se inventa un desvío.
+function renderTablaDesviosOT(tbodyId, porOT, topN = 8) {
+  const tbody = document.getElementById(tbodyId);
+  if (!tbody) return;
+  const filas = porOT
+    .filter(f => f.presup.nConPrecio > 0)
+    .map(f => {
+      const valorUsado = f.costoUSD + f.ahorroUSD;
+      const desvio = valorUsado - f.presup.totalUSD;
+      const desvioPct = f.presup.totalUSD > 0 ? (desvio / f.presup.totalUSD * 100) : null;
+      return { ...f, valorUsado, desvio, desvioPct };
+    })
+    .sort((a, b) => Math.abs(b.desvioPct ?? 0) - Math.abs(a.desvioPct ?? 0))
+    .slice(0, topN);
+
+  tbody.innerHTML = filas.length ? filas.map(f => {
+    const info = OT_INFO.get(f.ot);
+    const v = veredictoDesvio(f.desvio, f.desvioPct);
+    return `<tr>
+      <td>${escAttr(formatOT(f.ot) || '(Sin OT)')}</td>
+      <td style="color:var(--muted);font-size:12px">${escAttr([info?.nombre_proyecto, info?.cliente].filter(Boolean).join(' — ') || '–')}</td>
+      <td style="text-align:right">${fmtMonto(f.presup.totalUSD, 'USD')}</td>
+      <td style="text-align:right">${fmtMonto(f.valorUsado, 'USD')}</td>
+      <td style="text-align:right;color:${v.color};font-weight:600">${f.desvio > 0 ? '+' : ''}${fmtMonto(f.desvio, 'USD')}</td>
+      <td style="color:${v.color}">${v.texto}</td>
+    </tr>`;
+  }).join('') : `<tr><td colspan="6" style="text-align:center;padding:18px;color:var(--muted)">Ninguna OT activa tiene presupuesto cargado todavía — cargalo en "Por OT" → pestaña Detalle</td></tr>`;
+}
+
+function renderPanoramaCostosDashboard(gruposActivos) {
+  const panorama = calcularPanoramaCostos(gruposActivos);
+  setTxt('mrd_k_monto', fmtMonto(panorama.montoUSD, 'USD'));
+  setTxt('mrd_k_presup', panorama.nConPresup > 0 ? fmtMonto(panorama.presupUSD, 'USD') : '–');
+  setTxt('mrd_k_presup_sub', panorama.nConPresup > 0
+    ? `${panorama.nConPresup} de ${panorama.nConPresup + panorama.nSinPresup} OT con presupuesto cargado`
+    : 'Ninguna OT tiene precio presupuestado cargado todavía');
+
+  const v = veredictoDesvio(panorama.desvioUSD, panorama.desvioPct);
+  const vEl = document.getElementById('mrd_k_veredicto');
+  if (vEl) { vEl.textContent = v.texto; vEl.style.color = v.color; }
+  setTxt('mrd_k_veredicto_sub', v.sub);
+
+  renderEvolucionUSD('mrd_chart_evolusd', panorama.porMes);
+  renderBarrasTopOTUSD('mrd_chart_topotusd', panorama.porOT);
+  renderTablaDesviosOT('t-mrd-desvios', panorama.porOT);
+}
+
+// ------------------------------------------------------------
 // Dashboard
 // ------------------------------------------------------------
 // El Dashboard (KPIs + gráficos) solo mira OT ACTIVAS (no archivadas) —
@@ -963,6 +1119,18 @@ function renderDashboard() {
   renderDonutOKDIF('mrd_chart_okdif', nOK, nDIF);
   renderBarrasTopOT('mrd_chart_topot', gruposActivos);
   renderBarrasRubro('mrd_chart_toprubro', itemsActivos);
+
+  // Panorama de costos (USD) — necesita el precio ganador de Cotizaciones
+  // + el histórico del dólar, cargados lazy (mismo criterio que el
+  // detalle de una OT puntual, ver renderDetalle()): el Dashboard pinta
+  // primero lo que ya tiene (kg/calidad) y repinta la parte de costos en
+  // cuanto termina de cargar, sin bloquear lo demás.
+  if (PRECIO_POR_ARTICULO && DOLAR_HISTORICO) {
+    renderPanoramaCostosDashboard(gruposActivos);
+  } else {
+    Promise.all([cargarPreciosCotizaciones(), cargarDolarHistoricoCompleto()])
+      .then(() => renderPanoramaCostosDashboard(gruposActivos));
+  }
 }
 
 // ------------------------------------------------------------
@@ -1275,14 +1443,12 @@ function renderResumenOT(items, st) {
     if (presup.nConPrecio > 0) {
       const desvio = valorUsado - presup.totalUSD;
       const desvioPresupPct = presup.totalUSD > 0 ? (desvio / presup.totalUSD * 100) : null;
-      if (desviopresupEl) {
-        desviopresupEl.textContent = `${desvio > 0 ? '+' : ''}${fmtMonto(desvio, 'USD')}`;
-        desviopresupEl.style.color = desvio > 0.01 ? 'var(--red)' : (desvio < -0.01 ? 'var(--green)' : '');
-      }
-      setTxt('mrod_k_desviopresup_sub', desvioPresupPct == null ? '' : `${desvioPresupPct > 0 ? '+' : ''}${numFmt(desvioPresupPct, 1)}% vs. presupuestado`);
+      const v = veredictoDesvio(desvio, desvioPresupPct);
+      if (desviopresupEl) { desviopresupEl.textContent = v.texto; desviopresupEl.style.color = v.color; }
+      setTxt('mrod_k_desviopresup_sub', v.sub);
     } else {
       if (desviopresupEl) { desviopresupEl.textContent = '–'; desviopresupEl.style.color = ''; }
-      setTxt('mrod_k_desviopresup_sub', '');
+      setTxt('mrod_k_desviopresup_sub', 'Sin presupuesto cargado para esta OT');
     }
   }
 
@@ -1344,14 +1510,12 @@ function renderCosto() {
     const valorUsado = costoUSD + ahorroUSD;
     const desvioPresup = valorUsado - presup.totalUSD;
     const desvioPresupPct = presup.totalUSD > 0 ? (desvioPresup / presup.totalUSD * 100) : null;
-    if (desviopresupEl) {
-      desviopresupEl.textContent = `${desvioPresup > 0 ? '+' : ''}${fmtMonto(desvioPresup, 'USD')}`;
-      desviopresupEl.style.color = desvioPresup > 0.01 ? 'var(--red)' : (desvioPresup < -0.01 ? 'var(--green)' : '');
-    }
-    setTxt('mroc_k_desviopresup_sub', desvioPresupPct == null ? '' : `${desvioPresupPct > 0 ? '+' : ''}${numFmt(desvioPresupPct, 1)}% vs. presupuestado`);
+    const v = veredictoDesvio(desvioPresup, desvioPresupPct);
+    if (desviopresupEl) { desviopresupEl.textContent = v.texto; desviopresupEl.style.color = v.color; }
+    setTxt('mroc_k_desviopresup_sub', v.sub);
   } else {
     if (desviopresupEl) { desviopresupEl.textContent = '–'; desviopresupEl.style.color = ''; }
-    setTxt('mroc_k_desviopresup_sub', '');
+    setTxt('mroc_k_desviopresup_sub', 'Sin presupuesto cargado para esta OT');
   }
   setTxt('mroc_k_ahorro', fmtMonto(ahorroUSD, 'USD'));
   setTxt('mroc_k_proyectado', fmtMonto(proyectado.totalUSD, 'USD'));
