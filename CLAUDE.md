@@ -2523,9 +2523,12 @@ al fusionarse con el viejo módulo OT, ver 13.14):
   abajo, "Rubro (`agrupacion`) — datos que ya estaban, sin usar").
 - **Por OT** (`materot-cards`) — grilla de tarjetas (mismo patrón visual `.ot-card` que el módulo OT,
   sección 10.3), una por OT madre (con un badge "+N adicionales" si tiene hijas agrupadas), mostrando
-  KGS comprado/solicitado/**asignado de stock** y la cantidad de ítems con diferencia (DIF) de un
-  vistazo (pedido explícito del usuario, 2026-10-02, que ya tenía comprado y solicitado pero quería ver
-  también lo cubierto con stock sin entrar al detalle). Acá vive el botón **"📤 Cargar archivo (.xlsx)"**
+  KGS **cotizado**/comprado/solicitado/**asignado de stock** y la cantidad de ítems con diferencia (DIF)
+  de un vistazo (pedido explícito del usuario, 2026-10-02, que ya tenía comprado y solicitado pero
+  quería ver también lo cubierto con stock sin entrar al detalle; **Cotizado** sumado el 2026-11-06,
+  mismo dato — `kg_cotiz`, ver 13.2 — que ya se veía en el Resumen de cada OT puntual, sección 13.10,
+  pero no en la tarjeta, para poder comparar comprado vs. presupuestado sin entrar al detalle). Acá vive
+  el botón **"📤 Cargar archivo (.xlsx)"**
   y, al lado, **"📥 Exportar diferencias (.xlsx)"** (`exportarDiferencias()`, pedido explícito del
   usuario, 2026-10-08): baja a un Excel el código, descripción, unidad y las 7 cantidades en kg de
   **todos** los ítems con Estado "DIF" entre las OT que se estén viendo en ese momento en la grilla

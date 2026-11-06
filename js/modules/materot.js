@@ -1184,7 +1184,8 @@ function renderCards() {
         ${archivada ? '<span class="badge" style="margin-left:6px;font-weight:400">📦 Archivada</span>' : ''}
       </div>
       ${info?.nombre_proyecto || info?.cliente ? `<div style="font-size:12px;color:var(--muted);margin-top:-2px" title="${escAttr([info?.nombre_proyecto, info?.cliente].filter(Boolean).join(' — '))}">${escAttr(info?.nombre_proyecto || '')}${info?.nombre_proyecto && info?.cliente ? ' · ' : ''}${escAttr(info?.cliente || '')}</div>` : ''}
-      <div style="font-size:13px;margin-top:8px">🛒 Comprado: <strong>${numFmt(st.tot.comprado)} KGS</strong></div>
+      <div style="font-size:13px;margin-top:8px">📐 Cotizado: <strong>${numFmt(st.tot.cotiz)} KGS</strong></div>
+      <div style="font-size:13px">🛒 Comprado: <strong>${numFmt(st.tot.comprado)} KGS</strong></div>
       <div style="font-size:13px">📋 Solicitado: <strong>${numFmt(st.tot.solic)} KGS</strong></div>
       <div style="font-size:13px">📦 Asignado de stock: <strong>${numFmt(st.tot.asig)} KGS</strong></div>
       <div style="font-size:12px;color:var(--muted);margin-top:4px">${st.nItems} ítem${st.nItems === 1 ? '' : 's'}</div>
