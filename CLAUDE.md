@@ -963,13 +963,34 @@ no queda en ningún lado. La columna `adjuntos` (texto) sí guarda una nota tipo
 nombre.jpg" para que quede constancia de que existió, aunque volver a descargar el PDF de esa NP más
 adelante ya no va a incluir la imagen.
 
+**Nota aclaratoria / leyenda en el PDF** (`nota_aclaratoria`, ver
+[`sql/032_notas_pedido_nota_aclaratoria.sql`](sql/032_notas_pedido_nota_aclaratoria.sql)) — pedido
+explícito del usuario, 2026-11-06: "necesitaria agregar a las notas de pedido la posiblidad de poder
+sumar una nota aclaratoria". Preguntado explícitamente antes de construir (tres alcances posibles —
+campo fijo al crear / editable siempre pero solo interno / editable siempre e impreso en el PDF), eligió
+la última: **"quiero que salga en el PDF la idea es agregarle una leyenda a una nota de pedido"** — a
+diferencia de `adjuntos` (solo información interna, nunca se imprime, ver más arriba), esta columna sí
+sale en el documento que recibe el proveedor. Dos puntos de entrada, ambos escriben la misma columna:
+- Un textarea opcional (`np_nota_aclaratoria`) en el modal de alta, para cargarla de una junto con el
+  resto de la NP.
+- El botón **"📝 Nota"** en cada fila de la lista (`editarNotaAclaratoria()`/`confirmarNotaAclaratoria()`
+  en `js/modules/notas-pedido.js`, modal `mNOTANP`) — disponible siempre, sin importar el estado
+  (Pendiente/Vinculada/Cerrada), para poder agregarla o corregirla después de creada la NP ("sumar"
+  implica que no tiene que depender de haberla cargado al momento exacto de la carga). Dejar el textarea
+  vacío borra la nota.
+En el PDF (`generarPdfNP()`) se imprime como un bloque "Nota:" entre el resumen de totales y la cláusula
+legal de aceptación tácita, con un salto de página simple si no entra en la hoja — volver a descargar el
+PDF desde la lista (📄) siempre usa el valor más reciente guardado, a diferencia de la foto adjunta (que
+nunca se persiste, ver arriba).
+
 ### 8.4 Modelo de datos
 
-Tres migraciones (ver [`sql/007_notas_pedido.sql`](sql/007_notas_pedido.sql),
-[`sql/009_entrega_parcial.sql`](sql/009_entrega_parcial.sql) y
-[`sql/029_notas_pedido_cerrada.sql`](sql/029_notas_pedido_cerrada.sql) — `sql/008_usuarios.sql` es el
-login, ver sección 11 — y `sql/schema.sql` para el estado final), sin RLS (mismo criterio que el resto de
-`compras_*`):
+Cuatro migraciones (ver [`sql/007_notas_pedido.sql`](sql/007_notas_pedido.sql),
+[`sql/009_entrega_parcial.sql`](sql/009_entrega_parcial.sql),
+[`sql/029_notas_pedido_cerrada.sql`](sql/029_notas_pedido_cerrada.sql) y
+[`sql/032_notas_pedido_nota_aclaratoria.sql`](sql/032_notas_pedido_nota_aclaratoria.sql) —
+`sql/008_usuarios.sql` es el login, ver sección 11 — y `sql/schema.sql` para el estado final), sin RLS
+(mismo criterio que el resto de `compras_*`):
 
 - `compras_notas_pedido` — `proveedor_nombre` es texto libre (copiado al crear, igual que
   `compras_oc_lineas.proveedor_nombre`) con `proveedor_id` opcional si coincide con una ficha real de
@@ -2163,7 +2184,8 @@ tablero-compras/
     ├── 028_cotizaciones_confirmado_en.sql
     ├── 029_notas_pedido_cerrada.sql
     ├── 030_dolar_historico.sql
-    └── 031_materot_presupuesto.sql
+    ├── 031_materot_presupuesto.sql
+    └── 032_notas_pedido_nota_aclaratoria.sql
 ```
 
 > `porteria.html` y `solicitud.html` son entry points separados (audiencias distintas: portero de
@@ -3423,6 +3445,13 @@ Ya decidido al fusionar el módulo OT con Materiales OT (2026-11-06):
 - [x] `esOT1()` (el cajón "OT1" que el módulo viejo excluía del desglose) no se portó — no se detectó
   ese mismo patrón en los datos reales de Materiales OT todavía, queda como TBD si aparece.
 
+Ya decidido al agregar la nota aclaratoria a Notas de Pedido (2026-11-06):
+- [x] **Sí se imprime en el PDF** (no es información solo interna como "Adjuntos") — preguntado
+  explícitamente antes de construir, entre tres alcances posibles, el usuario eligió este: "quiero que
+  salga en el PDF la idea es agregarle una leyenda a una nota de pedido" — ver sección 8.3.
+- [x] Editable en cualquier momento, no solo al crear la NP — botón "📝 Nota" disponible sin importar el
+  estado (Pendiente/Vinculada/Cerrada), además del campo en el modal de alta — mismo lugar.
+
 Todavía sin decidir:
 - [ ] Materiales OT: sumar un importador en el tablero para el PDF de presupuesto — se confirmó
   (2026-11-05, ver 13.13) que el archivo `3` de cada carpeta `OT/<número>/` tiene un formato Tango
@@ -3540,9 +3569,13 @@ Todavía sin decidir:
     `compras_materot_presupuesto_precios` para el presupuesto en precio por artículo de Materiales OT
     (ver sección 13.13) (**todavía falta correr en la base real** — hasta que se corra, cargar un precio
     en la columna "Precio presup. (U$S/kg)" de la pestaña Detalle va a fallar porque la tabla no existe).
-31. Probar el circuito completo: pedir vehículo (solicitud.html) → aprobar y asignar (index.html) →
+31. Correr [`sql/032_notas_pedido_nota_aclaratoria.sql`](sql/032_notas_pedido_nota_aclaratoria.sql) —
+    agrega `nota_aclaratoria` a `compras_notas_pedido` para la leyenda que se imprime en el PDF (ver
+    sección 8.3) (**todavía falta correr en la base real** — hasta que se corra, el botón "📝 Nota" y el
+    campo del modal de alta van a fallar porque la columna no existe).
+32. Probar el circuito completo: pedir vehículo (solicitud.html) → aprobar y asignar (index.html) →
    registrar salida/retorno (porteria.html) → ver el movimiento reflejado en el dashboard.
-32. Evaluar RLS (Row Level Security) en las tablas `compras_*` — hoy cualquiera con el link de
+33. Evaluar RLS (Row Level Security) en las tablas `compras_*` — hoy cualquiera con el link de
    `solicitud.html`/`porteria.html` puede leer/escribir todas las tablas, sin ningún login de por medio.
-33. Ir completando los módulos `[TBD]` de la sección 3 a medida que los necesites, usando el módulo
+34. Ir completando los módulos `[TBD]` de la sección 3 a medida que los necesites, usando el módulo
    Flota (carpeta `js/modules/`) como plantilla.

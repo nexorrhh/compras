@@ -208,6 +208,7 @@ function filaDetalleNota(n) {
       ${campo('Lugar de entrega', n.lugar_entrega)}
       ${campo('N°/código de cotización', n.cotizacion_ref)}
       ${campo('Adjuntos', n.adjuntos)}
+      ${campo('Nota aclaratoria', n.nota_aclaratoria)}
       ${campo('Autorizado por', n.revisado_por)}
       ${n.estado === 'VINCULADA' ? `<div><strong>Vinculada a OC:</strong> ${escAttr(n.orden_compra_vinculada || '')}${n.vinculada_en ? ` (${fmt(n.vinculada_en.slice(0, 10))})` : ''}</div>` : ''}
       ${n.estado === 'CERRADA' ? `<div><strong>${n.tipo_cierre === 'CANCELADA' ? 'Cancelada' : n.tipo_cierre === 'CUMPLIDA' ? 'Cumplida' : 'Cerrada'}${n.cerrada_en ? ` (${fmt(n.cerrada_en.slice(0, 10))})` : ''}${n.motivo_cierre ? `:</strong> ${escAttr(n.motivo_cierre)}` : '</strong>'}</div>` : ''}
@@ -256,6 +257,7 @@ function renderLista() {
       <td>${estadoBadge} ${antig}</td>
       <td>
         <button class="bsm sto-accion" onclick="window.notasPedido.descargarPdf('${n.id}')">📄 PDF</button>
+        <button class="bsm sto-accion" onclick="window.notasPedido.editarNotaAclaratoria('${n.id}')" title="Agregar/editar la leyenda que se imprime en el PDF">📝 Nota</button>
         ${accionVinculo}
         <button class="bsm d sto-accion" onclick="window.notasPedido.eliminarNota('${n.id}')">🗑️</button>
       </td>
@@ -343,6 +345,8 @@ function abrirNuevaNota() {
   if (bonif) bonif.value = '';
   const moneda = document.getElementById('np_moneda');
   if (moneda) moneda.value = 'ARS';
+  const nota = document.getElementById('np_nota_aclaratoria');
+  if (nota) nota.value = '';
   // Estimado a partir de la NP más alta ya cargada — el número real lo
   // asigna la secuencia de Postgres recién al guardar (ver 8.1), así que
   // esto es solo una vista previa, no una garantía si otra persona crea
@@ -393,6 +397,7 @@ async function guardarNota(e) {
     condiciones_pago: document.getElementById('np_condiciones_pago').value || null,
     lugar_entrega: document.getElementById('np_lugar_entrega').value.trim() || null,
     adjuntos,
+    nota_aclaratoria: document.getElementById('np_nota_aclaratoria').value.trim() || null,
     revisado_por: getUsuarioActual()?.nombre || null,
   };
 
@@ -560,6 +565,40 @@ async function reabrirNota(id) {
   renderLista();
 }
 
+// Nota aclaratoria / leyenda que se imprime en el PDF (ver generarPdfNP) —
+// a diferencia de "Adjuntos" (información interna), esta se puede cargar o
+// corregir en cualquier momento, sin importar el estado de la NP (pedido
+// explícito del usuario, 2026-11-06). Mismo patrón de modal que "Cerrar".
+let NP_A_ANOTAR = null;
+
+function editarNotaAclaratoria(id) {
+  const n = NOTAS.find(x => x.id === id);
+  if (!n) return;
+  NP_A_ANOTAR = id;
+  document.getElementById('mNOTANP_t').textContent = `📝 Nota aclaratoria — NP ${n.numero} (${n.proveedor_nombre})`;
+  const txt = document.getElementById('nnp_texto');
+  if (txt) txt.value = n.nota_aclaratoria || '';
+  om('mNOTANP');
+  txt?.focus();
+}
+
+async function confirmarNotaAclaratoria(e) {
+  e.preventDefault();
+  const id = NP_A_ANOTAR;
+  const n = NOTAS.find(x => x.id === id);
+  if (!id || !n) return;
+  const nota_aclaratoria = (document.getElementById('nnp_texto')?.value || '').trim() || null;
+
+  const { data, error } = await SB.from('compras_notas_pedido').update({ nota_aclaratoria }).eq('id', id).select().single();
+  if (error) { toast(error.message, 'er'); return; }
+
+  NOTAS = NOTAS.map(x => x.id === id ? data : x);
+  NP_A_ANOTAR = null;
+  cm('mNOTANP');
+  toast(`✓ Nota aclaratoria de la NP ${n.numero} ${nota_aclaratoria ? 'guardada' : 'borrada'}`);
+  renderLista();
+}
+
 async function eliminarNota(id) {
   const n = NOTAS.find(x => x.id === id);
   if (!n) return;
@@ -714,6 +753,19 @@ async function generarPdfNP(n, fotoDataUrl) {
   doc.text(fmtPesos(totales.total, n.moneda), valX, y, { align: 'right' });
   y += 12;
 
+  // Leyenda/aclaración libre, opcional — a diferencia de "Adjuntos" (solo
+  // informa interna), esta SÍ se imprime, pedido explícito del usuario.
+  if (n.nota_aclaratoria) {
+    doc.setFontSize(9);
+    const notaLineas = doc.splitTextToSize(String(n.nota_aclaratoria), pageW - marginX * 2 - 14);
+    if (y + notaLineas.length * 5 > 280) { doc.addPage(); y = 18; }
+    doc.setFont('helvetica', 'bold'); doc.setTextColor(0);
+    doc.text('Nota:', marginX, y);
+    doc.setFont('helvetica', 'normal'); doc.setTextColor(60);
+    doc.text(notaLineas, marginX + 14, y);
+    y += notaLineas.length * 5 + 6;
+  }
+
   doc.setDrawColor(220); doc.line(marginX, y, pageW - marginX, y);
   y += 6;
   doc.setFont('helvetica', 'italic'); doc.setFontSize(8); doc.setTextColor(100);
@@ -782,9 +834,10 @@ export function init() {
   document.getElementById('np_f_q')?.addEventListener('input', renderLista);
   document.getElementById('voc_f_q')?.addEventListener('input', renderListaVincularOC);
   document.getElementById('fCERRARNP')?.addEventListener('submit', confirmarCerrarNota);
+  document.getElementById('fNOTANP')?.addEventListener('submit', confirmarNotaAclaratoria);
   initExpandCollapse('t-np-lista');
   initExpandCollapse('voc_lista');
   initAutocompleteProveedor();
 
-  window.notasPedido = { descargarPdf, vincularOC, confirmarVincularOC, desvincular, cerrarNota, reabrirNota, eliminarNota };
+  window.notasPedido = { descargarPdf, vincularOC, confirmarVincularOC, desvincular, cerrarNota, reabrirNota, eliminarNota, editarNotaAclaratoria };
 }

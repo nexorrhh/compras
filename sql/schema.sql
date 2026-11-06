@@ -291,6 +291,12 @@ create table compras_notas_pedido (
   tipo_cierre text check (tipo_cierre is null or tipo_cierre in ('CUMPLIDA', 'CANCELADA')),
   motivo_cierre text,
   cerrada_en timestamptz,
+  -- Leyenda/aclaración libre que se imprime en el PDF de la NP (ver
+  -- sql/032_notas_pedido_nota_aclaratoria.sql y CLAUDE.md sección 8.3) —
+  -- se puede cargar al crear la NP o agregar/editar después en cualquier
+  -- momento (estado PENDIENTE, VINCULADA o CERRADA), a diferencia de
+  -- "adjuntos" que es solo información interna y nunca se imprime.
+  nota_aclaratoria text,
   created_at timestamptz not null default now()
 );
 

@@ -380,6 +380,10 @@
         <div style="font-size:11px;color:var(--muted);margin-top:4px">Se incluye en el PDF que se descarga ahora — no se guarda en la base. Si más adelante volvés a bajar el PDF de esta NP, no va a tener la foto, solo el aviso de que tenía una adjunta.</div>
       </div>
     </div>
+    <div class="fg">
+      <label>Nota aclaratoria (opcional)</label>
+      <textarea id="np_nota_aclaratoria" placeholder="Leyenda/aclaración que se imprime en el PDF" style="min-height:50px"></textarea>
+    </div>
     <div class="fg" style="max-width:340px">
       <label>Autorizado por</label>
       <div id="np_revisado_por" style="background:var(--bg3);border:1px solid var(--border);border-radius:7px;color:var(--muted);padding:7px 11px;font-size:13px">–</div>
@@ -426,6 +430,20 @@
       <input id="cnp_motivo" autocomplete="off" placeholder="Ej. se derivó a otro proveedor">
     </div>
     <div class="brow"><button type="button" class="btn" onclick="cm('mCERRARNP')">Cancelar</button><button type="submit" class="btn p">🔒 Cerrar</button></div>
+  </form>
+</div></div>
+
+<!-- ============ MODAL — NOTA ACLARATORIA (leyenda en el PDF) ============ -->
+<div class="modal-ov" id="mNOTANP">
+<div class="modal" style="max-width:460px">
+  <span class="mcls" onclick="cm('mNOTANP')">×</span>
+  <div class="mtitle" id="mNOTANP_t">📝 Nota aclaratoria</div>
+  <div class="psub" style="margin:0 0 14px">Se imprime en el PDF de esta Nota de Pedido — se puede cargar o corregir en cualquier momento.</div>
+  <form id="fNOTANP">
+    <div class="fg">
+      <textarea id="nnp_texto" placeholder="Leyenda/aclaración..." style="min-height:90px"></textarea>
+    </div>
+    <div class="brow"><button type="button" class="btn" onclick="cm('mNOTANP')">Cancelar</button><button type="submit" class="btn p">Guardar</button></div>
   </form>
 </div></div>
 

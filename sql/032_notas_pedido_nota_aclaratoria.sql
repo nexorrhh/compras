@@ -1,0 +1,11 @@
+-- Nota aclaratoria / leyenda en Notas de Pedido — pedido explícito del
+-- usuario, 2026-11-06: "necesitaria agregar a las notas de pedido la
+-- posiblidad de poder sumar una nota aclaratoria", ampliado al preguntarle
+-- el alcance: "quiero que salga en el PDF la idea es agregarle una leyenda
+-- a una nota de pedido". Ver CLAUDE.md sección 8.3.
+--
+-- Texto libre, opcional, editable en cualquier momento (al crear la NP o
+-- después, con el botón "📝 Nota" en la lista, sin importar el estado
+-- PENDIENTE/VINCULADA/CERRADA) — a diferencia de `adjuntos`, que es solo
+-- información interna, esta SÍ se imprime en el PDF descargable.
+alter table compras_notas_pedido add column if not exists nota_aclaratoria text;
