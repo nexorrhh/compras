@@ -919,6 +919,19 @@ borde del modal, disparando el scroll horizontal de `.tw`). Tres ajustes juntos:
   la palabra completa en el `<select>`), Precio/Subtotal 95px c/u, 🗑️ 54px (antes 40px) — el resto
   (~460px) queda para Descripción.
 
+**Seguía faltando espacio después de ese primer ajuste** (mismo día, reportado con captura: "mira como
+se ve sigue faltando espacio" — el `<select>` de Unidad todavía se cortaba a "Unida" y el número de
+Cantidad quedaba apretado contra la flechita nativa del input): el padding del `td` (6px/8px) ya estaba
+reducido, pero el padding **del propio `<input>`/`<select>`** seguía siendo el global de toda la app
+(`7px 11px`) — las dos reducciones se restan del mismo ancho fijo de columna, así que la del `td` sola
+no alcanzaba. Se agregó un padding más chico (`5px 4px`) y fuente más chica (`12px`) específico para
+`.np-it-cant`/`.np-it-uni`/`.np-it-precio` dentro de `#np_items_table` — mismo criterio que ya usa
+`.cot-precio-input` en Cotizaciones para columnas angostas de tabla (ver sección 9.2 punto 6) — y se
+escondieron las flechitas nativas del input numérico (`::-webkit-inner/outer-spin-button`,
+`-moz-appearance:textfield`) — son puramente cosméticas, no afectan poder tipear o pegar un número, pero
+en una columna angosta le ganaban espacio real al dígito. El botón 🗑️ bajó su propio padding (`.np-it-del`,
+`4px 6px`) para terminar de calzar en su columna.
+
 El PDF se genera 100% en el cliente con **jsPDF + jspdf-autotable** (CDN, cargados en `index.html` junto
 a SheetJS/Chart.js — mismo criterio sin bundler) — `generarPdfNP()` en `js/modules/notas-pedido.js`. Es
 un **diseño nuevo, no una réplica del Word viejo**: el usuario pidió explícitamente actualizar el

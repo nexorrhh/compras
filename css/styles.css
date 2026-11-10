@@ -269,6 +269,23 @@ input.cot-precio-bajo{border-color:var(--green);background:rgba(34,197,94,.15)}
    general de arriba encima, la columna angosta lo cortaba contra el
    borde derecho del modal. */
 #np_items_table td:last-child{padding:6px 4px;text-align:center}
+/* El padding general de input/select (7px 11px, ver arriba) seguía
+   comiéndose el ancho fijo de estas columnas por encima del padding ya
+   reducido del td — "Unidad" se cortaba a "Unida" y el spinner nativo del
+   número empujaba el contenido. Mismo criterio que ya usa
+   .cot-precio-input en Cotizaciones (padding chico + fuente 12px) para
+   columnas angostas de tabla. */
+#np_items_table .np-it-cant,#np_items_table .np-it-uni,#np_items_table .np-it-precio{padding:5px 4px;font-size:12px}
+/* Esconder las flechitas nativas de los inputs numéricos — son puramente
+   cosméticas (no afectan poder tipear/pegar un número), pero en una
+   columna angosta le ganaban espacio real al dígito. */
+#np_items_table input[type="number"]::-webkit-inner-spin-button,
+#np_items_table input[type="number"]::-webkit-outer-spin-button{margin:0;-webkit-appearance:none}
+#np_items_table input[type="number"]{-moz-appearance:textfield}
+/* El botón 🗑️ con su padding de siempre (.bsm, 5px 11px) no entraba en
+   una columna de 54px sumado al padding del propio td — achicarlo acá no
+   le saca función, solo lo hace calzar. */
+#np_items_table .np-it-del{padding:4px 6px}
 
 /* ---------- VARIOS ---------- */
 .pcard{background:var(--bg2);border:1px solid var(--border);border-radius:12px;padding:18px;margin-bottom:14px}
