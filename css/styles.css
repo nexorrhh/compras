@@ -260,6 +260,16 @@ input.cot-precio-bajo{border-color:var(--green);background:rgba(34,197,94,.15)}
 #cot-tabla-wrap th,#cot-tabla-wrap td{padding:6px}
 #cot-tabla-wrap thead th{position:sticky;top:0;z-index:10;background:var(--bg3)}
 
+/* Items de Nota de Pedido — mismo criterio que #cot-tabla-wrap de arriba:
+   el padding general de th/td (9px/13px) sobraba en columnas angostas
+   (Cantidad/Unidad/Precio/Subtotal) y causaba scroll horizontal en vez de
+   dejarle espacio de verdad a Descripción. */
+#np_items_table th,#np_items_table td{padding:6px 8px}
+/* El botón 🗑️ ya trae su propio padding (ver .bsm) — con el padding
+   general de arriba encima, la columna angosta lo cortaba contra el
+   borde derecho del modal. */
+#np_items_table td:last-child{padding:6px 4px;text-align:center}
+
 /* ---------- VARIOS ---------- */
 .pcard{background:var(--bg2);border:1px solid var(--border);border-radius:12px;padding:18px;margin-bottom:14px}
 .divider{border:none;border-top:1px solid var(--border);margin:18px 0}

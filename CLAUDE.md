@@ -905,6 +905,20 @@ también se achique si se borra texto, no solo crezca. El `resize:vertical` manu
 en el resto de los textareas del tablero) se sacó de este campo puntual (`resize:none`) porque hubiera
 quedado peleando con el auto-resize.
 
+**Scroll horizontal corregido** (mismo día, pedido del usuario viendo el resultado: "ajusta todo no se
+ve nada... necesito que se vea toda la informacion de forma clara"): el primer ancho fijo por columna
+(ver más arriba) le daba demasiado poco a Unidad (el `<select>` mostraba "U" solo, cortado) y nada al
+botón 🗑️ (su propio padding de `.bsm` no entraba en los 40px de esa columna, quedaba cortado contra el
+borde del modal, disparando el scroll horizontal de `.tw`). Tres ajustes juntos:
+- El modal pasó de 820px a **920px** ("agranda mas el cartel si necesitas", pedido explícito).
+- La tabla de ítems (`#np_items_table`, id nuevo para poder acotarla por CSS) reduce el padding general
+  de `th`/`td` (9px/13px) a `6px 8px` — mismo criterio ya usado en la comparativa de Cotizaciones
+  (`#cot-tabla-wrap`, ver sección 9.2 punto 5) — y la columna del botón 🗑️ baja aún más el padding
+  horizontal (`4px`) para dejarle lugar real al botón, que ya trae el suyo propio.
+- Anchos recalculados con ese padding más chico: Cantidad 65px, Unidad 95px (antes 80px — ahora entra
+  la palabra completa en el `<select>`), Precio/Subtotal 95px c/u, 🗑️ 54px (antes 40px) — el resto
+  (~460px) queda para Descripción.
+
 El PDF se genera 100% en el cliente con **jsPDF + jspdf-autotable** (CDN, cargados en `index.html` junto
 a SheetJS/Chart.js — mismo criterio sin bundler) — `generarPdfNP()` en `js/modules/notas-pedido.js`. Es
 un **diseño nuevo, no una réplica del Word viejo**: el usuario pidió explícitamente actualizar el

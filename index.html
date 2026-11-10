@@ -300,7 +300,7 @@
 
 <!-- ============ MODAL — NOTA DE PEDIDO (alta) ============ -->
 <div class="modal-ov" id="mNOTAPEDIDO">
-<div class="modal" style="width:820px;max-width:95vw">
+<div class="modal" style="width:920px;max-width:95vw">
   <span class="mcls" onclick="cm('mNOTAPEDIDO')">×</span>
   <div class="mtitle">+ Nueva Nota de Pedido <span id="np_numero_preview" style="color:var(--muted);font-weight:400;font-size:13px"></span></div>
   <form id="fNOTAPEDIDO">
@@ -315,8 +315,8 @@
     </div>
     <hr class="divider">
     <div class="psub" style="margin:0 0 8px">Ítems</div>
-    <div class="tw"><table style="table-layout:fixed">
-      <thead><tr><th style="text-align:center;width:70px">Cantidad</th><th style="width:80px">Unidad</th><th>Descripción</th><th style="text-align:center;width:100px">Precio</th><th style="text-align:center;width:100px">Subtotal</th><th style="width:40px"></th></tr></thead>
+    <div class="tw"><table id="np_items_table" style="table-layout:fixed">
+      <thead><tr><th style="text-align:center;width:65px">Cantidad</th><th style="width:95px">Unidad</th><th>Descripción</th><th style="text-align:center;width:95px">Precio</th><th style="text-align:center;width:95px">Subtotal</th><th style="width:54px"></th></tr></thead>
       <tbody id="np_items_body"></tbody>
     </table></div>
     <button type="button" class="bsm" id="np_add_item" style="margin-top:6px">+ Agregar línea</button>
