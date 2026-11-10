@@ -276,7 +276,7 @@ function filaItemInput() {
   return `<tr>
     <td><input class="np-it-cant" type="number" min="0" step="any" placeholder="Cant." style="text-align:center"></td>
     <td><select class="np-it-uni">${opciones}</select></td>
-    <td><textarea class="np-it-desc" placeholder="Descripción" rows="1" style="min-height:34px"></textarea></td>
+    <td><textarea class="np-it-desc" placeholder="Descripción" rows="1" style="min-height:34px;resize:none;overflow:hidden"></textarea></td>
     <td><input class="np-it-precio" type="number" min="0" step="any" placeholder="Precio" style="text-align:center"></td>
     <td class="np-it-subtotal" style="color:var(--muted);white-space:nowrap;text-align:center">$0,00</td>
     <td><button type="button" class="bsm d np-it-del">🗑️</button></td>
@@ -285,6 +285,16 @@ function filaItemInput() {
 
 function agregarFilaItem() {
   document.getElementById('np_items_body')?.insertAdjacentHTML('beforeend', filaItemInput());
+}
+
+// Descripción se agranda sola a medida que se escribe (en vez de depender
+// de que el usuario la estire a mano) — pedido explícito del usuario,
+// 2026-11-10: "no podes hacer que se vaya agrandando solo... asi lo tengo
+// que estirar yo y no me gusta". Técnica estándar: resetear a 'auto' antes
+// de medir, si no scrollHeight nunca encoge cuando se borra texto.
+function autoGrowTextarea(el) {
+  el.style.height = 'auto';
+  el.style.height = el.scrollHeight + 'px';
 }
 
 function leerItemsDelForm() {
@@ -815,6 +825,7 @@ export function init() {
   });
   document.getElementById('np_items_body')?.addEventListener('input', e => {
     if (e.target.classList.contains('np-it-cant') || e.target.classList.contains('np-it-precio')) recalcularTotalesModal();
+    if (e.target.classList.contains('np-it-desc')) autoGrowTextarea(e.target);
   });
   document.getElementById('np_bonificacion')?.addEventListener('input', recalcularTotalesModal);
   document.getElementById('np_moneda')?.addEventListener('change', recalcularTotalesModal);

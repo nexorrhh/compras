@@ -896,6 +896,15 @@ Descripción inserta un salto de línea en vez de hacer nada — el detalle de l
 (`filaDetalleNota()`) y el PDF (`jspdf-autotable`, que ya separa por `\n` en líneas propias dentro de la
 celda) respetan esos saltos de línea si se cargan.
 
+**Se agranda sola al escribir** (mismo día, pedido explícito del usuario: "no podes hacer que se vaya
+agrandando solo a medida que voy escribiendo? porque asi lo tengo que estirar yo y no me gusta") —
+`autoGrowTextarea()` en `js/modules/notas-pedido.js`, colgada del mismo listener `input` que ya
+recalculaba los totales en vivo (ver más abajo), resetea la altura a `auto` y la vuelve a fijar en
+`scrollHeight` en cada tecla — el reseteo a `auto` antes de medir es necesario para que la altura
+también se achique si se borra texto, no solo crezca. El `resize:vertical` manual (sí sigue disponible
+en el resto de los textareas del tablero) se sacó de este campo puntual (`resize:none`) porque hubiera
+quedado peleando con el auto-resize.
+
 El PDF se genera 100% en el cliente con **jsPDF + jspdf-autotable** (CDN, cargados en `index.html` junto
 a SheetJS/Chart.js — mismo criterio sin bundler) — `generarPdfNP()` en `js/modules/notas-pedido.js`. Es
 un **diseño nuevo, no una réplica del Word viejo**: el usuario pidió explícitamente actualizar el
