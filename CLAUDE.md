@@ -883,6 +883,19 @@ original — se cambió para poder calcular subtotales/total reales, ver más ab
 Word mezclaban `$`/`U$s`/"c/u"/"el kg" sin formato fijo, pero eso quedó afuera a cambio de que el
 sistema haga la cuenta solo.
 
+**Descripción como textarea** (corregido 2026-11-10, caso real del usuario viendo el modal de alta: "no
+se llega a leer todo lo que escribi ahi" — el input de Descripción era de una sola línea y angosto, el
+texto tipeado quedaba cortado visualmente sin poder verlo completo mientras se cargaba). Dos cambios
+juntos: la tabla de ítems del modal pasó a `table-layout:fixed` con ancho fijo para
+Cantidad/Unidad/Precio/Subtotal/🗑️, así el ancho restante (la mayoría) queda para Descripción; y el
+`<input class="np-it-desc">` pasó a `<textarea>` (mismo campo `descripcion`, ningún cambio de modelo de
+datos — `leerItemsDelForm()` sigue leyendo `.value`, que `<textarea>` también tiene), que ajusta el
+texto en varias líneas en vez de cortarlo. El listener de `keydown` del formulario ya excluía
+`TEXTAREA` del "Enter no manda la NP" (pensado para "Entrega parcial", ver más abajo), así que Enter en
+Descripción inserta un salto de línea en vez de hacer nada — el detalle de la lista
+(`filaDetalleNota()`) y el PDF (`jspdf-autotable`, que ya separa por `\n` en líneas propias dentro de la
+celda) respetan esos saltos de línea si se cargan.
+
 El PDF se genera 100% en el cliente con **jsPDF + jspdf-autotable** (CDN, cargados en `index.html` junto
 a SheetJS/Chart.js — mismo criterio sin bundler) — `generarPdfNP()` en `js/modules/notas-pedido.js`. Es
 un **diseño nuevo, no una réplica del Word viejo**: el usuario pidió explícitamente actualizar el

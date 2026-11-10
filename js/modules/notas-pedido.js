@@ -188,7 +188,7 @@ function filaDetalleNota(n) {
   const items = Array.isArray(n.items) ? n.items : [];
   const { subtotal, pct, montoBonif, total } = calcularTotales(items, n.bonificacion);
   const filasItems = items.length
-    ? items.map(it => `<tr><td style="text-align:center">${escAttr(it.cantidad || '')}</td><td style="text-align:center">${escAttr(it.unidad || '')}</td><td>${escAttr(it.descripcion || '')}</td><td style="text-align:center">${fmtPesos(it.precio, n.moneda)}</td><td style="text-align:center">${fmtPesos((Number(it.cantidad) || 0) * (Number(it.precio) || 0), n.moneda)}</td></tr>`).join('')
+    ? items.map(it => `<tr><td style="text-align:center">${escAttr(it.cantidad || '')}</td><td style="text-align:center">${escAttr(it.unidad || '')}</td><td style="white-space:pre-wrap">${escAttr(it.descripcion || '')}</td><td style="text-align:center">${fmtPesos(it.precio, n.moneda)}</td><td style="text-align:center">${fmtPesos((Number(it.cantidad) || 0) * (Number(it.precio) || 0), n.moneda)}</td></tr>`).join('')
     : '<tr><td colspan="5" style="color:var(--muted)">Sin ítems cargados</td></tr>';
   const campo = (label, val) => val ? `<div><strong>${label}:</strong> ${escAttr(val)}</div>` : '';
   return `
@@ -276,7 +276,7 @@ function filaItemInput() {
   return `<tr>
     <td><input class="np-it-cant" type="number" min="0" step="any" placeholder="Cant." style="text-align:center"></td>
     <td><select class="np-it-uni">${opciones}</select></td>
-    <td><input class="np-it-desc" placeholder="Descripción"></td>
+    <td><textarea class="np-it-desc" placeholder="Descripción" rows="1" style="min-height:34px"></textarea></td>
     <td><input class="np-it-precio" type="number" min="0" step="any" placeholder="Precio" style="text-align:center"></td>
     <td class="np-it-subtotal" style="color:var(--muted);white-space:nowrap;text-align:center">$0,00</td>
     <td><button type="button" class="bsm d np-it-del">🗑️</button></td>
