@@ -9,6 +9,7 @@
 // ============================================================
 import { SB } from '../supabase-client.js';
 import { toast, om, cm, fmt, fetchAll, escAttr, escJsArg } from '../utils.js';
+import { isDisclosureOpen, setDisclosure, revealElement } from '../motion.js';
 
 let GRUPOS = [];
 let PROVEEDORES = [];
@@ -232,8 +233,8 @@ function renderGrupoDetalle() {
   tb.innerHTML = relaciones.map(({ r, p }) => {
     const c = contactoPrincipal(p.id);
     const s = stats.get(p.cod_tango);
-    return `<tr class="oc-row">
-      <td><span class="oc-chevron">▸</span> ${escAttr(p.nombre)}${p.estado === 'SUSPENDIDO' ? ' ' + badgeEstado('SUSPENDIDO') : ''}</td>
+    return `<tr class="oc-row" tabindex="0" aria-expanded="false">
+      <td><span class="oc-chevron" aria-hidden="true">▸</span> ${escAttr(p.nombre)}${p.estado === 'SUSPENDIDO' ? ' ' + badgeEstado('SUSPENDIDO') : ''}</td>
       <td><select class="pvg-estado" data-prov="${p.id}" data-grupo="${grupo.id}"><option value="PREFERIDO" ${r.estado === 'PREFERIDO' ? 'selected' : ''}>Preferido</option><option value="ACTIVO" ${r.estado === 'ACTIVO' ? 'selected' : ''}>Activo</option><option value="ALTERNATIVO" ${r.estado === 'ALTERNATIVO' ? 'selected' : ''}>Alternativo</option><option value="SUSPENDIDO" ${r.estado === 'SUSPENDIDO' ? 'selected' : ''}>Suspendido</option></select></td>
       <td>${c ? `${escAttr(c.nombre || '')}${c.telefono ? '<br><span class="text-muted">' + escAttr(c.telefono) + '</span>' : ''}${c.email ? '<br><span class="text-muted">' + escAttr(c.email) + '</span>' : ''}` : '<span class="text-yellow">Falta contacto</span>'}</td>
       <td>${s?.ultima ? fmt(s.ultima) : '–'}</td><td>${s ? fmtPesos(s.total) : '–'}</td>
@@ -333,7 +334,7 @@ function renderDirectorio() {
     const gs = p.id ? gruposDeProveedor(p.id) : [];
     const s = stats.get(p.cod_tango);
     const contactosCount = p.virtual ? '–' : Math.max(CONTACTOS.filter(c => c.proveedor_id === p.id).length, (p.telefono_tango || p.email_tango) ? 1 : 0);
-    return `<tr class="oc-row"><td><span class="oc-chevron">▸</span> ${escAttr(p.nombre)}${p.virtual ? ' <span class="badge">detectado</span>' : ''}</td><td>${escAttr(p.cod_tango || '–')}</td><td>${gs.length ? gs.map(g => `<span class="badge cat-permiso">${escAttr(g.nombre)}</span>`).join(' ') : '<span class="text-muted">–</span>'}</td><td>${s ? fmtPesos(s.total) : '–'}</td><td>${contactosCount}</td><td>${filaAccionesProveedor(p)}</td></tr>
+    return `<tr class="oc-row" tabindex="0" aria-expanded="false"><td><span class="oc-chevron" aria-hidden="true">▸</span> ${escAttr(p.nombre)}${p.virtual ? ' <span class="badge">detectado</span>' : ''}</td><td>${escAttr(p.cod_tango || '–')}</td><td>${gs.length ? gs.map(g => `<span class="badge cat-permiso">${escAttr(g.nombre)}</span>`).join(' ') : '<span class="text-muted">–</span>'}</td><td>${s ? fmtPesos(s.total) : '–'}</td><td>${contactosCount}</td><td>${filaAccionesProveedor(p)}</td></tr>
     <tr class="oc-detail" style="display:none"><td colspan="6">${p.virtual ? 'Detectado en Órdenes de Compra. Completá la ficha para asignarle grupos y contactos.' : detalleProveedor(p)}</td></tr>`;
   }).join('') || '<tr><td colspan="6" class="empty">Sin resultados</td></tr>';
 }
@@ -465,15 +466,24 @@ async function eliminarContacto(id) {
 }
 
 function initExpandCollapse(tbodyId) {
-  document.getElementById(tbodyId)?.addEventListener('click', e => {
-    if (e.target.closest('.sto-accion') || e.target.closest('select') || e.target.closest('button')) return;
+  const tbody = document.getElementById(tbodyId);
+  tbody?.addEventListener('click', e => {
+    if (e.target.closest('button, a, input, select, textarea, label')) return;
     const row = e.target.closest('.oc-row');
     if (!row) return;
     const detail = row.nextElementSibling;
     if (!detail?.classList.contains('oc-detail')) return;
-    const abierto = detail.style.display !== 'none';
-    detail.style.display = abierto ? 'none' : '';
-    const ch = row.querySelector('.oc-chevron'); if (ch) ch.textContent = abierto ? '▸' : '▾';
+    const abierto = isDisclosureOpen(detail);
+    setDisclosure(detail, !abierto, { trigger: row });
+    const ch = row.querySelector('.oc-chevron');
+    if (ch) ch.style.transform = abierto ? 'rotate(0deg)' : 'rotate(90deg)';
+  });
+  tbody?.addEventListener('keydown', e => {
+    if (e.key !== 'Enter' && e.key !== ' ') return;
+    const row = e.target.closest('.oc-row');
+    if (!row || e.target !== row) return;
+    e.preventDefault();
+    row.click();
   });
 }
 
@@ -503,7 +513,13 @@ export function init() {
   }));
   document.getElementById('pvg_eliminar')?.addEventListener('click', eliminarGrupoActual);
   document.getElementById('pvg_buscar_grupo')?.addEventListener('input', renderListaGrupos);
-  document.getElementById('pvg_lista_grupos')?.addEventListener('click', e => { const b = e.target.closest('[data-grupo]'); if (!b) return; GRUPO_ACTUAL_ID = b.dataset.grupo; renderGrupos(); });
+  document.getElementById('pvg_lista_grupos')?.addEventListener('click', e => {
+    const b = e.target.closest('[data-grupo]');
+    if (!b || GRUPO_ACTUAL_ID === b.dataset.grupo) return;
+    GRUPO_ACTUAL_ID = b.dataset.grupo;
+    renderGrupos();
+    revealElement(document.querySelector('#s-prov-grupos .prov-grupo-contenido'), { distance: 8, duration: 200 });
+  });
   document.getElementById('pvg_agregar')?.addEventListener('click', () => abrirSelectorGrupo());
   document.getElementById('pvg_sel_buscar')?.addEventListener('input', renderSelectorGrupo);
   document.getElementById('pvg_sel_todos')?.addEventListener('change', e => { document.querySelectorAll('.pvg-sel-check').forEach(c => { c.checked = e.target.checked; }); });

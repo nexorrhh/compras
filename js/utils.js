@@ -2,19 +2,32 @@
 // Utilidades compartidas por todos los módulos del tablero
 // ============================================================
 import { SB } from './supabase-client.js';
+import { animateElement, motionAllowed } from './motion.js';
+import { openModal, closeModal } from './modal-motion.js';
 
 export function toast(msg, type = 'ok') {
   const c = document.getElementById('TC');
   if (!c) return;
   const t = document.createElement('div');
   t.className = `toast ${type}`;
+  t.setAttribute('role', type === 'er' ? 'alert' : 'status');
   t.innerHTML = `<span>${type === 'ok' ? '✓' : '✗'}</span> ${msg}`;
   c.appendChild(t);
-  setTimeout(() => t.remove(), 3200);
+  animateElement(t, [
+    { opacity: 0, transform: 'translateX(12px)' },
+    { opacity: 1, transform: 'translateX(0)' },
+  ], { duration: 200 });
+  setTimeout(() => {
+    if (!motionAllowed(t)) { t.remove(); return; }
+    animateElement(t, [
+      { opacity: 1, transform: 'translateX(0)' },
+      { opacity: 0, transform: 'translateX(8px)' },
+    ], { duration: 130, easing: 'ease-out' }).then(() => t.remove());
+  }, 3200);
 }
 
-export const om = id => document.getElementById(id)?.classList.add('open');
-export const cm = id => document.getElementById(id)?.classList.remove('open');
+export const om = id => openModal(document.getElementById(id));
+export const cm = id => closeModal(document.getElementById(id));
 
 export const fmt = d => d ? new Date(d + 'T12:00:00').toLocaleDateString('es-AR') : '–';
 export const fmtDT = d => d ? new Date(d).toLocaleString('es-AR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }) : '–';

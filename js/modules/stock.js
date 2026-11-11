@@ -22,6 +22,7 @@
 // ============================================================
 import { SB } from '../supabase-client.js';
 import { toast, om, cm, norm, fechaISO, txt, num, fetchAll, escJsArg } from '../utils.js';
+import { isDisclosureOpen, setDisclosure } from '../motion.js';
 
 let SALDOS = [];
 let MINIMOS = [];
@@ -159,16 +160,24 @@ function detalleArticulo(a) {
 }
 
 function initExpandCollapse(tbodyId) {
-  document.getElementById(tbodyId)?.addEventListener('click', e => {
-    if (e.target.closest('.sto-accion')) return;
+  const tbody = document.getElementById(tbodyId);
+  tbody?.addEventListener('click', e => {
+    if (e.target.closest('button, a, input, select, textarea, label')) return;
     const row = e.target.closest('.oc-row');
     if (!row) return;
     const detailRow = row.nextElementSibling;
     if (!detailRow || !detailRow.classList.contains('oc-detail')) return;
-    const isOpen = detailRow.style.display !== 'none';
-    detailRow.style.display = isOpen ? 'none' : '';
+    const isOpen = isDisclosureOpen(detailRow);
+    setDisclosure(detailRow, !isOpen, { trigger: row });
     const chevron = row.querySelector('.oc-chevron');
-    if (chevron) chevron.textContent = isOpen ? '▸' : '▾';
+    if (chevron) chevron.style.transform = isOpen ? 'rotate(0deg)' : 'rotate(90deg)';
+  });
+  tbody?.addEventListener('keydown', e => {
+    if (e.key !== 'Enter' && e.key !== ' ') return;
+    const row = e.target.closest('.oc-row');
+    if (!row || e.target !== row) return;
+    e.preventDefault();
+    row.click();
   });
 }
 
@@ -199,8 +208,8 @@ function renderTodo() {
       : estadoStock(a.saldo, min.stock_minimo) === 'BAJO'
         ? `<span class="badge vencido">⚠️ Bajo mín. (${min.stock_minimo.toLocaleString('es-AR')})</span>`
         : `<span class="badge vigente">✓ OK (mín. ${min.stock_minimo.toLocaleString('es-AR')})</span>`;
-    return `<tr class="oc-row">
-      <td><span class="oc-chevron">▸</span> ${a.cod_articulo}</td>
+    return `<tr class="oc-row" tabindex="0" aria-expanded="false">
+      <td><span class="oc-chevron" aria-hidden="true">▸</span> ${a.cod_articulo}</td>
       <td>${a.descripcion || ''}${a.desc_adicional ? ' ' + a.desc_adicional : ''}</td>
       <td>${a.saldo.toLocaleString('es-AR')}</td>
       <td>${a.unidad_medida || '–'}</td>

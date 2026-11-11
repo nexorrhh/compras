@@ -19,6 +19,7 @@
 // ============================================================
 import { SB } from '../supabase-client.js';
 import { toast, fetchAll, escAttr } from '../utils.js';
+import { isDisclosureOpen, setDisclosure } from '../motion.js';
 
 let ITEMS = [];       // compras_cotizaciones_items con confirmado=true
 let PRECIOS = [];      // compras_cotizaciones_precios
@@ -261,8 +262,8 @@ function renderSemanas() {
       <td style="text-align:right">${chipsMonto(g.montoPorMoneda)}</td>
       <td style="text-align:right">${chipsUnidad(g.cantidadPorUnidad)}</td>
     </tr>`).join('');
-    return `<tr class="oc-row">
-      <td><span class="oc-chevron">▸</span> ${escAttr(labelSemana(clave))}</td>
+    return `<tr class="oc-row" tabindex="0" aria-expanded="false">
+      <td><span class="oc-chevron" aria-hidden="true">▸</span> ${escAttr(labelSemana(clave))}</td>
       <td>${proveedores.length}</td>
       <td style="text-align:right">${itemsTotal}</td>
       <td style="text-align:right">${chipsMonto(montoTotal)}</td>
@@ -277,15 +278,24 @@ function renderSemanas() {
 }
 
 function initExpandCollapse(tbodyId) {
-  document.getElementById(tbodyId)?.addEventListener('click', e => {
+  const tbody = document.getElementById(tbodyId);
+  tbody?.addEventListener('click', e => {
+    if (e.target.closest('button, a, input, select, textarea, label')) return;
     const row = e.target.closest('.oc-row');
     if (!row) return;
     const detailRow = row.nextElementSibling;
     if (!detailRow || !detailRow.classList.contains('oc-detail')) return;
-    const isOpen = detailRow.style.display !== 'none';
-    detailRow.style.display = isOpen ? 'none' : '';
+    const isOpen = isDisclosureOpen(detailRow);
+    setDisclosure(detailRow, !isOpen, { trigger: row });
     const chevron = row.querySelector('.oc-chevron');
-    if (chevron) chevron.textContent = isOpen ? '▸' : '▾';
+    if (chevron) chevron.style.transform = isOpen ? 'rotate(0deg)' : 'rotate(90deg)';
+  });
+  tbody?.addEventListener('keydown', e => {
+    if (e.key !== 'Enter' && e.key !== ' ') return;
+    const row = e.target.closest('.oc-row');
+    if (!row || e.target !== row) return;
+    e.preventDefault();
+    row.click();
   });
 }
 

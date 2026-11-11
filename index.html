@@ -4,25 +4,30 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Tablero de Compras — CIMOMET</title>
-<script>(function(){try{document.documentElement.setAttribute('data-theme',localStorage.getItem('compras_tema')||'dark');}catch(e){}})();</script>
+<script>(function(){try{document.documentElement.setAttribute('data-theme',localStorage.getItem('compras_tema')||'light');}catch(e){document.documentElement.setAttribute('data-theme','light');}})();</script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4/dist/chart.umd.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.2/dist/jspdf.umd.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/jspdf-autotable@3.8.2/dist/jspdf.plugin.autotable.min.js"></script>
 <link rel="stylesheet" href="css/styles.css">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="css/dashboard.css">
 </head>
 <body>
+<a class="skip-link" href="#main-content">Ir al contenido principal</a>
 
 <div class="toast-c" id="TC"></div>
 
 <!-- ERROR DE CONEXIÓN (solo se muestra si falla la conexión automática a Supabase) -->
 <div id="app-error" style="display:none;align-items:center;justify-content:center;min-height:100vh;padding:20px">
   <div class="cfg-box">
-    <div class="cfg-logo"><div class="cfg-logo-icon">⚠️</div>Tablero de Compras</div>
+    <div class="cfg-logo"><div class="cfg-logo-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="m12 3 10 18H2L12 3Z"/><path d="M12 9v5m0 3v.01"/></svg></div>Tablero de Compras</div>
     <div class="cfg-sub">No se pudo conectar a Supabase</div>
     <div class="alert-box red" id="app-error-msg"></div>
-    <div style="margin-top:16px;font-size:12px;color:var(--muted)">
+    <div style="margin-top:16px;font-size:14px;color:var(--muted)">
       Verificá que las tablas <code>compras_*</code> existan en el proyecto (ver <code>sql/schema.sql</code>) y volvé a cargar la página.
     </div>
   </div>
@@ -30,16 +35,29 @@
 
 <!-- LOGIN POR PIN (no es autenticación real — ver CLAUDE.md sección 9) -->
 <div id="app-login" style="display:none;align-items:center;justify-content:center;min-height:100vh;padding:20px">
-  <div class="cfg-box" style="width:560px">
-    <div class="cfg-logo"><div class="cfg-logo-icon">🔒</div>Tablero de Compras</div>
+  <div class="cfg-box login-card" id="login-card">
+    <div id="login-content">
+    <div class="cfg-logo"><div class="cfg-logo-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><rect x="4" y="10" width="16" height="11" rx="3"/><path d="M8 10V7a4 4 0 0 1 8 0v3m-4 5v2"/></svg></div>Tablero de Compras</div>
     <div class="cfg-sub" style="margin-bottom:22px">¿Quién está usando este tablero?</div>
+    <div class="login-profiles-status" id="login-profiles-status" role="status">Cargando perfiles…</div>
     <div id="login-perfiles" class="login-grid"></div>
     <div id="login-pin-wrap" style="display:none;margin-top:20px">
-      <label id="login-pin-label" style="display:block;font-size:12px;color:var(--muted);margin-bottom:6px">PIN</label>
-      <input id="login-pin" type="password" inputmode="numeric" maxlength="4" placeholder="••••" style="width:100%;text-align:center;font-size:20px;letter-spacing:8px">
-      <button type="button" class="btn p" id="login-entrar" style="width:100%;margin-top:12px">Entrar</button>
+      <label id="login-pin-label" for="login-pin" style="display:block;font-size:12px;color:var(--muted);margin-bottom:6px">PIN</label>
+      <input id="login-pin" type="password" inputmode="numeric" autocomplete="current-password" maxlength="4" placeholder="••••" aria-describedby="login-error" style="width:100%;text-align:center;font-size:20px;letter-spacing:8px">
+      <button type="button" class="btn p" id="login-entrar" style="width:100%;margin-top:12px" disabled>Entrar</button>
     </div>
-    <div class="alert-box red" id="login-error" style="display:none;margin-top:12px"></div>
+    <div class="alert-box red" id="login-error" role="alert" style="display:none;margin-top:12px"></div>
+    </div>
+    <div class="login-welcome" id="login-welcome" role="status" aria-live="polite" aria-atomic="true" tabindex="-1" hidden>
+      <div class="login-welcome-portrait" aria-hidden="true">
+        <div class="login-avatar" id="login-welcome-avatar"></div>
+        <span class="login-success-check"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6"><path d="m5 12 4 4L19 6"/></svg></span>
+      </div>
+      <h1 id="login-welcome-title">¡Bienvenido!</h1>
+      <p id="login-welcome-status">Cargando tu tablero…</p>
+      <div class="login-loader" aria-hidden="true"><span></span></div>
+      <div class="login-loading-dots" aria-hidden="true"><span></span><span></span><span></span></div>
+    </div>
   </div>
 </div>
 
@@ -49,7 +67,7 @@
 <!-- ============ MODALES — FLOTA / VEHÍCULOS ============ -->
 <div class="modal-ov" id="mVC">
 <div class="modal">
-  <span class="mcls" onclick="cm('mVC')" id="mVC_close">×</span>
+  <button type="button" class="mcls" aria-label="Cerrar ventana" onclick="cm('mVC')" id="mVC_close">×</button>
   <div class="mtitle" id="mVC_t">Vehículo</div>
   <form id="fVC">
     <input type="hidden" id="vc_id">
@@ -81,7 +99,7 @@
 <!-- ============ MODAL — SOLICITUDES (aprobar/rechazar) ============ -->
 <div class="modal-ov" id="mAPRO">
 <div class="modal">
-  <span class="mcls" onclick="cm('mAPRO')">×</span>
+  <button type="button" class="mcls" aria-label="Cerrar ventana" onclick="cm('mAPRO')">×</button>
   <div class="mtitle">Gestionar Solicitud</div>
   <input type="hidden" id="apro_id">
   <div class="sol-detail" id="apro_detail"></div>
@@ -97,7 +115,7 @@
 <!-- ============ MODAL — NUEVA SOLICITUD (creada por Compras) ============ -->
 <div class="modal-ov" id="mNUEVASOL">
 <div class="modal">
-  <span class="mcls" onclick="cm('mNUEVASOL')">×</span>
+  <button type="button" class="mcls" aria-label="Cerrar ventana" onclick="cm('mNUEVASOL')">×</button>
   <div class="mtitle">+ Nueva Solicitud</div>
   <div class="psub" style="margin-bottom:16px">Para pedir un vehículo a nombre de otra persona, o para vos mismo</div>
   <form id="fNUEVASOL">
@@ -122,7 +140,7 @@
 <!-- ============ MODAL — MANTENIMIENTO ============ -->
 <div class="modal-ov" id="mMAN">
 <div class="modal">
-  <span class="mcls" onclick="cm('mMAN')">×</span>
+  <button type="button" class="mcls" aria-label="Cerrar ventana" onclick="cm('mMAN')">×</button>
   <div class="mtitle">🔧 Registrar Mantenimiento</div>
   <form id="fMAN">
     <div class="fr">
@@ -149,7 +167,7 @@
 <!-- ============ MODAL — VTV ============ -->
 <div class="modal-ov" id="mVTV">
 <div class="modal">
-  <span class="mcls" onclick="cm('mVTV')">×</span>
+  <button type="button" class="mcls" aria-label="Cerrar ventana" onclick="cm('mVTV')">×</button>
   <div class="mtitle" id="mVTV_t">🔍 Registrar VTV</div>
   <form id="fVTV">
     <input type="hidden" id="vtv_id">
@@ -166,7 +184,7 @@
 <!-- ============ MODAL — DOCUMENTACIÓN (Seguros + Permisos) ============ -->
 <div class="modal-ov" id="mDOC">
 <div class="modal">
-  <span class="mcls" onclick="cm('mDOC')">×</span>
+  <button type="button" class="mcls" aria-label="Cerrar ventana" onclick="cm('mDOC')">×</button>
   <div class="mtitle" id="mDOC_t">🛡️ Registrar Documento</div>
   <div class="psub" style="margin-bottom:16px">Subí el frente del documento (PDF o foto) — ahí están los datos completos. Acá solo se indica el vencimiento (y tipo/organismo si es un permiso). Si ya había uno cargado para este vehículo, lo estás editando: podés reemplazar el archivo y/o corregir el vencimiento sin crear uno nuevo.</div>
   <form id="fDOC">
@@ -189,7 +207,7 @@
 <!-- ============ MODAL — STOCK: SEGUIMIENTO ============ -->
 <div class="modal-ov" id="mSEGUI">
 <div class="modal">
-  <span class="mcls" onclick="cm('mSEGUI')">×</span>
+  <button type="button" class="mcls" aria-label="Cerrar ventana" onclick="cm('mSEGUI')">×</button>
   <div class="mtitle">⭐ Seguimiento de artículo</div>
   <form id="fSEGUI">
     <div class="fg"><label>Código</label><div id="sg_codigo" style="font-weight:700"></div></div>
@@ -207,7 +225,7 @@
 <!-- ============ MODAL — CREAR GRUPO DE PROVEEDORES ============ -->
 <div class="modal-ov" id="mNUEVOGRUPO">
 <div class="modal" style="max-width:480px">
-  <span class="mcls" onclick="cm('mNUEVOGRUPO')">×</span>
+  <button type="button" class="mcls" aria-label="Cerrar ventana" onclick="cm('mNUEVOGRUPO')">×</button>
   <div class="prov-grupo-modal-head">
     <div class="prov-grupo-modal-icon">🗂️</div>
     <div><div class="mtitle" style="margin:0 0 4px">Crear grupo de proveedores</div><div class="psub" style="margin:0">Organizá a quién consultar cuando necesites cotizar un rubro.</div></div>
@@ -223,7 +241,7 @@
 <!-- ============ MODAL — ASIGNAR PROVEEDORES A UN GRUPO ============ -->
 <div class="modal-ov" id="mPROVGRUPO">
 <div class="modal" style="max-width:620px">
-  <span class="mcls" onclick="cm('mPROVGRUPO')">×</span>
+  <button type="button" class="mcls" aria-label="Cerrar ventana" onclick="cm('mPROVGRUPO')">×</button>
   <div class="mtitle" id="mPROVGRUPO_t">Asignar proveedores</div>
   <div class="psub">Seleccioná proveedores registrados o detectados en las Órdenes de Compra de Tango. No se escriben nombres manualmente.</div>
   <input id="pvg_sel_buscar" placeholder="Buscar por nombre o código Tango..." style="margin-bottom:10px">
@@ -235,7 +253,7 @@
 <!-- ============ MODAL — SUMAR PROVEEDORES DEL GRUPO A COTIZACIÓN ============ -->
 <div class="modal-ov" id="mCOTGRUPO">
 <div class="modal" style="max-width:620px">
-  <span class="mcls" onclick="cm('mCOTGRUPO')">×</span>
+  <button type="button" class="mcls" aria-label="Cerrar ventana" onclick="cm('mCOTGRUPO')">×</button>
   <div class="mtitle" id="mCOTGRUPO_t">Sumar proveedores</div>
   <div class="psub">Los preferidos se invitan primero. Si necesitás ampliar la consulta, seleccioná otros proveedores disponibles del grupo.</div>
   <input id="cotg_buscar" placeholder="Buscar proveedor..." style="margin-bottom:10px">
@@ -246,7 +264,7 @@
 <!-- ============ MODAL — PROVEEDOR (alta/edición) ============ -->
 <div class="modal-ov" id="mPROVEEDOR">
 <div class="modal">
-  <span class="mcls" onclick="cm('mPROVEEDOR')">×</span>
+  <button type="button" class="mcls" aria-label="Cerrar ventana" onclick="cm('mPROVEEDOR')">×</button>
   <div class="mtitle" id="mPROVEEDOR_t">+ Nuevo proveedor</div>
   <form id="fPROVEEDOR">
     <input type="hidden" id="pv_id">
@@ -273,7 +291,7 @@
 <!-- ============ MODAL — CONTACTO (alta) ============ -->
 <div class="modal-ov" id="mCONTACTO">
 <div class="modal">
-  <span class="mcls" onclick="cm('mCONTACTO')">×</span>
+  <button type="button" class="mcls" aria-label="Cerrar ventana" onclick="cm('mCONTACTO')">×</button>
   <div class="mtitle">👤+ Agregar contacto</div>
   <form id="fCONTACTO">
     <div class="fg"><label>Nombre</label><input id="ct_nombre" placeholder="Nombre del vendedor/contacto"></div>
@@ -289,7 +307,7 @@
 <!-- ============ MODAL — INSTRUCTIVO DE CARGA (genérico, ver js/main.js) ============ -->
 <div class="modal-ov" id="mINSTRUCTIVO">
 <div class="modal">
-  <span class="mcls" onclick="cm('mINSTRUCTIVO')">×</span>
+  <button type="button" class="mcls" aria-label="Cerrar ventana" onclick="cm('mINSTRUCTIVO')">×</button>
   <div class="mtitle" id="mINSTR_t">📤 Cómo bajar el archivo</div>
   <ol id="mINSTR_pasos" style="margin:0 0 18px 20px;line-height:1.9;font-size:14px"></ol>
   <div class="brow">
@@ -301,7 +319,7 @@
 <!-- ============ MODAL — NOTA DE PEDIDO (alta) ============ -->
 <div class="modal-ov" id="mNOTAPEDIDO">
 <div class="modal" style="width:920px;max-width:95vw">
-  <span class="mcls" onclick="cm('mNOTAPEDIDO')">×</span>
+  <button type="button" class="mcls" aria-label="Cerrar ventana" onclick="cm('mNOTAPEDIDO')">×</button>
   <div class="mtitle">+ Nueva Nota de Pedido <span id="np_numero_preview" style="color:var(--muted);font-weight:400;font-size:13px"></span></div>
   <form id="fNOTAPEDIDO">
     <div class="fg" style="position:relative">
@@ -395,7 +413,7 @@
 <!-- ============ MODAL — VINCULAR NOTA DE PEDIDO CON OC ============ -->
 <div class="modal-ov" id="mVINCULAROC">
 <div class="modal" style="width:700px;max-width:95vw">
-  <span class="mcls" onclick="cm('mVINCULAROC')">×</span>
+  <button type="button" class="mcls" aria-label="Cerrar ventana" onclick="cm('mVINCULAROC')">×</button>
   <div class="mtitle" id="mVOC_t">Vincular con Orden de Compra</div>
   <input id="voc_f_q" placeholder="Buscar por proveedor o N° de OC...">
   <div class="psub" id="voc_resumen" style="margin:6px 0 0"></div>
@@ -409,7 +427,7 @@
 <!-- ============ MODAL — CERRAR NOTA DE PEDIDO SIN OC ============ -->
 <div class="modal-ov" id="mCERRARNP">
 <div class="modal" style="max-width:420px">
-  <span class="mcls" onclick="cm('mCERRARNP')">×</span>
+  <button type="button" class="mcls" aria-label="Cerrar ventana" onclick="cm('mCERRARNP')">×</button>
   <div class="mtitle" id="mCERRARNP_t">🔒 Cerrar Nota de Pedido</div>
   <div class="psub" style="margin:0 0 14px">Para una NP que nunca va a tener una Orden de Compra propia. Se puede reabrir después si hace falta.</div>
   <form id="fCERRARNP">
@@ -436,7 +454,7 @@
 <!-- ============ MODAL — NOTA ACLARATORIA (leyenda en el PDF) ============ -->
 <div class="modal-ov" id="mNOTANP">
 <div class="modal" style="max-width:460px">
-  <span class="mcls" onclick="cm('mNOTANP')">×</span>
+  <button type="button" class="mcls" aria-label="Cerrar ventana" onclick="cm('mNOTANP')">×</button>
   <div class="mtitle" id="mNOTANP_t">📝 Nota aclaratoria</div>
   <div class="psub" style="margin:0 0 14px">Se imprime en el PDF de esta Nota de Pedido — se puede cargar o corregir en cualquier momento.</div>
   <form id="fNOTANP">
@@ -447,110 +465,184 @@
   </form>
 </div></div>
 
-<header>
-  <div class="logo"><div class="logo-icon">🛒</div><span>Tablero de Compras</span><span class="hbadge">CIMOMET</span></div>
-  <div style="display:flex;align-items:center;gap:8px">
-    <div class="live-dot"></div>
-    <span style="font-size:12px;color:var(--muted)">En vivo</span>
-    <span id="clk" style="font-size:12px;color:var(--muted);margin-left:6px"></span>
-    <span id="usuario-actual" style="font-size:12px;color:var(--muted);margin-left:10px"></span>
-    <button class="btn" id="theme-toggle" title="Cambiar tema" style="padding:6px 10px;margin-left:8px">🌙</button>
-    <button class="btn" id="logout-btn" title="Cerrar sesión" style="padding:6px 10px;margin-left:6px">🚪</button>
+<header class="app-header">
+  <div class="header-brand">
+    <button type="button" class="icon-button menu-toggle" id="menu-toggle" aria-label="Abrir navegación" aria-controls="app-nav" aria-expanded="false"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h16"/></svg></button>
+    <img class="brand-logo" src="Logo%20Cimomet%20HD.png" alt="CIMOMET S.A." width="118" height="55">
+    <div class="brand-wordmark"><span class="brand-name">Compras</span><span class="brand-caption">Centro de operaciones</span></div>
+  </div>
+  <div class="header-tools">
+    <div class="connection-status"><span class="live-dot" aria-hidden="true"></span><span>En vivo</span></div>
+    <time id="clk" aria-label="Hora actual"></time>
+    <span id="usuario-actual"></span>
+    <div class="header-actions">
+      <button type="button" class="icon-button" id="theme-toggle" title="Cambiar tema" aria-label="Cambiar tema"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="M20.5 13A8.5 8.5 0 0 1 11 3.5 8.5 8.5 0 1 0 20.5 13Z"/></svg></button>
+      <button type="button" class="icon-button" id="logout-btn" title="Cerrar sesión" aria-label="Cerrar sesión"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="M9 4H4v16h5M9 12h12m-4-4 4 4-4 4"/></svg></button>
+    </div>
   </div>
 </header>
 
 <div class="layout">
-<nav>
-  <div class="nav-group" id="nav-flota" data-default-sec="dash">
-    <div class="nav-parent"><span>🚗</span> Flota <span class="nav-chevron">▾</span></div>
+<button type="button" class="nav-backdrop" id="nav-backdrop" aria-label="Cerrar navegación" tabindex="-1" hidden></button>
+<nav id="app-nav" aria-label="Módulos de compras">
+  <div class="nav-heading"><span>Tu espacio de trabajo</span></div>
+  <button type="button" class="nav-item nav-home" data-sec="inicio" aria-controls="s-inicio"><svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m3 10 9-7 9 7v11h-7v-7h-4v7H3V10Z"/></svg>Inicio</button>
+  <div class="nav-group collapsed" id="nav-flota" data-default-sec="dash">
+    <button type="button" class="nav-parent" aria-expanded="false"><svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m5 7 2-3h10l2 3 2 3v8h-3v-3H6v3H3v-8l2-3Z"/><path d="M5 7h14M7 11h.01M17 11h.01M3 14h18"/></svg> Flota <span class="nav-chevron" aria-hidden="true">▾</span></button>
     <div class="nav-children">
-      <div class="nav-item" data-sec="dash"><span>📊</span> Dashboard</div>
-      <div class="nav-item" data-sec="vcs"><span>🚙</span> Vehículos</div>
-      <div class="nav-item" data-sec="sols"><span>📋</span> Solicitudes <span class="nav-badge" id="badge-pend" style="display:none">0</span></div>
-      <div class="nav-item" data-sec="movs"><span>📍</span> Movimientos</div>
-      <div class="nav-item" data-sec="gantt"><span>📅</span> Gantt</div>
-      <div class="nav-item" data-sec="mant"><span>🔧</span> Mantenimiento</div>
-      <div class="nav-item" data-sec="vtv"><span>🔍</span> VTV</div>
-      <div class="nav-item" data-sec="doc"><span>🛡️</span> Documentación</div>
+      <button type="button" class="nav-item" data-sec="dash" aria-controls="s-dash"><svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 3v17h17M8 15v-4m5 4V7m5 8V4"/></svg> Dashboard</button>
+      <button type="button" class="nav-item" data-sec="vcs" aria-controls="s-vcs"><svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m5 7 2-3h10l2 3 2 3v8h-3v-3H6v3H3v-8l2-3Z"/><path d="M5 7h14M7 11h.01M17 11h.01M3 14h18"/></svg> Vehículos</button>
+      <button type="button" class="nav-item" data-sec="sols" aria-controls="s-sols"><svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 6h12M8 12h12M8 18h12M3 6h.01M3 12h.01M3 18h.01"/></svg> Solicitudes <span class="nav-badge" id="badge-pend" style="display:none">0</span></button>
+      <button type="button" class="nav-item" data-sec="movs" aria-controls="s-movs"><svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M19 10c0 5-7 11-7 11S5 15 5 10a7 7 0 0 1 14 0Z"/><circle cx="12" cy="10" r="2"/></svg> Movimientos</button>
+      <button type="button" class="nav-item" data-sec="gantt" aria-controls="s-gantt"><svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="5" width="18" height="16" rx="1"/><path d="M7 2v6m10-6v6M3 11h18m-13 4h3m3 0h3"/></svg> Gantt</button>
+      <button type="button" class="nav-item" data-sec="mant" aria-controls="s-mant"><svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 6a5 5 0 0 0-6 6L3 17a3 3 0 0 0 4 4l5-5a5 5 0 0 0 6-6l-4 3-3-3 3-4Z"/></svg> Mantenimiento</button>
+      <button type="button" class="nav-item" data-sec="vtv" aria-controls="s-vtv"><svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="10" cy="10" r="7"/><path d="m15 15 6 6"/></svg> VTV</button>
+      <button type="button" class="nav-item" data-sec="doc" aria-controls="s-doc"><svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m12 3 8 3v6c0 5-8 9-8 9s-8-4-8-9V6l8-3Z"/><path d="m8 12 3 3 5-6"/></svg> Documentación</button>
     </div>
   </div>
 
-  <div class="nav-group" id="nav-oc" data-default-sec="oc-dash">
-    <div class="nav-parent"><span>🧾</span> Órdenes de Compra <span class="nav-chevron">▾</span></div>
+  <div class="nav-group collapsed" id="nav-oc" data-default-sec="oc-dash">
+    <button type="button" class="nav-parent" aria-expanded="false"><svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 3h12v18l-3-2-3 2-3-2-3 2V3Z"/><path d="M9 7h6M9 11h6M9 15h3"/></svg> Órdenes de Compra <span class="nav-chevron" aria-hidden="true">▾</span></button>
     <div class="nav-children">
-      <div class="nav-item" data-sec="oc-dash"><span>📊</span> Dashboard</div>
-      <div class="nav-item" data-sec="oc-abiertas"><span>🕐</span> Abiertas</div>
-      <div class="nav-item" data-sec="oc-comp"><span>✅</span> Completadas</div>
-      <div class="nav-item" data-sec="oc-todas"><span>📋</span> Todas</div>
+      <button type="button" class="nav-item" data-sec="oc-dash" aria-controls="s-oc-dash"><svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 3v17h17M8 15v-4m5 4V7m5 8V4"/></svg> Dashboard</button>
+      <button type="button" class="nav-item" data-sec="oc-abiertas" aria-controls="s-oc-abiertas"><svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg> Abiertas</button>
+      <button type="button" class="nav-item" data-sec="oc-comp" aria-controls="s-oc-comp"><svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m5 12 4 4L19 6"/></svg> Completadas</button>
+      <button type="button" class="nav-item" data-sec="oc-todas" aria-controls="s-oc-todas"><svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 6h12M8 12h12M8 18h12M3 6h.01M3 12h.01M3 18h.01"/></svg> Todas</button>
     </div>
   </div>
 
-  <div class="nav-group" id="nav-stock" data-default-sec="stock-dash">
-    <div class="nav-parent"><span>📦</span> Stock <span class="nav-chevron">▾</span></div>
+  <div class="nav-group collapsed" id="nav-stock" data-default-sec="stock-dash">
+    <button type="button" class="nav-parent" aria-expanded="false"><svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m12 3 9 5v9l-9 5-9-5V8l9-5Z"/><path d="m3 8 9 5 9-5M12 13v9M7 5.8l9 5"/></svg> Stock <span class="nav-chevron" aria-hidden="true">▾</span></button>
     <div class="nav-children">
-      <div class="nav-item" data-sec="stock-dash"><span>📊</span> Dashboard</div>
-      <div class="nav-item" data-sec="stock-comprar"><span>⚠️</span> A comprar</div>
-      <div class="nav-item" data-sec="stock-segui"><span>⭐</span> Seguimiento</div>
-      <div class="nav-item" data-sec="stock-todo"><span>📋</span> Todo el stock</div>
+      <button type="button" class="nav-item" data-sec="stock-dash" aria-controls="s-stock-dash"><svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 3v17h17M8 15v-4m5 4V7m5 8V4"/></svg> Dashboard</button>
+      <button type="button" class="nav-item" data-sec="stock-comprar" aria-controls="s-stock-comprar"><svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m12 3 10 18H2L12 3Z"/><path d="M12 9v5m0 3v.01"/></svg> A comprar</button>
+      <button type="button" class="nav-item" data-sec="stock-segui" aria-controls="s-stock-segui"><svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m12 3 3 6 7 1-5 5 1 7-6-3-6 3 1-7-5-5 7-1 3-6Z"/></svg> Seguimiento</button>
+      <button type="button" class="nav-item" data-sec="stock-todo" aria-controls="s-stock-todo"><svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 6h12M8 12h12M8 18h12M3 6h.01M3 12h.01M3 18h.01"/></svg> Todo el stock</button>
     </div>
   </div>
 
-  <div class="nav-group" id="nav-proveedores" data-default-sec="prov-grupos">
-    <div class="nav-parent"><span>🏭</span> Proveedores <span class="nav-chevron">▾</span></div>
+  <div class="nav-group collapsed" id="nav-proveedores" data-default-sec="prov-grupos">
+    <button type="button" class="nav-parent" aria-expanded="false"><svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 21V10l6 3V8l6 4V3h4l2 18H3Z"/><path d="M7 17h1m3 0h1m4 0h1"/></svg> Proveedores <span class="nav-chevron" aria-hidden="true">▾</span></button>
     <div class="nav-children">
-      <div class="nav-item" data-sec="prov-grupos"><span>🗂️</span> Grupos</div>
-      <div class="nav-item" data-sec="prov-directorio"><span>📇</span> Directorio</div>
-      <div class="nav-item" data-sec="prov-pendientes"><span>⚠️</span> Pendientes</div>
+      <button type="button" class="nav-item" data-sec="prov-grupos" aria-controls="s-prov-grupos"><svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 6h7l2 2h9v12H3V6Z"/></svg> Grupos</button>
+      <button type="button" class="nav-item" data-sec="prov-directorio" aria-controls="s-prov-directorio"><svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="7" r="4"/><path d="M4 21v-2a8 8 0 0 1 16 0v2"/></svg> Directorio</button>
+      <button type="button" class="nav-item" data-sec="prov-pendientes" aria-controls="s-prov-pendientes"><svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m12 3 10 18H2L12 3Z"/><path d="M12 9v5m0 3v.01"/></svg> Pendientes</button>
     </div>
   </div>
 
-  <div class="nav-group" id="nav-np" data-default-sec="np-lista">
-    <div class="nav-parent"><span>📝</span> Notas de Pedido <span class="nav-chevron">▾</span></div>
+  <div class="nav-group collapsed" id="nav-np" data-default-sec="np-lista">
+    <button type="button" class="nav-parent" aria-expanded="false"><svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 3h14v18H5V3Z"/><path d="M9 7h6M9 11h6M9 15h4"/></svg> Notas de Pedido <span class="nav-chevron" aria-hidden="true">▾</span></button>
     <div class="nav-children">
-      <div class="nav-item" data-sec="np-lista"><span>📋</span> Notas de Pedido</div>
+      <button type="button" class="nav-item" data-sec="np-lista" aria-controls="s-np-lista"><svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 3h14v18H5V3Z"/><path d="M9 7h6M9 11h6M9 15h4"/></svg> Notas de Pedido</button>
     </div>
   </div>
 
-  <div class="nav-group" id="nav-cot" data-default-sec="cot-lista">
-    <div class="nav-parent"><span>🧮</span> Cotizaciones <span class="nav-chevron">▾</span></div>
+  <div class="nav-group collapsed" id="nav-cot" data-default-sec="cot-lista">
+    <button type="button" class="nav-parent" aria-expanded="false"><svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="5" y="3" width="14" height="18" rx="1"/><path d="M8 7h8M8 11h2m4 0h2m-8 4h2m4 0h2m-8 3h2m4 0h2"/></svg> Cotizaciones <span class="nav-chevron" aria-hidden="true">▾</span></button>
     <div class="nav-children">
-      <div class="nav-item" data-sec="cot-lista"><span>📋</span> Solicitudes</div>
-      <div class="nav-item" data-sec="cot-pendientes"><span>🌐</span> Pendientes (todas)</div>
-      <div class="nav-item" data-sec="cot-historial"><span>📈</span> Historial de precios</div>
+      <button type="button" class="nav-item" data-sec="cot-lista" aria-controls="s-cot-lista"><svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 6h12M8 12h12M8 18h12M3 6h.01M3 12h.01M3 18h.01"/></svg> Solicitudes</button>
+      <button type="button" class="nav-item" data-sec="cot-pendientes" aria-controls="s-cot-pendientes"><svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg> Pendientes (todas)</button>
+      <button type="button" class="nav-item" data-sec="cot-historial" aria-controls="s-cot-historial"><svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 3v17h17M8 15v-4m5 4V7m5 8V4"/></svg> Historial de precios</button>
     </div>
   </div>
 
-  <div class="nav-group" id="nav-materot" data-default-sec="materot-dash">
-    <div class="nav-parent"><span>🏷️</span> OT <span class="nav-chevron">▾</span></div>
+  <div class="nav-group collapsed" id="nav-materot" data-default-sec="materot-dash">
+    <button type="button" class="nav-parent" aria-expanded="false"><svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m12 3 10 6-10 6L2 9l10-6Z"/><path d="m2 13 10 6 10-6M2 17l10 6 10-6"/></svg> OT <span class="nav-chevron" aria-hidden="true">▾</span></button>
     <div class="nav-children">
-      <div class="nav-item" data-sec="materot-dash"><span>📊</span> Dashboard</div>
-      <div class="nav-item" data-sec="materot-cards"><span>🗂️</span> Por OT</div>
-      <div class="nav-item" data-sec="materot-grupos"><span>⚙️</span> Agrupar OT</div>
+      <button type="button" class="nav-item" data-sec="materot-dash" aria-controls="s-materot-dash"><svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 3v17h17M8 15v-4m5 4V7m5 8V4"/></svg> Dashboard</button>
+      <button type="button" class="nav-item" data-sec="materot-cards" aria-controls="s-materot-cards"><svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 6h7l2 2h9v12H3V6Z"/></svg> Por OT</button>
+      <button type="button" class="nav-item" data-sec="materot-grupos" aria-controls="s-materot-grupos"><svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 7h16M4 17h16"/><circle cx="9" cy="7" r="3"/><circle cx="15" cy="17" r="3"/></svg> Agrupar OT</button>
     </div>
   </div>
 
-  <div class="nav-group" id="nav-consol" data-default-sec="consol-dash">
-    <div class="nav-parent"><span>💰</span> Consolidado <span class="nav-chevron">▾</span></div>
+  <div class="nav-group collapsed" id="nav-consol" data-default-sec="consol-dash">
+    <button type="button" class="nav-parent" aria-expanded="false"><svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 3v17h17M8 15v-4m5 4V7m5 8V4"/></svg> Consolidado <span class="nav-chevron" aria-hidden="true">▾</span></button>
     <div class="nav-children">
-      <div class="nav-item" data-sec="consol-dash"><span>📊</span> Dashboard</div>
-      <div class="nav-item" data-sec="consol-semanas"><span>📅</span> Por semana</div>
+      <button type="button" class="nav-item" data-sec="consol-dash" aria-controls="s-consol-dash"><svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 3v17h17M8 15v-4m5 4V7m5 8V4"/></svg> Dashboard</button>
+      <button type="button" class="nav-item" data-sec="consol-semanas" aria-controls="s-consol-semanas"><svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="5" width="18" height="16" rx="1"/><path d="M7 2v6m10-6v6M3 11h18m-13 4h3m3 0h3"/></svg> Por semana</button>
     </div>
   </div>
 
-  <div class="nav-group" id="nav-param" data-default-sec="param-usuarios">
-    <div class="nav-parent"><span>⚙️</span> Parametrización <span class="nav-chevron">▾</span></div>
+  <div class="nav-group collapsed" id="nav-param" data-default-sec="param-usuarios">
+    <button type="button" class="nav-parent" aria-expanded="false"><svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 7h16M4 17h16"/><circle cx="9" cy="7" r="3"/><circle cx="15" cy="17" r="3"/></svg> Parametrización <span class="nav-chevron" aria-hidden="true">▾</span></button>
     <div class="nav-children">
-      <div class="nav-item" data-sec="param-usuarios"><span>👤</span> Usuarios</div>
-      <div class="nav-item" data-sec="param-dolar"><span>💵</span> Dólar histórico</div>
+      <button type="button" class="nav-item" data-sec="param-usuarios" aria-controls="s-param-usuarios"><svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="7" r="4"/><path d="M4 21v-2a8 8 0 0 1 16 0v2"/></svg> Usuarios</button>
+      <button type="button" class="nav-item" data-sec="param-dolar" aria-controls="s-param-dolar"><svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v18m5-14c-2-3-10-3-10 2s10 1 10 6-8 5-10 2"/></svg> Dólar histórico</button>
     </div>
   </div>
 
+  <div class="nav-footer"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path d="m4 12 5 5L20 6"/></svg><div><strong>CIMOMET + CO.MO.ING</strong><span>Un equipo. Todo conectado.</span></div></div>
 </nav>
-<main>
+<main id="main-content" tabindex="-1">
+  <div class="workspace-bar"><div><span>Operaciones</span><span class="breadcrumb-divider" aria-hidden="true">/</span><span id="page-context">Inicio</span></div><span class="workspace-caption">Gestión de compras</span></div>
+
+  <section class="sec on" id="s-inicio" aria-label="Inicio">
+  <section class="workspace-hero" id="workspace-hero" data-module="inicio" aria-labelledby="workspace-title">
+    <div class="hero-copy">
+      <span class="hero-kicker" id="workspace-kicker">Tu espacio de trabajo</span>
+      <h1 id="workspace-title">Tu centro de operaciones.</h1>
+      <p id="workspace-description">Vehículos, solicitudes y vencimientos. Tené a mano lo que necesitás para organizar el día.</p>
+      <div class="hero-caption"><span class="hero-caption-line" aria-hidden="true"></span>Tu equipo, mejor conectado.</div>
+    </div>
+    <div class="hero-art" aria-hidden="true">
+      <svg class="operations-illustration" viewBox="0 0 470 270" fill="none">
+        <circle cx="263" cy="133" r="115" fill="#3764DF"/>
+        <circle cx="263" cy="133" r="92" stroke="#6588EC" stroke-dasharray="5 8"/>
+        <path d="M84 145c-3 63 56 85 118 71m144-56c49-32 40-89-3-100" stroke="#B1C8FF" stroke-width="2" stroke-dasharray="5 7"/>
+        <g transform="rotate(-8 112 93)">
+          <rect x="40" y="29" width="138" height="139" rx="18" fill="#102758" fill-opacity=".16"/>
+          <rect x="35" y="22" width="138" height="139" rx="18" fill="white"/>
+          <rect x="54" y="43" width="49" height="10" rx="5" fill="#1D4ED8"/>
+          <rect x="54" y="63" width="95" height="6" rx="3" fill="#DCE7FC"/>
+          <rect x="54" y="86" width="17" height="17" rx="5" fill="#DCF4EB"/>
+          <path d="m59 94 3 3 5-6" stroke="#167251" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+          <path d="M82 94h65M82 120h49" stroke="#B5C8EA" stroke-width="6" stroke-linecap="round"/>
+          <rect x="54" y="112" width="17" height="17" rx="5" fill="#E8EFFC"/>
+        </g>
+        <path d="m177 111 96-49 96 49v94H177v-94Z" fill="#DDE9FF"/>
+        <path d="m166 114 107-56 107 56" stroke="white" stroke-width="10" stroke-linecap="round" stroke-linejoin="round"/>
+        <path d="M200 133h146v72H200z" fill="#142B64"/>
+        <path d="M210 146h126M210 159h126M210 172h126M210 185h126" stroke="#3D5D9F" stroke-width="3"/>
+        <path d="M168 205h210" stroke="#B6CEFF" stroke-width="6" stroke-linecap="round"/>
+        <path d="m143 181 39-20 39 20-39 21-39-21Z" fill="#FFDB79"/>
+        <path d="M143 181v43l39 21v-43l-39-21Z" fill="#FFC83D"/>
+        <path d="M182 202v43l39-21v-43l-39 21Z" fill="#E8AB25"/>
+        <path d="m165 170 37 21v15" stroke="#FFF2C8" stroke-width="6"/>
+        <g transform="rotate(8 374 80)">
+          <rect x="338" y="44" width="78" height="78" rx="25" fill="#102758" fill-opacity=".15"/>
+          <rect x="333" y="38" width="78" height="78" rx="25" fill="#FFC83D"/>
+          <path d="m354 77 12 12 23-25" stroke="#14213D" stroke-width="6" stroke-linecap="round" stroke-linejoin="round"/>
+        </g>
+        <circle cx="405" cy="176" r="7" fill="#FFC83D"/>
+        <path d="M205 32v13m-6-6h13M100 208v13m-6-6h13" stroke="#B1C8FF" stroke-width="2" stroke-linecap="round"/>
+      </svg>
+      <div class="hero-flow"><span id="workspace-module">Compras</span><span aria-hidden="true">↗</span><strong>Todo conectado</strong></div>
+    </div>
+  </section>
+
+  <section class="workspace-shortcuts" id="workspace-shortcuts" aria-label="Accesos directos">
+    <button type="button" class="shortcut-card shortcut-blue" data-shortcut="oc-abiertas" data-shortcut-group="oc">
+      <span class="shortcut-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true"><path d="M6 3h12v18l-3-2-3 2-3-2-3 2V3Z"/><path d="M9 7h6M9 11h6M9 15h3"/></svg></span>
+      <span class="shortcut-copy"><strong>Órdenes abiertas</strong><span>Lo que falta recibir</span></span><svg class="shortcut-arrow" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M5 12h14m-6-6 6 6-6 6"/></svg>
+    </button>
+    <button type="button" class="shortcut-card shortcut-yellow" data-shortcut="cot-pendientes" data-shortcut-group="cot">
+      <span class="shortcut-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true"><path d="M4 4h16v12H9l-5 5V4Z"/><path d="M8 8h8M8 12h5"/></svg></span>
+      <span class="shortcut-copy"><strong>Cotizaciones</strong><span>Pendientes de resolver</span></span><svg class="shortcut-arrow" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M5 12h14m-6-6 6 6-6 6"/></svg>
+    </button>
+    <button type="button" class="shortcut-card shortcut-mint" data-shortcut="stock-comprar" data-shortcut-group="stock">
+      <span class="shortcut-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true"><path d="m12 3 9 5v9l-9 5-9-5V8l9-5Z"/><path d="m3 8 9 5 9-5M12 13v9M7 5.8l9 5"/></svg></span>
+      <span class="shortcut-copy"><strong>Stock a reponer</strong><span>Anticipate a los faltantes</span></span><svg class="shortcut-arrow" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M5 12h14m-6-6 6 6-6 6"/></svg>
+    </button>
+    <button type="button" class="shortcut-card shortcut-lilac" data-shortcut="materot-cards" data-shortcut-group="materot">
+      <span class="shortcut-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true"><path d="m12 3 10 6-10 6L2 9l10-6Z"/><path d="m2 13 10 6 10-6M2 17l10 6 10-6"/></svg></span>
+      <span class="shortcut-copy"><strong>Órdenes de trabajo</strong><span>Materiales de cada OT</span></span><svg class="shortcut-arrow" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M5 12h14m-6-6 6 6-6 6"/></svg>
+    </button>
+  </section>
+  </section>
 
 <!-- ============ DASHBOARD ============ -->
-<div class="sec on" id="s-dash">
-  <div class="ptitle">Panel de Control — Flota</div>
+<div class="sec" id="s-dash">
+  <div class="ptitle">Resumen de la flota</div>
   <div class="psub" id="d-fecha"></div>
   <div class="kpi-grid">
     <div class="kpi"><div class="kpi-val" id="k-tot">–</div><div class="kpi-lbl">Vehículos</div></div>
@@ -560,7 +652,7 @@
     <div class="kpi"><div class="kpi-val text-yellow" id="k-pen">–</div><div class="kpi-lbl">Solicitudes pend.</div></div>
     <div class="kpi"><div class="kpi-val text-accent" id="k-hoy">–</div><div class="kpi-lbl">Movimientos hoy</div></div>
   </div>
-  <div id="d-alertas"></div>
+  <div id="d-alertas" role="list" aria-label="Vencimientos de seguros y VTV"></div>
   <div class="sh"><h2>Estado de la flota</h2><button class="btn p" id="btn-ir-solicitudes">Ver solicitudes pendientes</button></div>
   <div class="cards" id="d-cards"><div class="loading"><div class="spin"></div>Cargando...</div></div>
 </div>
@@ -1352,7 +1444,7 @@
 <!-- ============ MODAL — AGREGAR ÍTEM MANUAL A LA SOLICITUD ============ -->
 <div class="modal-ov" id="mCOTITEM">
 <div class="modal" style="max-width:480px">
-  <span class="mcls" onclick="cm('mCOTITEM')">×</span>
+  <button type="button" class="mcls" aria-label="Cerrar ventana" onclick="cm('mCOTITEM')">×</button>
   <div class="mtitle" id="coti_titulo">+ Agregar ítem para cotizar</div>
   <div class="psub" style="margin:0 0 14px">Para material urgente que no pasó por Ingeniería/Capataz — se agrega al bloque que estás viendo ahora.</div>
   <form id="fCOTITEM">
@@ -1387,7 +1479,7 @@
 <!-- ============ MODAL — MARCAR PRECIO COMO ALTERNATIVO ============ -->
 <div class="modal-ov" id="mALTERNATIVO">
 <div class="modal" style="max-width:420px">
-  <span class="mcls" onclick="cm('mALTERNATIVO')">×</span>
+  <button type="button" class="mcls" aria-label="Cerrar ventana" onclick="cm('mALTERNATIVO')">×</button>
   <div class="mtitle">🔀 Marcar como cotización alternativa</div>
   <div class="psub" style="margin:0 0 14px">El proveedor cotizó una medida o especificación distinta a la pedida — igual se va a seguir comparando contra el resto, el ganador y el informe.</div>
   <form id="fALTERNATIVO">
@@ -1401,7 +1493,7 @@
 <!-- ============ MODAL — CARGAR PRECIOS DE UN PROVEEDOR ============ -->
 <div class="modal-ov" id="mCOTPROV">
 <div class="modal" style="width:640px;max-width:95vw">
-  <span class="mcls" onclick="cm('mCOTPROV')">×</span>
+  <button type="button" class="mcls" aria-label="Cerrar ventana" onclick="cm('mCOTPROV')">×</button>
   <div class="mtitle" id="mCOTPROV_t">Cargar precios</div>
   <div class="fg" style="max-width:280px;display:flex;align-items:flex-end;gap:8px">
     <div style="flex:1">
@@ -1429,7 +1521,7 @@
 <!-- ============ MODAL — ESTIMAR GASTO (CON PRECIO REAL O HISTÓRICO) ============ -->
 <div class="modal-ov" id="mCOTESTIMAR">
 <div class="modal" style="width:820px;max-width:95vw">
-  <span class="mcls" onclick="cm('mCOTESTIMAR')">×</span>
+  <button type="button" class="mcls" aria-label="Cerrar ventana" onclick="cm('mCOTESTIMAR')">×</button>
   <div class="mtitle">💡 Estimado de gasto</div>
   <div class="psub" id="coest_sub">Por cada ítem visible: el precio ya cargado acá o, si todavía no tiene, el histórico más reciente de cualquier proveedor que lo haya cotizado antes.</div>
   <div class="kpi-grid" style="grid-template-columns:repeat(4,minmax(130px,1fr));margin-top:10px">
@@ -1519,7 +1611,7 @@
 <!-- ============ MODAL — PERFIL (alta / módulos habilitados) ============ -->
 <div class="modal-ov" id="mUSUARIO">
 <div class="modal">
-  <span class="mcls" onclick="cm('mUSUARIO')">×</span>
+  <button type="button" class="mcls" aria-label="Cerrar ventana" onclick="cm('mUSUARIO')">×</button>
   <div class="mtitle" id="mUSUARIO_t">+ Nuevo perfil</div>
   <div class="fg"><label>Nombre *</label><input id="param_nombre" placeholder="Apellido, Nombre"></div>
   <label style="display:flex;align-items:center;gap:7px;font-size:13px;cursor:pointer;margin:12px 0 10px">
@@ -1538,10 +1630,6 @@
 </div><!-- /layout -->
 </div><!-- /app -->
 
-<script>
-  // Cierre de modales desde los botones "×" (inline por simplicidad).
-  function cm(id) { document.getElementById(id)?.classList.remove('open'); }
-</script>
 <script type="module" src="js/main.js"></script>
 </body>
 </html>

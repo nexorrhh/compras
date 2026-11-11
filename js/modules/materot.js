@@ -41,6 +41,7 @@
 // ============================================================
 import { SB } from '../supabase-client.js';
 import { toast, norm, txt, num, fetchAll, escAttr, fmt, obtenerHistoricoDolarCompleto } from '../utils.js';
+import { animateContent, isDisclosureOpen, revealElement, setDisclosure, transitionViews } from '../motion.js';
 
 let ITEMS = [];      // compras_materot_items, todas las filas
 let GRUPOS = [];      // compras_materot_ot_grupos — [{n_ot_hija, n_ot_madre}]
@@ -577,8 +578,8 @@ function renderBarrasCotizadoVsCubierto(canvasId, items, topN = 8) {
     data: {
       labels: datos.map(d => d[0]),
       datasets: [
-        { label: 'Cotizado', data: datos.map(d => d[1].cotiz), backgroundColor: '#64748b', borderRadius: 4 },
-        { label: 'Cubierto', data: datos.map(d => d[1].cubierto), backgroundColor: '#6366f1', borderRadius: 4 },
+        { label: 'Cotizado', data: datos.map(d => d[1].cotiz), backgroundColor: chartColor('--chart-4', '#64748b'), borderRadius: 4 },
+        { label: 'Cubierto', data: datos.map(d => d[1].cubierto), backgroundColor: chartColor('--chart-1', '#6366f1'), borderRadius: 4 },
       ],
     },
     options: {
@@ -887,7 +888,7 @@ function renderBarrasHoras(canvasId, horasData, topN = 8) {
   const datos = horasData.filas.slice(0, topN);
   renderChart(canvasId, canvasId, {
     type: 'bar',
-    data: { labels: datos.map(d => d[0]), datasets: [{ data: datos.map(d => d[1]), backgroundColor: '#f59e0b', borderRadius: 4 }] },
+    data: { labels: datos.map(d => d[0]), datasets: [{ data: datos.map(d => d[1]), backgroundColor: chartColor('--chart-3', '#f59e0b'), borderRadius: 4 }] },
     options: {
       indexAxis: 'y', responsive: true, maintainAspectRatio: false,
       plugins: { legend: { display: false }, tooltip: { callbacks: { label: ctx => `${numFmt(ctx.raw, 1)}h` } } },
@@ -908,6 +909,10 @@ function estadisticasOT(items) {
 // tablero, ver CLAUDE.md sección 11)
 // ------------------------------------------------------------
 const CHARTS = {};
+function chartColor(token, fallback) {
+  return getComputedStyle(document.documentElement).getPropertyValue(token).trim() || fallback;
+}
+
 function renderChart(key, canvasId, config) {
   const canvas = document.getElementById(canvasId);
   if (!canvas || typeof Chart === 'undefined') return;
@@ -920,14 +925,16 @@ function aplicarTemaChart() {
   const cssVars = getComputedStyle(document.documentElement);
   Chart.defaults.color = cssVars.getPropertyValue('--muted').trim();
   Chart.defaults.borderColor = cssVars.getPropertyValue('--border').trim();
-  Chart.defaults.font.family = "'Segoe UI',system-ui,sans-serif";
+  Chart.defaults.font.family = cssVars.getPropertyValue('--font').trim() || "'Plus Jakarta Sans',system-ui,sans-serif";
+  Chart.defaults.font.size = 14;
+  if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) Chart.defaults.animation = false;
 }
 
 function renderDonutOKDIF(canvasId, nOK, nDIF) {
   const bg2 = getComputedStyle(document.documentElement).getPropertyValue('--bg2').trim();
   renderChart(canvasId, canvasId, {
     type: 'doughnut',
-    data: { labels: ['OK', 'DIF'], datasets: [{ data: [nOK, nDIF], backgroundColor: ['#22c55e', '#ef4444'], borderColor: bg2, borderWidth: 2 }] },
+    data: { labels: ['OK', 'DIF'], datasets: [{ data: [nOK, nDIF], backgroundColor: [chartColor('--green', '#22c55e'), chartColor('--red', '#ef4444')], borderColor: bg2, borderWidth: 2 }] },
     options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'bottom' } } },
   });
 }
@@ -940,7 +947,7 @@ function renderBarrasTopOT(canvasId, grupos) {
     .slice(0, 10);
   renderChart(canvasId, canvasId, {
     type: 'bar',
-    data: { labels: datos.map(d => formatOT(d[0]) || '(Sin OT)'), datasets: [{ label: 'KGS comprados', data: datos.map(d => d[1]), backgroundColor: '#6366f1', borderRadius: 4 }] },
+    data: { labels: datos.map(d => formatOT(d[0]) || '(Sin OT)'), datasets: [{ label: 'KGS comprados', data: datos.map(d => d[1]), backgroundColor: chartColor('--chart-1', '#6366f1'), borderRadius: 4 }] },
     options: {
       indexAxis: 'y', responsive: true, maintainAspectRatio: false,
       plugins: { legend: { display: false }, tooltip: { callbacks: { label: ctx => `${numFmt(ctx.raw)} KGS` } } },
@@ -956,7 +963,7 @@ function renderBarrasRubro(canvasId, items, topN = 10) {
   const datos = [...porRubro.entries()].filter(([, kg]) => kg > 0).sort((a, b) => b[1] - a[1]).slice(0, topN);
   renderChart(canvasId, canvasId, {
     type: 'bar',
-    data: { labels: datos.map(d => d[0]), datasets: [{ label: 'KGS comprados', data: datos.map(d => d[1]), backgroundColor: '#14b8a6', borderRadius: 4 }] },
+    data: { labels: datos.map(d => d[0]), datasets: [{ label: 'KGS comprados', data: datos.map(d => d[1]), backgroundColor: chartColor('--chart-5', '#14b8a6'), borderRadius: 4 }] },
     options: {
       indexAxis: 'y', responsive: true, maintainAspectRatio: false,
       plugins: { legend: { display: false }, tooltip: { callbacks: { label: ctx => `${numFmt(ctx.raw)} KGS` } } },
@@ -1017,7 +1024,7 @@ function renderEvolucionUSD(canvasId, porMes) {
     type: 'bar',
     data: {
       labels: meses.map(mes => `${MESES_CORTO[mes.slice(5)] || mes.slice(5)} ${mes.slice(2, 4)}`),
-      datasets: [{ label: 'Monto comprado', data: meses.map(mes => porMes.get(mes)), backgroundColor: '#3b82f6', borderRadius: 4 }],
+      datasets: [{ label: 'Monto comprado', data: meses.map(mes => porMes.get(mes)), backgroundColor: chartColor('--chart-1', '#3b82f6'), borderRadius: 4 }],
     },
     options: {
       responsive: true, maintainAspectRatio: false,
@@ -1031,7 +1038,7 @@ function renderBarrasTopOTUSD(canvasId, porOT, topN = 10) {
   const datos = porOT.filter(f => f.costoUSD > 0).sort((a, b) => b.costoUSD - a.costoUSD).slice(0, topN);
   renderChart(canvasId, canvasId, {
     type: 'bar',
-    data: { labels: datos.map(d => formatOT(d.ot) || '(Sin OT)'), datasets: [{ label: 'Monto comprado', data: datos.map(d => d.costoUSD), backgroundColor: '#22c55e', borderRadius: 4 }] },
+    data: { labels: datos.map(d => formatOT(d.ot) || '(Sin OT)'), datasets: [{ label: 'Monto comprado', data: datos.map(d => d.costoUSD), backgroundColor: chartColor('--chart-2', '#22c55e'), borderRadius: 4 }] },
     options: {
       indexAxis: 'y', responsive: true, maintainAspectRatio: false,
       plugins: { legend: { display: false }, tooltip: { callbacks: { label: ctx => fmtMonto(ctx.raw, 'USD') } } },
@@ -1241,8 +1248,7 @@ function abrirDetalle(ot) {
   OT_TAB = 'resumen';
   const vc = document.getElementById('mro-vista-cards');
   const vd = document.getElementById('mro-vista-detalle');
-  if (vc) vc.style.display = 'none';
-  if (vd) vd.style.display = '';
+  transitionViews(vc, vd);
   renderDetalle();
 }
 
@@ -1268,19 +1274,23 @@ function volverACards() {
   OT_ACTUAL = null;
   const vc = document.getElementById('mro-vista-cards');
   const vd = document.getElementById('mro-vista-detalle');
-  if (vd) vd.style.display = 'none';
-  if (vc) vc.style.display = '';
+  transitionViews(vd, vc);
 }
 
-function mostrarTabOT(tab) {
+function mostrarTabOT(tab, { animate = false } = {}) {
   OT_TAB = tab;
-  document.querySelectorAll('#mro_det_tabs .subtab').forEach(b => b.classList.toggle('active', b.dataset.tab === tab));
+  document.querySelectorAll('#mro_det_tabs .subtab').forEach(b => {
+    const selected = b.dataset.tab === tab;
+    b.classList.toggle('active', selected);
+    b.setAttribute('aria-pressed', String(selected));
+  });
   const pr = document.getElementById('mro_det_panel_resumen');
   const pd = document.getElementById('mro_det_panel_detalle');
   const pc = document.getElementById('mro_det_panel_costo');
   if (pr) pr.style.display = tab === 'resumen' ? '' : 'none';
   if (pd) pd.style.display = tab === 'detalle' ? '' : 'none';
   if (pc) pc.style.display = tab === 'costo' ? '' : 'none';
+  if (animate) revealElement(({ resumen: pr, detalle: pd, costo: pc })[tab], { axis: 'x', distance: 10, duration: 220 });
 }
 
 function renderDetalle() {
@@ -1435,8 +1445,8 @@ function renderResumenOT(items, st) {
     setTxt('mrod_k_cobertura_sub', totalPreciables > 0
       ? `${nValorizados} de ${totalPreciables} ítems` + (nSinTipoCambio ? ` (${nSinTipoCambio} sin T.C. de su fecha)` : '')
       : '');
-    renderGrupoPorMoneda('mrod_wrap_costorubro', 'Costo comprado por rubro', agruparCostoPor(filas, f => f.it.agrupacion || '(Sin rubro)'), '#22c55e');
-    renderGrupoPorMoneda('mrod_wrap_provs', 'Top proveedores (costo comprado)', agruparCostoPor(filas, f => f.precioInfo.proveedor_nombre || '(?)'), '#3b82f6');
+    renderGrupoPorMoneda('mrod_wrap_costorubro', 'Costo comprado por rubro', agruparCostoPor(filas, f => f.it.agrupacion || '(Sin rubro)'), chartColor('--chart-2', '#22c55e'));
+    renderGrupoPorMoneda('mrod_wrap_provs', 'Top proveedores (costo comprado)', agruparCostoPor(filas, f => f.precioInfo.proveedor_nombre || '(?)'), chartColor('--chart-1', '#3b82f6'));
 
     // -- Desvío vs. presupuesto (comprado + asignado, vs. lo presupuestado) --
     const valorUsado = costoUSD + ahorroUSD;
@@ -1721,8 +1731,11 @@ function renderPanelHijas() {
   const panel = document.getElementById('mrog_panel_hijas');
   const cont = document.getElementById('mrog_hijas_lista');
   if (!panel || !cont) return;
-  if (!MRG_MADRE_SEL) { panel.style.display = 'none'; return; }
-  panel.style.display = '';
+  if (!MRG_MADRE_SEL) {
+    if (isDisclosureOpen(panel)) setDisclosure(panel, false);
+    return;
+  }
+  if (!isDisclosureOpen(panel)) setDisclosure(panel, true);
 
   const q = (document.getElementById('mrog_f_q')?.value || '').trim().toUpperCase();
   let candidatas = otsCandidatasHija(MRG_MADRE_SEL);
@@ -1798,10 +1811,13 @@ export function init() {
   document.getElementById('mro_det_tabs')?.addEventListener('click', async e => {
     const btn = e.target.closest('.subtab');
     if (!btn) return;
-    mostrarTabOT(btn.dataset.tab);
+    mostrarTabOT(btn.dataset.tab, { animate: btn.dataset.tab !== 'costo' });
     if (btn.dataset.tab === 'costo') {
       if (!PRECIO_POR_ARTICULO || !HORAS_POR_OT || !DOLAR_HISTORICO) await Promise.all([cargarPreciosCotizaciones(), cargarHorasPorOT(), cargarDolarHistoricoCompleto()]);
-      if (OT_TAB === 'costo') renderCosto(); // repinta siempre contra la OT actual, cargue o no datos nuevos
+      if (OT_TAB === 'costo') {
+        renderCosto(); // repinta siempre contra la OT actual, cargue o no datos nuevos
+        revealElement(document.getElementById('mro_det_panel_costo'), { axis: 'x', distance: 10, duration: 220 });
+      }
     }
   });
   document.getElementById('mrod_f_rubro')?.addEventListener('change', renderDetalle);
@@ -1821,8 +1837,10 @@ export function init() {
   });
 
   document.getElementById('mrog_madre')?.addEventListener('change', e => {
+    const wasOpen = isDisclosureOpen(document.getElementById('mrog_panel_hijas'));
     MRG_MADRE_SEL = e.target.value;
     renderPanelHijas();
+    if (MRG_MADRE_SEL && wasOpen) animateContent(document.getElementById('mrog_panel_hijas'), { distance: 8, duration: 220 });
   });
   document.getElementById('mrog_f_q')?.addEventListener('input', renderPanelHijas);
   document.getElementById('mrog_hijas_lista')?.addEventListener('change', e => {

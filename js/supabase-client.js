@@ -26,7 +26,7 @@ export async function initSupabaseConnection(onConnected) {
     if (error) throw error;
     await mostrarLogin(SB, () => {
       app.style.display = 'block';
-      onConnected(SB);
+      return onConnected(SB);
     });
   } catch (e) {
     document.getElementById('app-error-msg').textContent = e.message;

@@ -12,6 +12,7 @@
 // ============================================================
 import { SB } from '../supabase-client.js';
 import { toast, om, cm, norm, txt, num, fetchAll, escAttr, fmt, obtenerDolarReferencia, obtenerDolarEnFecha } from '../utils.js';
+import { animateContent, isDisclosureOpen, revealElement, setDisclosure, transitionViews } from '../motion.js';
 
 let COTIZACIONES = [];
 let ITEMS_RESUMEN = [];     // {cotizacion_id, a_comprar} de TODAS las solicitudes — solo para los contadores de la lista
@@ -563,8 +564,7 @@ async function abrirDetalle(id) {
   renderAlertaConfirmadosOtras(await buscarConfirmadosEnOtrasSolicitudes(itemsACotizar, id));
   await cargarHistorialParaComparar(id, ITEMS.map(i => i.cod_articulo));
 
-  document.getElementById('cot-vista-lista').style.display = 'none';
-  document.getElementById('cot-vista-detalle').style.display = '';
+  transitionViews(document.getElementById('cot-vista-lista'), document.getElementById('cot-vista-detalle'));
   renderHeaderDetalle();
   poblarFiltroGrupo();
   poblarFiltroNroSolic();
@@ -580,8 +580,7 @@ async function abrirDetalle(id) {
 
 function volverALista() {
   COT_ACTUAL = null;
-  document.getElementById('cot-vista-detalle').style.display = 'none';
-  document.getElementById('cot-vista-lista').style.display = '';
+  transitionViews(document.getElementById('cot-vista-detalle'), document.getElementById('cot-vista-lista'));
   renderLista();
 }
 
@@ -707,11 +706,11 @@ function poblarTabsBloque() {
   if (BLOQUE_TAB !== BLOQUE_DUPLICADOS && !opciones.some(o => o.valor === BLOQUE_TAB)) BLOQUE_TAB = opciones[0]?.valor ?? '';
   if (BLOQUE_TAB === BLOQUE_DUPLICADOS && !duplicados) BLOQUE_TAB = opciones[0]?.valor ?? '';
 
-  let html = opciones.map(o => `<button type="button" class="cot-bloque-tab ${o.valor === BLOQUE_TAB ? 'active' : ''}" data-bloque="${escAttr(o.valor)}">${escAttr(o.label)} (${conteos[o.valor]})</button>`).join('');
+  let html = opciones.map(o => `<button type="button" class="cot-bloque-tab ${o.valor === BLOQUE_TAB ? 'active' : ''}" data-bloque="${escAttr(o.valor)}" aria-pressed="${o.valor === BLOQUE_TAB}">${escAttr(o.label)} (${conteos[o.valor]})</button>`).join('');
   // Solo aparece si hay algo apartado — nunca un tab "Duplicado (0)"
   // vacío, mismo criterio que los bloques reales de arriba.
   if (duplicados > 0) {
-    html += `<button type="button" class="cot-bloque-tab cot-bloque-tab-dup ${BLOQUE_TAB === BLOQUE_DUPLICADOS ? 'active' : ''}" data-bloque="${BLOQUE_DUPLICADOS}" title="Artículos que ya se están cotizando en otra solicitud abierta — apartados acá para no pedirlos de nuevo">⚠️ Duplicado (${duplicados})</button>`;
+    html += `<button type="button" class="cot-bloque-tab cot-bloque-tab-dup ${BLOQUE_TAB === BLOQUE_DUPLICADOS ? 'active' : ''}" data-bloque="${BLOQUE_DUPLICADOS}" aria-pressed="${BLOQUE_TAB === BLOQUE_DUPLICADOS}" title="Artículos que ya se están cotizando en otra solicitud abierta — apartados acá para no pedirlos de nuevo">⚠️ Duplicado (${duplicados})</button>`;
   }
   cont.innerHTML = html;
 }
@@ -2616,6 +2615,10 @@ function initDelegacionDetalle() {
       renderInvitados();
       renderTablaComparativa();
       renderResumenProveedores();
+      ['cot_invitados_chips', 'cot-tabla-wrap', 'cot_resumen_proveedores'].forEach(id => {
+        animateContent(document.getElementById(id), { distance: 6, duration: 210 });
+      });
+      [...cont.querySelectorAll('.cot-bloque-tab')].find(tab => tab.dataset.bloque === BLOQUE_TAB)?.focus({ preventScroll: true });
       return;
     }
   });
@@ -3193,8 +3196,8 @@ function initDelegacionPendientes() {
     if (row && row.closest('#cotp-tabla-wrap')) {
       const detailRow = row.nextElementSibling;
       if (detailRow && detailRow.classList.contains('oc-detail')) {
-        const isOpen = detailRow.style.display !== 'none';
-        detailRow.style.display = isOpen ? 'none' : '';
+        const isOpen = isDisclosureOpen(detailRow);
+        setDisclosure(detailRow, !isOpen, { trigger: row });
         const chevron = row.querySelector('.oc-chevron');
         if (chevron) chevron.textContent = isOpen ? '▸' : '▾';
       }
@@ -3576,6 +3579,7 @@ async function seleccionarArticuloHistorial(cod, descripcion) {
   if (vacio) vacio.style.display = 'none';
   const wrap = document.getElementById('coth_resultado');
   if (wrap) wrap.style.display = '';
+  revealElement(wrap, { axis: 'y', distance: 8, duration: 220 });
   const titulo = document.getElementById('coth_titulo');
   if (titulo) titulo.textContent = `${cod} — ${descripcion || 'sin descripción'}`;
   const tb = document.getElementById('t-coth-historial');
@@ -3584,6 +3588,7 @@ async function seleccionarArticuloHistorial(cod, descripcion) {
   HIST_FILAS = await buscarHistorialPrecios(cod);
   if (HIST_COD !== cod) return; // el usuario ya buscó otro artículo mientras esto cargaba
   renderHistorialPrecios();
+  animateContent(document.getElementById('coth_resultado'), { distance: 4, duration: 180 });
 }
 
 function renderHistorialPrecios() {

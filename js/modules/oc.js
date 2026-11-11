@@ -17,6 +17,7 @@
 // ============================================================
 import { SB } from '../supabase-client.js';
 import { toast, fmt, norm, fechaISO, txt, num, fetchAll, escAttr, obtenerDolarEnFecha } from '../utils.js';
+import { isDisclosureOpen, setDisclosure } from '../motion.js';
 
 let LINEAS = [];
 // Tango (el export de OC) no trae ninguna columna de unidad de medida —
@@ -559,8 +560,8 @@ function renderTabla(tbodyId, grupos) {
         <div><span class="badge ${badge.cls}"${tituloBadge}>${badge.txt}</span>${origenLinea}</div>
       </div>`;
     }).join('');
-    return `<tr class="oc-row">
-      <td><span class="oc-chevron">▸</span> ${g.orden_compra}${origenOrden}</td>
+    return `<tr class="oc-row" tabindex="0" aria-expanded="false">
+      <td><span class="oc-chevron" aria-hidden="true">▸</span> ${g.orden_compra}${origenOrden}</td>
       <td>${fmt(g.fecha)}</td>
       <td>${g.proveedor_nombre || '–'}</td>
       <td>${g.comprador_nombre || '–'}</td>
@@ -574,16 +575,24 @@ function renderTabla(tbodyId, grupos) {
 }
 
 function initExpandCollapse(tbodyId) {
-  document.getElementById(tbodyId)?.addEventListener('click', e => {
-    if (e.target.closest('.oc-del')) return;
+  const tbody = document.getElementById(tbodyId);
+  tbody?.addEventListener('click', e => {
+    if (e.target.closest('button, a, input, select, textarea, label')) return;
     const row = e.target.closest('.oc-row');
     if (!row) return;
     const detailRow = row.nextElementSibling;
     if (!detailRow || !detailRow.classList.contains('oc-detail')) return;
-    const isOpen = detailRow.style.display !== 'none';
-    detailRow.style.display = isOpen ? 'none' : '';
+    const isOpen = isDisclosureOpen(detailRow);
+    setDisclosure(detailRow, !isOpen, { trigger: row });
     const chevron = row.querySelector('.oc-chevron');
-    if (chevron) chevron.textContent = isOpen ? '▸' : '▾';
+    if (chevron) chevron.style.transform = isOpen ? 'rotate(0deg)' : 'rotate(90deg)';
+  });
+  tbody?.addEventListener('keydown', e => {
+    if (e.key !== 'Enter' && e.key !== ' ') return;
+    const row = e.target.closest('.oc-row');
+    if (!row || e.target !== row) return;
+    e.preventDefault();
+    row.click();
   });
 }
 
@@ -634,6 +643,10 @@ function aplicarFiltrosYRender() {
 // Gráficos del Dashboard (Chart.js, cargado por CDN en index.html)
 // ------------------------------------------------------------
 const CHARTS = {};
+function chartColor(token, fallback) {
+  return getComputedStyle(document.documentElement).getPropertyValue(token).trim() || fallback;
+}
+
 function renderChart(key, canvasId, config) {
   const canvas = document.getElementById(canvasId);
   if (!canvas || typeof Chart === 'undefined') return;
@@ -688,7 +701,9 @@ function renderGraficosDashboard(grupos, lineas) {
   const colorBg2 = cssVars.getPropertyValue('--bg2').trim();
   Chart.defaults.color = colorMuted;
   Chart.defaults.borderColor = colorBorder;
-  Chart.defaults.font.family = "'Segoe UI',system-ui,sans-serif";
+  Chart.defaults.font.family = cssVars.getPropertyValue('--font').trim() || "'Plus Jakarta Sans',system-ui,sans-serif";
+  Chart.defaults.font.size = 14;
+  if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) Chart.defaults.animation = false;
 
   const evol = datosEvolucionMensual(lineas);
   renderChart('evol', 'ocd_chart_evol', {
@@ -696,8 +711,8 @@ function renderGraficosDashboard(grupos, lineas) {
     data: {
       labels: evol.labels,
       datasets: [
-        { label: 'Comprado', data: evol.comprado, backgroundColor: '#3b82f6', borderRadius: 4 },
-        { label: 'Recibido', data: evol.recibido, backgroundColor: '#22c55e', borderRadius: 4 },
+        { label: 'Comprado', data: evol.comprado, backgroundColor: chartColor('--chart-1', '#3b82f6'), borderRadius: 4 },
+        { label: 'Recibido', data: evol.recibido, backgroundColor: chartColor('--chart-2', '#22c55e'), borderRadius: 4 },
       ],
     },
     options: {
@@ -713,7 +728,7 @@ function renderGraficosDashboard(grupos, lineas) {
     type: 'doughnut',
     data: {
       labels: ['Pendientes', 'Parciales', 'Revisar cierre', 'Completadas'],
-      datasets: [{ data: [porEstado.PENDIENTE, porEstado.PARCIAL, porEstado.REVISAR_CIERRE, porEstado.COMPLETADA], backgroundColor: ['#ef4444', '#f97316', '#a855f7', '#22c55e'], borderColor: colorBg2, borderWidth: 2 }],
+      datasets: [{ data: [porEstado.PENDIENTE, porEstado.PARCIAL, porEstado.REVISAR_CIERRE, porEstado.COMPLETADA], backgroundColor: [chartColor('--yellow', '#f59e0b'), chartColor('--orange', '#f97316'), chartColor('--purple', '#a855f7'), chartColor('--green', '#22c55e')], borderColor: colorBg2, borderWidth: 2 }],
     },
     options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'bottom' } } },
   });
@@ -721,7 +736,7 @@ function renderGraficosDashboard(grupos, lineas) {
   const topProv = datosTopProveedoresPendiente(grupos);
   renderChart('prov', 'ocd_chart_prov', {
     type: 'bar',
-    data: { labels: topProv.map(p => p[0]), datasets: [{ label: 'Pendiente', data: topProv.map(p => p[1]), backgroundColor: '#f59e0b', borderRadius: 4 }] },
+    data: { labels: topProv.map(p => p[0]), datasets: [{ label: 'Pendiente', data: topProv.map(p => p[1]), backgroundColor: chartColor('--chart-3', '#f59e0b'), borderRadius: 4 }] },
     options: {
       indexAxis: 'y', responsive: true, maintainAspectRatio: false,
       plugins: { legend: { display: false }, tooltip: { callbacks: { label: ctx => fmtPesos(ctx.raw) } } },
@@ -732,7 +747,7 @@ function renderGraficosDashboard(grupos, lineas) {
   const topComp = datosTopCompradoresVolumen(grupos);
   renderChart('comp', 'ocd_chart_comp', {
     type: 'bar',
-    data: { labels: topComp.map(c => c[0]), datasets: [{ label: 'Comprado', data: topComp.map(c => c[1]), backgroundColor: '#6366f1', borderRadius: 4 }] },
+    data: { labels: topComp.map(c => c[0]), datasets: [{ label: 'Comprado', data: topComp.map(c => c[1]), backgroundColor: chartColor('--chart-5', '#6366f1'), borderRadius: 4 }] },
     options: {
       indexAxis: 'y', responsive: true, maintainAspectRatio: false,
       plugins: { legend: { display: false }, tooltip: { callbacks: { label: ctx => fmtPesos(ctx.raw) } } },
